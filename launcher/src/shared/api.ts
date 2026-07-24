@@ -12,17 +12,16 @@ export interface ClaudeboxApi {
   createProject(name: string): Promise<Project>;
   listTemplates(): Promise<StarterTemplate[]>;
   createFromTemplate(templateId: string, name?: string): Promise<Project>;
-  /** Bring the Box up and attach a Claude session for this Project. */
+  /**
+   * Bring the Box up, ensure the Project's session via the funnel, and open it
+   * in a Chrome app-mode window. Also serves "Reopen terminal" (re-attaches the
+   * live session).
+   */
   openSession(slug: string): Promise<void>;
   /** Open a native file picker and copy the chosen files into the Project. */
   upload(slug: string): Promise<UploadTarget[]>;
   /** Detect the served port and open it in the Mac's browser. */
   openPreview(): Promise<{ opened: boolean; url?: string }>;
-
-  /** Streamed output from the attached session's pseudo-terminal. */
-  onSessionData(listener: (chunk: string) => void): void;
-  /** Send the user's keystrokes to the attached session. */
-  sendSessionInput(data: string): void;
 
   /**
    * Resolves once the Engine + Box are up so the home screen can safely query
@@ -44,8 +43,6 @@ export const IPC = {
   openSession: "session:open",
   upload: "upload:pick",
   openPreview: "preview:open",
-  sessionData: "session:data",
-  sessionInput: "session:input",
   bootstrap: "app:bootstrap",
 } as const;
 

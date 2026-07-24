@@ -66,11 +66,16 @@ function templateCard(t: StarterTemplate): HTMLElement {
   return card;
 }
 
+/**
+ * The per-Project control panel (ticket 04). The Claude session itself opens in
+ * a separate Chrome app-mode window (via openSession); this window becomes the
+ * controls for the active Project — no terminal is embedded here.
+ */
 async function openProject(project: Project): Promise<void> {
   const root = app();
   root.replaceChildren();
 
-  const back = el("button", { className: "link", textContent: "← All Projects" });
+  const back = el("button", { className: "link", textContent: "← Projects" });
   back.addEventListener("click", () => void renderHome());
 
   const upload = el("button", { textContent: "Upload files" });
@@ -85,19 +90,22 @@ async function openProject(project: Project): Promise<void> {
     flash(res.opened ? `Opened ${res.url}` : "Nothing is being served yet — ask Claude to start a server.");
   });
 
+  // Re-open the Chrome window on the same live session (still alive in tmux).
+  const reopen = el("button", { textContent: "Reopen terminal" });
+  reopen.addEventListener("click", () => void cb.openSession(project.slug));
+
   root.append(
-    el("div", { className: "toolbar" }, [back, el("strong", { textContent: project.name }), upload, preview]),
+    el("div", { className: "toolbar" }, [
+      back,
+      el("strong", { textContent: project.name }),
+      upload,
+      preview,
+      reopen,
+    ]),
   );
-
-  const termEl = el("div", { className: "terminal", id: "terminal" });
-  root.append(termEl);
-
-  // Attach the interactive Claude session (ticket 04). xterm.js is bundled with
-  // the packaged app and exposed as window.Terminal.
-  const term = new window.Terminal({ convertEol: true, fontSize: 13 });
-  term.open(termEl);
-  cb.onSessionData((chunk) => term.write(chunk));
-  term.onData((data) => cb.sendSessionInput(data));
+  root.append(
+    el("p", { className: "sub", textContent: `${project.name} is open in a Claude session window.` }),
+  );
 
   await cb.openSession(project.slug);
 }

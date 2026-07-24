@@ -1,0 +1,65 @@
+#!/usr/bin/env python3
+"""claudebox-session <slug> — the single Box-side entry point that turns a
+Project slug into its running Claude Code session (ticket 02).
+
+Both the web console (server.py) and the Launcher reach a Project's Claude ONLY
+through this program, so launching is driven entirely by data on the volume: an
+unknown or crafted slug can never spawn anything.
+
+  - On a TTY (the console's pty): attach to the tmux session, creating it on the
+    first open. The seed prompt runs only for a fresh session; re-opening a live
+    session re-attaches without reseeding (that's `tmux new-session -A`).
+  - Off a TTY (the Launcher's `docker exec`): just ensure the session exists,
+    creating it detached if absent. Never touches a session that's already live.
+
+The seed prompt is handed to `claude` as a SINGLE argv, never interpolated into a
+shell string, so a prompt full of shell metacharacters cannot execute a command.
+Claude keeps `--dangerously-skip-permissions`: the container is the boundary
+(ADR 0001), not the per-action prompts.
+"""
+from __future__ import annotations
+
+import json
+import os
+import re
+import subprocess
+import sys
+
+WORKSPACE = os.environ.get("CLAUDEBOX_WORKSPACE", "/workspace")
+SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+
+
+def fail(msg: str) -> None:
+    print(f"claudebox-session: {msg}", file=sys.stderr)
+    raise SystemExit(1)
+
+
+def main(argv: list[str]) -> None:
+    if len(argv) != 1:
+        fail("usage: claudebox-session <slug>")
+    slug = argv[0]
+    if not SLUG_RE.match(slug):
+        fail(f"invalid Project slug: {slug!r}")
+
+    cwd = os.path.join(WORKSPACE, slug)
+    meta_path = os.path.join(cwd, ".claudebox", "project.json")
+    if not os.path.isfile(meta_path):
+        fail(f"no such Project: {slug!r}")
+
+    with open(meta_path, encoding="utf-8") as f:
+        seed = json.load(f).get("seedPrompt")
+
+    claude = ["claude", "--dangerously-skip-permissions"]
+    if seed:
+        claude.append(seed)  # single argv — metacharacters can't execute
+
+    if sys.stdout.isatty():
+        os.execvp("tmux", ["tmux", "new-session", "-A", "-s", slug, "-c", cwd, *claude])
+    else:
+        live = subprocess.run(["tmux", "has-session", "-t", slug], capture_output=True)
+        if live.returncode != 0:
+            subprocess.run(["tmux", "new-session", "-d", "-s", slug, "-c", cwd, *claude], check=True)
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

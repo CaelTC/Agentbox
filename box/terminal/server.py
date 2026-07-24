@@ -1,10 +1,12 @@
 """The Box's web console — a small Starlette app that replaces ttyd.
 
-Serves an xterm.js page (session tabs, a toggleable rail, a Files view) bridged to
-tmux over a WebSocket. A "session" IS a tmux session: tmux is the source of truth,
-so there's no JSON session state to keep in sync. No auth — single-user and
-loopback-only, the Launcher forwards this port to the Mac's loopback ONLY (ADR
-0001). No `docker exec` — this runs INSIDE the Box, so it attaches tmux directly.
+A single-Project console: one Project's Claude session (an xterm.js page bridged
+to tmux over a WebSocket) plus a read-only Files view of the Workspace. Every
+session is a Project reached through the `claudebox-session` funnel, so the
+console never creates or switches free-form sessions — that lives in the
+Launcher. No auth — single-user and loopback-only, the Launcher forwards this
+port to the Mac's loopback ONLY (ADR 0001). This runs INSIDE the Box, so it
+launches sessions via the funnel directly (no `docker exec`).
 """
 from __future__ import annotations
 
@@ -18,96 +20,51 @@ import termios
 
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import (
-    PlainTextResponse,
-    RedirectResponse,
-    Response,
-)
+from starlette.responses import PlainTextResponse, Response
 from starlette.routing import Mount, Route, WebSocketRoute
 from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
-from paths import safe_path, sanitize_session_name
+from paths import is_valid_slug, safe_path
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 WORKSPACE = os.environ.get("CLAUDEBOX_WORKSPACE", "/workspace")
-DEFAULT_SESSION = "main"
 templates = Jinja2Templates(directory=os.path.join(_HERE, "templates"))
 
 
-def list_sessions() -> list[str]:
-    """Live tmux session names, or [] if the tmux server isn't up yet."""
-    r = subprocess.run(
-        ["tmux", "list-sessions", "-F", "#{session_name}"],
-        capture_output=True,
-        text=True,
+def project_exists(slug: str) -> bool:
+    """A slug names a real Project only if its metadata file is on the volume."""
+    return is_valid_slug(slug) and os.path.isfile(
+        os.path.join(WORKSPACE, slug, ".claudebox", "project.json")
     )
-    if r.returncode != 0:
-        return []
-    return [ln for ln in r.stdout.splitlines() if ln]
 
 
-def ensure_session(name: str) -> None:
-    # idempotent-ish; harmless if it already exists
-    subprocess.run(["tmux", "new-session", "-d", "-s", name], capture_output=True)
-
-
-def kill_session(name: str) -> None:
-    subprocess.run(["tmux", "kill-session", "-t", name], capture_output=True)
-
-
-def _auto_name() -> str:
-    existing = set(list_sessions())
-    n = 1
-    while f"session-{n}" in existing:
-        n += 1
-    return f"session-{n}"
-
-
-def _shell_ctx(sid: str, tab: str, **extra) -> dict:
-    return {
-        "sessions": [{"id": n, "title": n} for n in list_sessions()],
-        "s": {"id": sid, "title": sid},
-        "tab": tab,
-        **extra,
-    }
+def _ctx(sid: str, tab: str, **extra) -> dict:
+    return {"s": {"id": sid, "title": sid}, "tab": tab, **extra}
 
 
 async def index(request: Request) -> Response:
-    sessions = list_sessions()
-    if not sessions:
-        ensure_session(DEFAULT_SESSION)
-        sessions = [DEFAULT_SESSION]
-    return RedirectResponse(f"/sessions/{sessions[0]}", 303)
+    # No auto-select, no auto-create: Projects are opened from the Launcher.
+    return PlainTextResponse("Open a Project from Claudebox to start a Claude session.")
 
 
 async def session_detail(request: Request) -> Response:
-    sid = sanitize_session_name(request.path_params["sid"])
-    ensure_session(sid)
-    return templates.TemplateResponse(request, "session.html", _shell_ctx(sid, "terminal"))
-
-
-async def session_create(request: Request) -> Response:
-    name = sanitize_session_name(request.query_params.get("name") or _auto_name())
-    ensure_session(name)
-    return RedirectResponse(f"/sessions/{name}", 303)
-
-
-async def session_close(request: Request) -> Response:
-    sid = sanitize_session_name(request.path_params["sid"])
-    kill_session(sid)
-    rem = list_sessions()
-    return RedirectResponse(f"/sessions/{rem[0]}" if rem else "/", 303)
+    sid = request.path_params["sid"]
+    if not project_exists(sid):
+        return PlainTextResponse("No such Project.", 404)
+    return templates.TemplateResponse(request, "session.html", _ctx(sid, "terminal"))
 
 
 async def session_files(request: Request) -> Response:
-    sid = sanitize_session_name(request.path_params["sid"])
+    sid = request.path_params["sid"]
+    if not project_exists(sid):
+        return PlainTextResponse("No such Project.", 404)
     rel = request.query_params.get("path", "").lstrip("/")
     target = safe_path(WORKSPACE, rel)
     if target is None or not os.path.exists(target):
         return PlainTextResponse("Not found (or outside the Workspace).", 404)
-    ctx = _shell_ctx(sid, "files", rel=rel)
+    ctx = _ctx(sid, "files", rel=rel)
     if os.path.isdir(target):
         entries = []
         for nm in sorted(os.listdir(target)):
@@ -158,13 +115,18 @@ def _become_ctty() -> None:
 
 
 async def terminal_ws(ws: WebSocket) -> None:
-    sid = sanitize_session_name(ws.path_params["sid"])
+    sid = ws.path_params["sid"]
+    if not project_exists(sid):
+        await ws.close(code=1008, reason="no such Project")
+        return
     await ws.accept()
 
     master, slave = os.openpty()
     env = {**os.environ, "TERM": "xterm-256color"}
+    # Launch the Project through the ONE funnel — never a bare tmux/shell. Stdout
+    # is a tty here, so claudebox-session attaches (creating + seeding on first open).
     proc = subprocess.Popen(
-        ["tmux", "new-session", "-A", "-s", sid],
+        ["claudebox-session", sid],
         stdin=slave,
         stdout=slave,
         stderr=slave,
@@ -248,9 +210,7 @@ async def terminal_ws(ws: WebSocket) -> None:
 def create_app() -> Starlette:
     routes = [
         Route("/", index),
-        Route("/sessions", session_create, methods=["POST"]),
         Route("/sessions/{sid}", session_detail),
-        Route("/sessions/{sid}/close", session_close, methods=["POST"]),
         Route("/sessions/{sid}/files", session_files),
         Route("/favicon.ico", favicon),
         WebSocketRoute("/sessions/{sid}/terminal", terminal_ws),

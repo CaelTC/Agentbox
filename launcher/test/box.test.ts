@@ -3,7 +3,6 @@ import {
   assertNoHostMounts,
   boxBuildArgs,
   boxRunArgs,
-  claudeExecArgs,
   isHostMount,
 } from "../src/core/box";
 
@@ -73,23 +72,5 @@ describe("assertNoHostMounts", () => {
     expect(() =>
       assertNoHostMounts(["run", "-v", "/Users/alex:/workspace", "claudebox:latest"]),
     ).toThrow(/host mount/i);
-  });
-});
-
-describe("claudeExecArgs", () => {
-  it("runs Claude Code with permissions bypassed (no per-action prompts)", () => {
-    const args = claudeExecArgs();
-    expect(args.slice(0, 3)).toEqual(["exec", "-it", "claudebox"]);
-    expect(args).toContain("claude");
-    expect(args).toContain("--dangerously-skip-permissions");
-  });
-
-  it("scopes the session to a Project working directory when given one", () => {
-    const args = claudeExecArgs({ cwd: "/workspace/my-project" });
-    expect(args[args.indexOf("-w") + 1]).toBe("/workspace/my-project");
-  });
-
-  it("omits -w when no Project directory is given", () => {
-    expect(claudeExecArgs()).not.toContain("-w");
   });
 });

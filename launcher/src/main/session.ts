@@ -1,6 +1,9 @@
+import { spawn } from "node:child_process";
+import { shell } from "electron";
 import { BOX_CONTAINER, BOX_IMAGE } from "../core/config";
-import { boxRunArgs, claudeExecArgs } from "../core/box";
+import { boxRunArgs } from "../core/box";
 import { colimaStartArgs } from "../core/colima";
+import { chromeAppOpenArgs, ensureSessionExecArgs, sessionUrl } from "../core/session-window";
 import { inspectBoxState } from "./environment";
 import { run } from "./exec";
 import { startupPlan, type StartupStep } from "../core/startup";
@@ -51,7 +54,7 @@ async function runStep(step: StartupStep, boxDefinitionDir: string): Promise<voi
       await mustSucceed("docker", ["start", BOX_CONTAINER]);
       return;
     case "attach":
-      return; // attaching is done by the terminal host (see sessionCommand)
+      return; // the session is launched by the funnel, opened in Chrome (openProjectSession)
   }
 }
 
@@ -63,17 +66,31 @@ async function mustSucceed(command: string, args: readonly string[]): Promise<vo
 }
 
 /**
- * The command that opens an interactive Claude Code session for a Project. The
- * packaged Launcher hosts this in an embedded terminal (xterm.js + node-pty) so
- * the Sandbox User never sees a real terminal; here we expose the exact argv.
- *
- * A seeded first prompt (from a Starter Template, ticket 08) is passed as
- * Claude's initial input so the user lands in a primed session.
+ * Open a Project's Claude session (ticket 04). Ensures the session exists through
+ * the single Box-side funnel (which reads the Project's cwd + seed prompt from
+ * the volume, ticket 02), then shows it in a chromeless Chrome app-mode window.
+ * If Chrome is missing, fall back to the default browser so opening never fails.
+ * "Reopen terminal" is just this again — the funnel re-attaches the live session.
  */
-export function sessionCommand(cwd: string, seedPrompt?: string): { command: string; args: string[] } {
-  const args = claudeExecArgs({ cwd });
-  if (seedPrompt) {
-    args.push(seedPrompt);
+export async function openProjectSession(slug: string): Promise<void> {
+  await mustSucceed("docker", ensureSessionExecArgs(slug));
+  const url = sessionUrl(slug);
+  const opened = await run("open", chromeAppOpenArgs(url));
+  if (opened.code !== 0) {
+    await shell.openExternal(url);
   }
-  return { command: "docker", args };
+}
+
+/**
+ * Stop the Box on Launcher quit (ticket 03) to free the Resource Cap. Fire-and-
+ * forget in its own process group: a slow or failing `docker stop` must never
+ * trap the user in a hanging app — the Resource Cap already bounds a lingering
+ * container. Named volumes (Workspace, Claude login) survive the stop.
+ */
+export function stopBoxDetached(): void {
+  try {
+    spawn("docker", ["stop", BOX_CONTAINER], { detached: true, stdio: "ignore" }).unref();
+  } catch {
+    // Engine already gone — nothing to stop.
+  }
 }

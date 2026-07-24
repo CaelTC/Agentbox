@@ -59,9 +59,12 @@ RUN useradd --create-home --shell /bin/bash sandbox \
 COPY egress/apply-egress.sh /usr/local/bin/apply-egress.sh
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY start-terminal.sh /usr/local/bin/start-terminal.sh
+# The single funnel that turns a Project slug into its Claude session (ticket 02).
+# Both the console and the Launcher launch a Project only through this program.
+COPY bin/claudebox-session /usr/local/bin/claudebox-session
 COPY terminal/ /opt/terminal/
 RUN chmod +x /usr/local/bin/apply-egress.sh /usr/local/bin/entrypoint.sh \
-      /usr/local/bin/start-terminal.sh
+      /usr/local/bin/start-terminal.sh /usr/local/bin/claudebox-session
 
 # The Workspace mounts here as a named volume. Owning it as `sandbox` before the
 # volume is created means the fresh named volume inherits that ownership, so

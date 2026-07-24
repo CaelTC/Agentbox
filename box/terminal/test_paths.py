@@ -1,12 +1,15 @@
 """Runnable self-check for the security-bearing helpers: `python3 test_paths.py`."""
-from paths import safe_path, sanitize_session_name
+from paths import is_valid_slug, safe_path
 
 
 def demo():
-    assert sanitize_session_name("my proj!") == "my-proj"
-    assert sanitize_session_name("a.b:c") == "a-b-c"
-    assert sanitize_session_name("   ") == "main"
-    assert sanitize_session_name("../../etc") == "etc"
+    assert is_valid_slug("my-project")
+    assert is_valid_slug("game2")
+    assert not is_valid_slug("")
+    assert not is_valid_slug("../etc")   # traversal can never be a slug
+    assert not is_valid_slug("My Proj")  # uppercase / spaces rejected, not coerced
+    assert not is_valid_slug("-leading")
+    assert not is_valid_slug("a--b")     # double dash isn't the sanitizer's output
 
     root = "/workspace"
     assert safe_path(root, "") == "/workspace"

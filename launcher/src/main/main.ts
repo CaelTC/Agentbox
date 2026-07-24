@@ -1,10 +1,10 @@
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, dialog } from "electron";
 import { join } from "node:path";
 import { IPC, type BootstrapStatus } from "../shared/api";
 import { registerIpc } from "./ipc";
 import { hostBoxDefinitionDir } from "./paths";
 import { refreshOnLaunch } from "./refresh-runner";
-import { ensureBoxReady, ensureColima, removeBoxContainer } from "./session";
+import { ensureBoxReady, ensureColima, removeBoxContainer, stopBoxDetached } from "./session";
 
 /**
  * Electron entry point (ticket 04). Double-clicking the Launcher lands here: it
@@ -73,4 +73,29 @@ app.whenReady().then(() => {
 app.on("window-all-closed", () => {
   // Standard macOS apps stay alive; quit elsewhere.
   if (process.platform !== "darwin") app.quit();
+});
+
+/**
+ * The Launcher is the user's on/off switch (ticket 03): quitting it stops the
+ * Box to free the Resource Cap, which also ends any open Chrome session window —
+ * so confirm once before quitting. Stopping is fire-and-forget (stopBoxDetached),
+ * so a slow/failed `docker stop` can't trap the user; the quit proceeds regardless.
+ */
+let quitConfirmed = false;
+app.on("before-quit", (event) => {
+  if (quitConfirmed) return;
+  const choice = dialog.showMessageBoxSync({
+    type: "question",
+    buttons: ["Quit Claudebox", "Cancel"],
+    defaultId: 0,
+    cancelId: 1,
+    message: "Quit Claudebox?",
+    detail: "This closes your Claudebox and any open Claude session. Your projects are saved.",
+  });
+  if (choice !== 0) {
+    event.preventDefault();
+    return;
+  }
+  quitConfirmed = true;
+  stopBoxDetached();
 });

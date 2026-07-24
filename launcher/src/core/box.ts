@@ -83,27 +83,6 @@ export function boxRunArgs(options: BoxRunOptions = {}): string[] {
   return args;
 }
 
-export interface ClaudeExecOptions {
-  container?: string;
-  /** Project working directory inside the Box (ticket 05). */
-  cwd?: string;
-}
-
-/**
- * Build the `docker exec` args that drop the user into a Claude Code session
- * with permissions bypassed — because the container is the boundary, the
- * per-action prompts guard nothing (ADR 0001, decision 4).
- */
-export function claudeExecArgs(options: ClaudeExecOptions = {}): string[] {
-  const { container = BOX_CONTAINER, cwd } = options;
-  const args = ["exec", "-it", container];
-  if (cwd) {
-    args.push("-w", cwd);
-  }
-  args.push("claude", "--dangerously-skip-permissions");
-  return args;
-}
-
 /** A `-v` value is a host bind mount unless its source is a bare named volume. */
 export function isHostMount(volumeSpec: string): boolean {
   const source = volumeSpec.split(":")[0] ?? "";

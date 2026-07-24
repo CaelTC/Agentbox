@@ -3,22 +3,14 @@ import { STARTER_TEMPLATES, templateById } from "../core/templates";
 import { IPC } from "../shared/api";
 import { hostBoxDefinitionDir } from "./paths";
 import { detectPreviewUrl } from "./preview";
-import { ensureBoxReady, sessionCommand } from "./session";
-import { SessionHost } from "./terminal";
-import {
-  boxCreateProject,
-  boxListProjects,
-  boxProjectSeedPrompt,
-  boxUpload,
-} from "./workspace";
+import { ensureBoxReady, openProjectSession } from "./session";
+import { boxCreateProject, boxListProjects, boxUpload } from "./workspace";
 
 /**
  * Wire the renderer's requests to the trusted operations. This is the ONLY
  * place the home screen's intents become real Docker/filesystem effects.
  */
 export function registerIpc(window: BrowserWindow): void {
-  const session = new SessionHost(window.webContents);
-
   ipcMain.handle(IPC.listProjects, () => boxListProjects());
 
   ipcMain.handle(IPC.createProject, (_e, name: string) => boxCreateProject(name));
@@ -33,9 +25,7 @@ export function registerIpc(window: BrowserWindow): void {
 
   ipcMain.handle(IPC.openSession, async (_e, slug: string) => {
     await ensureBoxReady(hostBoxDefinitionDir());
-    const seedPrompt = await boxProjectSeedPrompt(slug);
-    const { command, args } = sessionCommand(`/workspace/${slug}`, seedPrompt);
-    session.open(command, args);
+    await openProjectSession(slug);
   });
 
   ipcMain.handle(IPC.upload, async (_e, slug: string) => {
@@ -52,10 +42,5 @@ export function registerIpc(window: BrowserWindow): void {
     if (!url) return { opened: false };
     await shell.openExternal(url);
     return { opened: true, url };
-  });
-
-  // Keystrokes from the renderer's terminal → the pty.
-  ipcMain.handle(IPC.sessionInput, (_e, data: string) => {
-    session.write(data);
   });
 }

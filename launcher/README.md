@@ -22,9 +22,12 @@ src/
     preview.ts     Loopback publish args, preview URL, served-port detection.
     templates.ts   Starter Template registry + instantiation.
     refresh.ts     Refresh-on-Launch decision (hash + rebuild-if-changed).
-  main/        Electron main process — the EFFECTS around the pure core.
-               Runs Colima/Docker, brokers the Box-side Workspace, hosts the pty.
-  renderer/    The home screen + in-Project session view (xterm terminal).
+    session-window.ts  Session URL + funnel `docker exec` + Chrome app-mode argv.
+  main/        Electron main process — the EFFECTS around the pure core. Runs
+               Colima/Docker, brokers the Box-side Workspace, and opens a
+               Project's session (funnel + Chrome app-mode window).
+  renderer/    The home screen + per-Project control panel. The Claude session
+               itself opens in a separate Chrome app-mode window, not in here.
   shared/      The typed IPC contract (ClaudeboxApi) between main and renderer.
   preload.ts   contextBridge exposing only ClaudeboxApi to the renderer.
   types/       Ambient Electron declaration (see "The Electron shim" below).
@@ -60,16 +63,12 @@ npm test          # vitest run
 
 ## Runtime dependencies of the packaged app
 
-The built macOS app additionally depends on three packages that are **not needed
-for typechecking or tests** and are therefore not installed in this repo:
-
-- **electron** — the app shell.
-- **node-pty** — hosts the interactive Claude session's pseudo-terminal.
-- **xterm** (`xterm`, `xterm.css`) — renders the terminal; vendored into
-  `renderer/` at build time and exposed as the global `Terminal`.
-
-`node-pty` and `xterm` are reached via runtime `require` / a browser global, so
-they impose no compile-time coupling.
+The built macOS app depends on **electron** (the app shell), which is **not
+needed for typechecking or tests** and is therefore not a runtime dependency in
+this repo. The Claude session opens in **Google Chrome** (app-mode window),
+installed by the Install Script; if Chrome is absent the Launcher falls back to
+the default browser. There is no embedded terminal — the session is viewed
+through the Box's loopback-forwarded web console, so no `node-pty`/`xterm`.
 
 ### The Electron shim
 
@@ -81,9 +80,9 @@ keeping both would double-declare the `electron` module.
 
 ## Packaging (macOS)
 
-1. `npm install electron node-pty xterm && rm src/types/electron.d.ts`
-2. Vendor `xterm.js` / `xterm.css` into `src/renderer/`.
-3. `npm run build` (emits `dist/`).
-4. Bundle with your Electron packager of choice into `Claudebox.app`.
+1. `npm install electron && rm src/types/electron.d.ts`
+2. `npm run build` (emits `dist/`).
+3. Bundle with your Electron packager of choice into `Claudebox.app`
+   (`npm run package` wraps electron-packager).
 
 No code signing is required to run it locally (ADR 0002).

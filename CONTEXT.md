@@ -42,7 +42,7 @@ A one-way, user-initiated copy of files from the MacBook into a Project's Worksp
 _Avoid_: mount, shared folder (deliberately not a live bind-mount)
 
 **Install Script**:
-The one-time setup step, run by whoever provisions the MacBook (not the Sandbox User). Installs Colima, the Launcher, and the initial Box image. Replaces a signed installer, which is not available.
+The one-time setup step, run by whoever provisions the MacBook (not the Sandbox User). Installs Colima, Google Chrome (for the Project session window), the Launcher, and the initial Box image. Replaces a signed installer, which is not available.
 
 **Engine**:
 Colima — the headless, license-free container runtime that runs the Box on the MacBook in place of Docker Desktop.

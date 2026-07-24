@@ -5,14 +5,15 @@ from __future__ import annotations
 import os
 import re
 
-_UNSAFE = re.compile(r"[^A-Za-z0-9_-]+")
+# The Project slug shape (mirrors the Launcher's SLUG_RE). A session is now always
+# a Project, so the console REJECTS anything that isn't a real slug rather than
+# coercing it — an unknown/crafted name must 404, never spawn a shell.
+_SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 
-def sanitize_session_name(raw: str) -> str:
-    """A tmux-safe session name: [A-Za-z0-9_-] only (tmux forbids ':' and '.').
-    Falls back to 'main' when nothing usable remains, so it never yields ''."""
-    name = _UNSAFE.sub("-", (raw or "").strip()).strip("-")
-    return name or "main"
+def is_valid_slug(slug: str) -> bool:
+    """True only for a well-formed Project slug: lowercase a–z / 0–9 / single dashes."""
+    return bool(_SLUG_RE.match(slug or ""))
 
 
 def safe_path(root: str, rel: str) -> str | None:

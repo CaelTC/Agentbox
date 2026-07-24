@@ -1,11 +1,10 @@
-{# Console-dock app shell shared by the session views (Terminal / Files).
-   Top bar = open sessions as browser tabs with an × to close; left rail = toggleable
-   per-session views. Leaf templates fill {% block dock_main %}; session.html also
+{# Console-dock app shell shared by the single-Project views (Terminal / Files).
+   One Project per window — no session tabs or switcher (that lives in the
+   Launcher). Top bar = sidebar toggle + Project name; left rail = per-Project
+   view switch. Leaf templates fill {% block dock_main %}; session.html also
    fills {% block session_head %}. #}
 {% extends "base.html" %}
 {% set hide_chrome = True %}
-
-{% set open_sessions = sessions %}
 
 {% block head %}
   {# set the rail state before first paint so a persisted collapse doesn't flash open #}
@@ -18,21 +17,13 @@
   body { height:100dvh; display:flex; flex-direction:column; overflow:hidden; }
   main { max-width:none; margin:0; padding:0; flex:1; display:flex; flex-direction:column; min-height:0; }
 
-  /* ── top bar: session tabs only ── */
-  .dock-top { display:flex; align-items:stretch; gap:.5rem; padding:0 .6rem; min-height:44px; background:var(--panel); border-bottom:1px solid var(--line); }
+  /* ── top bar: sidebar toggle + Project name ── */
+  .dock-top { display:flex; align-items:center; gap:.5rem; padding:0 .6rem; min-height:44px; background:var(--panel); border-bottom:1px solid var(--line); }
   .rail-toggle { all:unset; display:flex; align-items:center; padding:0 .5rem; color:var(--muted); cursor:pointer; }
   .rail-toggle:hover { color:var(--fg); }
   .rail-toggle svg { display:block; }
-  .sess-tabs { display:flex; align-items:flex-end; gap:.2rem; overflow-x:auto; }
-  .sess-tab { display:flex; align-items:center; gap:.5rem; padding:.4rem .55rem .4rem .85rem; border:1px solid transparent; border-bottom:none; border-radius:8px 8px 0 0; font-size:.86rem; white-space:nowrap; margin-bottom:-1px; }
-  .sess-tab:hover { background:rgba(255,255,255,.03); }
-  .sess-tab.active { background:#0d0d0d; border-color:var(--line); border-bottom:1px solid #0d0d0d; }
-  .sess-tab .label { color:var(--muted); }
-  .sess-tab:hover .label, .sess-tab.active .label { color:var(--fg); text-decoration:none; }
-  .sess-tab .dot { width:6px; height:6px; border-radius:50%; background:var(--faint); flex:none; }
-  .sess-tab.active .dot { background:var(--accent); }
-  .sess-tab .x { all:unset; display:flex; cursor:pointer; color:var(--faint); font-size:1rem; line-height:1; padding:.05rem .2rem; border-radius:4px; }
-  .sess-tab .x:hover { color:var(--danger); background:rgba(242,109,109,.12); }
+  .dock-title { display:flex; align-items:center; gap:.5rem; font-size:.9rem; color:var(--fg); white-space:nowrap; }
+  .dock-title .dot { width:6px; height:6px; border-radius:50%; background:var(--accent); flex:none; }
 
   /* ── body: rail + content ── */
   .dock-body { flex:1; min-height:0; display:flex; }
@@ -56,20 +47,7 @@
   <button class="rail-toggle" onclick="localStorage.setItem('claudebox-rail', document.documentElement.classList.toggle('rail-off') ? 'off' : 'on')" aria-label="Toggle sidebar">
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
   </button>
-  <nav class="sess-tabs">
-    {% for os in open_sessions %}
-    <span class="sess-tab {{ 'active' if s and os.id == s.id }}" title="{{ os.title }}">
-      <span class="dot"></span>
-      <a class="label" href="/sessions/{{ os.id }}">{{ os.title }}</a>
-      <form method="post" action="/sessions/{{ os.id }}/close" style="display:contents"
-            onsubmit="return confirm('Close {{ os.title }}? Its tmux session will be killed.');">
-        <button class="x" type="submit" aria-label="Close session">×</button>
-      </form>
-    </span>
-    {% endfor %}
-    <button class="rail-toggle" title="New session" aria-label="New session" style="padding:0 .5rem;font-size:1.1rem;"
-      onclick="var n=prompt('New session name:'); if(n){var f=document.createElement('form');f.method='post';f.action='/sessions?name='+encodeURIComponent(n);document.body.appendChild(f);f.submit();}">＋</button>
-  </nav>
+  <span class="dock-title"><span class="dot"></span>{{ s.title }}</span>
 </div>
 
 <div class="dock-body">

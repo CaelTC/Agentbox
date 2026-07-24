@@ -87,11 +87,6 @@ async function writeBoxFile(path: string, content: string): Promise<void> {
   ]);
 }
 
-/** Read a Project's seeded first prompt from inside the Box, if any. */
-export async function boxProjectSeedPrompt(slug: string): Promise<string | undefined> {
-  return (await readBoxMeta(slug))?.seedPrompt;
-}
-
 /**
  * Copy host files into a Project via `docker cp` — a one-way host→Box copy with
  * no live mount (ticket 06). Collision-free destinations come from the pure

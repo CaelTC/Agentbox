@@ -16,11 +16,6 @@ const api: ClaudeboxApi = {
   openSession: (slug) => ipcRenderer.invoke(IPC.openSession, slug),
   upload: (slug) => ipcRenderer.invoke(IPC.upload, slug),
   openPreview: () => ipcRenderer.invoke(IPC.openPreview),
-  onSessionData: (listener) =>
-    ipcRenderer.on(IPC.sessionData, (_e, chunk: string) => listener(chunk)),
-  sendSessionInput: (data) => {
-    void ipcRenderer.invoke(IPC.sessionInput, data);
-  },
   onBootstrap: (listener) =>
     ipcRenderer.on(IPC.bootstrap, (_e, result) => listener(result)),
 };
