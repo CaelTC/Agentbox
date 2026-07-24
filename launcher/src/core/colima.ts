@@ -1,0 +1,32 @@
+import { COLIMA_PROFILE, RESOURCE_CAP, type ResourceCap } from "./config";
+
+/**
+ * Build the `colima` CLI args that start the Box's VM at the Resource Cap.
+ * The Launcher owns this so the Sandbox User never types a Colima command
+ * (ticket 04) and can never exceed the tuned allocation (ticket 01 / CONTEXT.md).
+ */
+export function colimaStartArgs(
+  cap: ResourceCap = RESOURCE_CAP,
+  profile: string = COLIMA_PROFILE,
+): string[] {
+  return [
+    "start",
+    "--profile",
+    profile,
+    "--cpu",
+    String(cap.cpu),
+    "--memory",
+    String(cap.memoryGiB),
+    "--disk",
+    String(cap.diskGiB),
+  ];
+}
+
+export function colimaStatusArgs(profile: string = COLIMA_PROFILE): string[] {
+  return ["status", "--profile", profile];
+}
+
+/** Colima prints "colima is running" on the status stream when the VM is up. */
+export function isColimaRunning(statusOutput: string): boolean {
+  return /\bcolima is running\b/i.test(statusOutput);
+}
