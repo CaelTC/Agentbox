@@ -4,18 +4,30 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Claudebox{% endblock %} · Claudebox</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg:#0d0d0d; --panel:#141414; --card:#171717; --raised:#1e1e1e;
-      --fg:#ececec; --muted:#9a9a9a; --faint:#6b6b6b;
-      --line:#282828; --line-soft:#212121;
-      --accent:#10a37f; --danger:#f26d6d;
-      --add:#3fb950; --del:#f26d6d;
-      --radius:12px;
+      /* Nootka Saunas palette — dark console skin (Coastal Water + Evergreen, Heat accent) */
+      --nootka-steam:#CDD8DA; --nootka-coastal-water:#073D44;
+      --nootka-reindeer-moss:#919A3C; --nootka-evergreen:#324126; --nootka-heat:#FF821B;
+
+      --bg:var(--nootka-coastal-water); --panel:var(--nootka-evergreen); --card:var(--nootka-evergreen);
+      --raised:color-mix(in srgb, var(--nootka-evergreen), white 9%);
+      --fg:var(--nootka-steam);
+      --muted:color-mix(in srgb, var(--nootka-steam), transparent 32%);
+      --faint:color-mix(in srgb, var(--nootka-steam), transparent 58%);
+      --line:color-mix(in srgb, var(--nootka-steam), transparent 86%);
+      --line-soft:color-mix(in srgb, var(--nootka-steam), transparent 91%);
+      --accent:var(--nootka-heat); --danger:#f26d6d;
+      --add:var(--nootka-reindeer-moss); --del:#f26d6d;
+      --font-sans:'DM Sans', system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      --radius:10px;
     }
     * { box-sizing: border-box; }
     html { color-scheme: dark; }
-    body { margin:0; font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",sans-serif; color:var(--fg); background:var(--bg); -webkit-font-smoothing:antialiased; }
+    body { margin:0; font:15px/1.55 var(--font-sans); color:var(--fg); background:var(--bg); -webkit-font-smoothing:antialiased; }
     code, .mono { font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace; font-size:.9em; }
 
     header.top { display:flex; align-items:center; gap:.9rem; padding:.55rem 1.1rem; background:rgba(13,13,13,.8); backdrop-filter:blur(12px); border-bottom:1px solid var(--line); position:sticky; top:0; z-index:10; }
@@ -29,15 +41,15 @@
     a:hover { text-decoration:underline; text-underline-offset:2px; }
     h1 { letter-spacing:-.02em; }
 
-    .flash { background:rgba(16,163,127,.09); border:1px solid rgba(16,163,127,.28); padding:.6rem .9rem; border-radius:10px; margin-bottom:1rem; color:#7fe3c4; }
+    .flash { background:color-mix(in srgb, var(--accent), transparent 90%); border:1px solid color-mix(in srgb, var(--accent), transparent 62%); padding:.6rem .9rem; border-radius:10px; margin-bottom:1rem; color:var(--fg); }
     .error { background:rgba(242,109,109,.08); border:1px solid rgba(242,109,109,.3); padding:.6rem .9rem; border-radius:10px; margin-bottom:1rem; color:var(--danger); }
     .card { background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:1.1rem 1.25rem; margin-bottom:1rem; }
     .muted { color:var(--muted); }
 
     button, .btn { font:inherit; font-size:.92rem; padding:.45rem .9rem; border:1px solid var(--line); border-radius:8px; background:var(--raised); cursor:pointer; text-decoration:none; color:var(--fg); display:inline-block; white-space:nowrap; transition:background .12s,border-color .12s,opacity .12s; }
     button:hover, .btn:hover { background:#262626; text-decoration:none; }
-    button.primary { background:#ededed; color:#141414; border-color:#ededed; font-weight:500; }
-    button.primary:hover { background:#fff; }
+    button.primary { background:var(--accent); color:var(--nootka-evergreen); border-color:var(--accent); font-weight:700; }
+    button.primary:hover { background:color-mix(in srgb, var(--accent), white 12%); }
     button.danger { background:transparent; color:var(--danger); border-color:rgba(242,109,109,.35); }
     button.danger:hover { background:rgba(242,109,109,.1); }
     button:disabled, .btn:disabled { opacity:.4; cursor:not-allowed; }
