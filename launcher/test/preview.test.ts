@@ -4,6 +4,7 @@ import {
   TERMINAL_PORT,
   detectServedPort,
   loopbackPublishArgs,
+  previewDoc,
   previewUrl,
 } from "../src/core/preview";
 
@@ -29,6 +30,24 @@ describe("loopbackPublishArgs", () => {
 describe("previewUrl", () => {
   it("points the browser at localhost on the served port", () => {
     expect(previewUrl(5173)).toBe("http://localhost:5173");
+  });
+});
+
+describe("previewDoc", () => {
+  const doc = previewDoc();
+
+  it("names every published port, so the doc can't drift from PREVIEW_PORTS", () => {
+    for (const port of PREVIEW_PORTS) {
+      expect(doc).toContain(String(port));
+    }
+  });
+
+  it("tells Claude to bind 0.0.0.0 and never to bind loopback inside the Box", () => {
+    expect(doc).toContain("0.0.0.0");
+    // names the literal Claude actually types, not just "localhost"
+    expect(doc).toContain("127.0.0.1");
+    expect(doc).not.toMatch(/(--bind|--host|-b)[ =]?127\.0\.0\.1/);
+    expect(doc).not.toMatch(/bind(ing)? (to )?`?127\.0\.0\.1/i);
   });
 });
 

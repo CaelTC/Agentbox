@@ -32,6 +32,41 @@ export function loopbackPublishArgs(ports: readonly number[] = PREVIEW_PORTS): s
   return args;
 }
 
+/**
+ * The per-Project `CLAUDE.md` Claude Code reads at session start. It exists
+ * because the published ports forward to the container's BRIDGE ip, not its
+ * loopback: a dev server bound to 127.0.0.1 *inside* the Box is unreachable
+ * from the Mac, and Preview opens a silent dead page. Ports come from
+ * PREVIEW_PORTS so the doc cannot drift from what is actually published.
+ */
+export const projectDocRelPath = "CLAUDE.md";
+
+export function previewDoc(): string {
+  const ports = PREVIEW_PORTS.join(", ");
+  return `# Preview in Claudebox
+
+The user views web pages by clicking **Preview** in the Launcher, which opens
+whatever is serving inside this Box in their Mac's browser.
+
+For that to work:
+
+1. Serve on one of these published ports: ${ports}.
+2. Bind the server to **0.0.0.0**, not to localhost. A server bound to
+   localhost (127.0.0.1) inside this Box is NOT reachable from the Preview
+   button — the page will look dead. The Launcher already keeps the port off
+   the LAN.
+
+Examples:
+
+\`\`\`sh
+python3 -m http.server 5173 --bind 0.0.0.0
+npx vite --host 0.0.0.0 --port 5173
+\`\`\`
+
+Then tell the user to click **Preview**.
+`;
+}
+
 export function previewUrl(port: number): string {
   return `http://localhost:${port}`;
 }

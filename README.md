@@ -65,8 +65,9 @@ container, not a per-action prompt, is the wall (ADR 0001).
 ### Opening a Project (end to end)
 
 1. In the Launcher, the Sandbox User clicks a Project (or a Starter Template).
-2. The Launcher ensures the Box is up, then runs
-   `docker exec <box> claudebox-session <slug>` — off a TTY the funnel just
+2. The Launcher ensures the Box is up, writes the Project's `CLAUDE.md` if it is
+   missing (the Web Preview contract: serve on a published port, bind `0.0.0.0`),
+   then runs `docker exec <box> claudebox-session <slug>` — off a TTY the funnel just
    **ensures** the tmux session exists (creating it detached, seeding the first
    prompt on a fresh session only).
 3. The Launcher opens `http://localhost:7681/sessions/<slug>` in a **chromeless

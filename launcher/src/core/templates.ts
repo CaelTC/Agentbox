@@ -27,8 +27,7 @@ export const STARTER_TEMPLATES: readonly StarterTemplate[] = [
     defaultProjectName: "My Webpage",
     seedPrompt:
       "Help me build a simple, good-looking personal webpage about myself. " +
-      "Create an index.html I can preview, then start a local server on port 5173 " +
-      "so I can click Preview to see it.",
+      "Create an index.html, then serve it so I can click Preview to see it.",
     needs: ["preview"],
   },
   {

@@ -7,6 +7,7 @@ import {
   sanitizeProjectName,
   serializeProjectMeta,
 } from "../core/projects";
+import { previewDoc, projectDocRelPath } from "../core/preview";
 import { resolveUploadTargets, type UploadTarget } from "../core/upload";
 import { run } from "./exec";
 
@@ -73,6 +74,17 @@ export async function boxCreateProject(
   await writeBoxFile(metaPath(slug), serializeProjectMeta({ name, slug, seedPrompt }));
 
   return { name, slug, dir: projectPath(slug) };
+}
+
+/**
+ * Drop the Preview contract into the Project as `CLAUDE.md`, which Claude Code
+ * reads at every session start. Written only when absent, so any later edit by
+ * the user or by Claude survives.
+ */
+export async function boxEnsureProjectDoc(slug: string): Promise<void> {
+  const path = `${projectPath(slug)}/${projectDocRelPath}`;
+  if (await boxPathExists(path)) return;
+  await writeBoxFile(path, previewDoc());
 }
 
 async function writeBoxFile(path: string, content: string): Promise<void> {
