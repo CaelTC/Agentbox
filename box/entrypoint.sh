@@ -12,4 +12,9 @@ if ! sudo /usr/local/bin/apply-egress.sh; then
   exit 1
 fi
 
+# Serve the web console (Starlette → tmux) in the background, AFTER egress is up.
+# Reachable only via the Launcher's loopback port-forward, never the LAN. Best
+# effort: a terminal failure must not stop the Box from hosting Claude sessions.
+/usr/local/bin/start-terminal.sh &
+
 exec "$@"

@@ -29,6 +29,20 @@ export function shouldRebuild(previousHash: string | undefined, currentHash: str
   return previousHash === undefined || previousHash !== currentHash;
 }
 
+/**
+ * Is the pulled definition trusted enough to auto-build? The definition IS the
+ * security boundary (it ships apply-egress.sh / entrypoint.sh), and Refresh
+ * builds it automatically — so a compromised upstream would silently redefine
+ * the walls. When a commit is pinned (config.PINNED_DEFINITION_COMMIT, set to a
+ * reviewed commit), the pulled HEAD must match it exactly; otherwise we refuse
+ * to build and keep running the last-known-good image. No pin ⇒ trust the pull
+ * (the runner logs that the boundary is unpinned).
+ */
+export function commitTrusted(pinned: string | undefined, head: string | undefined): boolean {
+  if (!pinned) return true;
+  return head !== undefined && head === pinned;
+}
+
 export interface RefreshInputs {
   /** Hash of the image we last built, if any. */
   previousHash: string | undefined;

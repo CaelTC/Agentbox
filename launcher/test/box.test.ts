@@ -40,6 +40,15 @@ describe("boxRunArgs", () => {
     expect(() => assertNoHostMounts(args)).not.toThrow();
   });
 
+  it("disables IPv6 so the IPv4 Egress Policy can't be bypassed over v6 (threat B)", () => {
+    expect(args.join(" ")).toContain("--sysctl net.ipv6.conf.all.disable_ipv6=1");
+    expect(args.join(" ")).toContain("--sysctl net.ipv6.conf.default.disable_ipv6=1");
+  });
+
+  it("publishes the web terminal on loopback so the Mac's browser can open the tmux session", () => {
+    expect(args.join(" ")).toContain("-p 127.0.0.1:7681:7681");
+  });
+
   it("keeps the container alive so a Claude session can be exec'd into it", () => {
     // last tokens are the long-lived command
     expect(args.slice(-2).join(" ")).toBe("sleep infinity");

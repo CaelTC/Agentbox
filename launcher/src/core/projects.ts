@@ -62,6 +62,22 @@ export function sanitizeProjectName(raw: string): string {
   return slug;
 }
 
+/** The exact shape sanitizeProjectName produces: lowercase a–z / 0–9 / single dashes. */
+export const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+/**
+ * Guard a slug that is about to be interpolated into a Box-side shell command
+ * (workspace.ts). Slugs are always sanitizeProjectName output, but IPC could in
+ * principle hand us anything — so re-validate at the effect boundary rather than
+ * trust the caller. Defence in depth against shell injection into the Box.
+ */
+export function assertValidSlug(slug: string): string {
+  if (!SLUG_RE.test(slug)) {
+    throw new Error(`Unsafe Project slug: '${slug}'.`);
+  }
+  return slug;
+}
+
 /** Safely resolve a Project slug to a directory, refusing anything outside the Workspace. */
 export function resolveProjectDir(workspaceDir: string, slug: string): string {
   const base = resolve(workspaceDir);

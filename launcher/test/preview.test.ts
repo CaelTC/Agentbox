@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   PREVIEW_PORTS,
+  TERMINAL_PORT,
   detectServedPort,
   loopbackPublishArgs,
   previewUrl,
@@ -42,6 +43,13 @@ describe("detectServedPort", () => {
 
   it("returns undefined when nothing is listening", () => {
     expect(detectServedPort([])).toBeUndefined();
+  });
+
+  it("never picks the always-on web terminal port as the served page", () => {
+    expect(TERMINAL_PORT).toBe(7681);
+    expect(detectServedPort([TERMINAL_PORT])).toBeUndefined();
+    expect(detectServedPort([TERMINAL_PORT, 5173])).toBe(5173);
+    expect(detectServedPort([TERMINAL_PORT, 9999])).toBe(9999);
   });
 
   it("only ever returns a port inside the published (forwardable) set or a live port", () => {

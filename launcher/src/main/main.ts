@@ -18,6 +18,11 @@ function createWindow(): BrowserWindow {
     webPreferences: {
       preload: join(__dirname, "..", "preload.js"),
       contextIsolation: true,
+      // The preload require()s local modules (./shared/api) for the IPC contract;
+      // a sandboxed preload can only require("electron"), so it would fail to load
+      // and window.claudebox would never be exposed. contextIsolation still walls
+      // the renderer off from Node — the threat model is the Box, not this local UI.
+      sandbox: false,
     },
   });
   void window.loadFile(join(__dirname, "..", "renderer", "index.html"));

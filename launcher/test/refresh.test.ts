@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hashDefinition, refreshDecision, shouldRebuild } from "../src/core/refresh";
+import { commitTrusted, hashDefinition, refreshDecision, shouldRebuild } from "../src/core/refresh";
 
 const defA = [
   { path: "Dockerfile", content: "FROM node:22" },
@@ -24,6 +24,22 @@ describe("hashDefinition", () => {
     expect(hashDefinition(defA)).not.toBe(
       hashDefinition([...defA, { path: "new.txt", content: "x" }]),
     );
+  });
+});
+
+describe("commitTrusted (supply-chain gate, ADR 0002)", () => {
+  it("trusts any pull when no commit is pinned", () => {
+    expect(commitTrusted(undefined, "deadbeef")).toBe(true);
+    expect(commitTrusted(undefined, undefined)).toBe(true);
+  });
+
+  it("trusts only an exact match when a commit is pinned", () => {
+    expect(commitTrusted("abc123", "abc123")).toBe(true);
+  });
+
+  it("refuses a HEAD that differs from the pin (compromised/unexpected upstream)", () => {
+    expect(commitTrusted("abc123", "def456")).toBe(false);
+    expect(commitTrusted("abc123", undefined)).toBe(false);
   });
 });
 

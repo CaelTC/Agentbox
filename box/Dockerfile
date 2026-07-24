@@ -25,7 +25,18 @@ RUN apt-get update \
        ipset \
        iproute2 \
        sudo \
+       tmux \
   && rm -rf /var/lib/apt/lists/*
+
+# Web console: a small Starlette app (served in-Box) giving the Mac's browser a
+# sablebox-style console — session tabs, a toggleable rail, a Files view — bridged
+# to tmux over a WebSocket (replaces ttyd). Isolated in a venv; pinned (ADR 0002).
+RUN python3 -m venv /opt/terminal-venv \
+  && /opt/terminal-venv/bin/pip install --no-cache-dir \
+       starlette==0.37.2 \
+       jinja2==3.1.4 \
+       uvicorn==0.30.6 \
+       websockets==12.0
 
 # Rust via rustup, installed system-wide so every session sees `cargo`/`rustc`.
 ENV RUSTUP_HOME=/usr/local/rustup \
@@ -47,7 +58,10 @@ RUN useradd --create-home --shell /bin/bash sandbox \
 
 COPY egress/apply-egress.sh /usr/local/bin/apply-egress.sh
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/apply-egress.sh /usr/local/bin/entrypoint.sh
+COPY start-terminal.sh /usr/local/bin/start-terminal.sh
+COPY terminal/ /opt/terminal/
+RUN chmod +x /usr/local/bin/apply-egress.sh /usr/local/bin/entrypoint.sh \
+      /usr/local/bin/start-terminal.sh
 
 # The Workspace mounts here as a named volume. Owning it as `sandbox` before the
 # volume is created means the fresh named volume inherits that ownership, so

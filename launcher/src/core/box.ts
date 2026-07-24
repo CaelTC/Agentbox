@@ -6,7 +6,7 @@ import {
   WORKSPACE_DIR,
   WORKSPACE_VOLUME,
 } from "./config";
-import { PREVIEW_PORTS, loopbackPublishArgs } from "./preview";
+import { PREVIEW_PORTS, TERMINAL_PORT, loopbackPublishArgs } from "./preview";
 
 export interface BoxBuildOptions {
   /** Directory containing the Box's Dockerfile (the checked-in `box/` dir). */
@@ -57,9 +57,18 @@ export function boxRunArgs(options: BoxRunOptions = {}): string[] {
     // without granting broad privilege.
     "--cap-add",
     "NET_ADMIN",
-    // Publish preview ports on loopback so the Mac's browser can reach a served
-    // page, without exposing the Box to the LAN (ticket 07).
-    ...loopbackPublishArgs(previewPorts),
+    // Disable IPv6 on the Box's interfaces. The Egress Policy is IPv4 (iptables);
+    // without this, any v6 route would bypass it entirely (threat B). There is no
+    // legitimate v6 need in the Box. Backstopped by the ip6tables deny-all in
+    // apply-egress.sh.
+    "--sysctl",
+    "net.ipv6.conf.all.disable_ipv6=1",
+    "--sysctl",
+    "net.ipv6.conf.default.disable_ipv6=1",
+    // Publish preview ports + the web terminal on loopback so the Mac's browser
+    // can reach a served page or the tmux session, without exposing the Box to
+    // the LAN (ticket 07, ADR 0001).
+    ...loopbackPublishArgs([...previewPorts, TERMINAL_PORT]),
     // Workspace (the user's work) and home (the Claude login) both persist as
     // NAMED VOLUMES — never host mounts (ADR 0001, threat A).
     "-v",

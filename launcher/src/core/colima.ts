@@ -26,7 +26,12 @@ export function colimaStatusArgs(profile: string = COLIMA_PROFILE): string[] {
   return ["status", "--profile", profile];
 }
 
-/** Colima prints "colima is running" on the status stream when the VM is up. */
+/**
+ * Colima prints "... is running" on the status stream when the VM is up. With a
+ * named profile the line is `colima [profile=claudebox] is running`, so match on
+ * "is running" rather than "colima is running" — and NOT the "is not running"
+ * that colima prints when down.
+ */
 export function isColimaRunning(statusOutput: string): boolean {
-  return /\bcolima is running\b/i.test(statusOutput);
+  return /\bis running\b/i.test(statusOutput);
 }

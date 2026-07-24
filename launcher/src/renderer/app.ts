@@ -1,6 +1,3 @@
-import type { Project } from "../core/projects";
-import type { StarterTemplate } from "../core/templates";
-
 /**
  * The home screen (ticket 05) and the in-Project session view (tickets 04/06/07/08).
  * Pure DOM against the narrow `window.claudebox` bridge — no Node, Docker, or

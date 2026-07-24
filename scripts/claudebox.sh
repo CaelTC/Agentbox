@@ -62,11 +62,14 @@ else
   docker run -d \
     --name "$CONTAINER" \
     --cap-add NET_ADMIN \
+    --sysctl net.ipv6.conf.all.disable_ipv6=1 \
+    --sysctl net.ipv6.conf.default.disable_ipv6=1 \
     -p 127.0.0.1:3000:3000 \
     -p 127.0.0.1:4321:4321 \
     -p 127.0.0.1:5173:5173 \
     -p 127.0.0.1:8000:8000 \
     -p 127.0.0.1:8080:8080 \
+    -p 127.0.0.1:7681:7681 \
     -v "${VOLUME}:${WORKSPACE_DIR}" \
     -v "${HOME_VOLUME}:${HOME_DIR}" \
     "$IMAGE" \
@@ -74,6 +77,7 @@ else
 fi
 
 # 4. Drop the user into Claude Code with permissions bypassed.
+log "Web terminal (tmux) at http://127.0.0.1:7681 — open it in your browser."
 log "Entering Claude Code — type a prompt to talk to Claude."
 exec docker exec -it -w "$WORKSPACE_DIR" "$CONTAINER" \
   claude --dangerously-skip-permissions

@@ -1,6 +1,7 @@
 import { BOX_CONTAINER, WORKSPACE_DIR } from "../core/config";
 import type { Project, ProjectMeta } from "../core/projects";
 import {
+  assertValidSlug,
   metaRelPath,
   parseProjectMeta,
   sanitizeProjectName,
@@ -18,8 +19,9 @@ import { run } from "./exec";
  * tested core helpers; only the EFFECTS live here.
  */
 
-const metaPath = (slug: string) => `${WORKSPACE_DIR}/${slug}/${metaRelPath}`;
-const projectPath = (slug: string) => `${WORKSPACE_DIR}/${slug}`;
+// assertValidSlug before building any path that reaches a Box-side shell.
+const metaPath = (slug: string) => `${WORKSPACE_DIR}/${assertValidSlug(slug)}/${metaRelPath}`;
+const projectPath = (slug: string) => `${WORKSPACE_DIR}/${assertValidSlug(slug)}`;
 
 /** List Projects by inspecting /workspace inside the Box. */
 export async function boxListProjects(): Promise<Project[]> {
@@ -28,8 +30,9 @@ export async function boxListProjects(): Promise<Project[]> {
     BOX_CONTAINER,
     "sh",
     "-c",
-    // one slug per line, directories only, skip dotfiles
-    `for d in ${WORKSPACE_DIR}/*/; do b=$(basename "$d"); case "$b" in .*) ;; *) echo "$b";; esac; done 2>/dev/null`,
+    // one slug per line, directories only, skip dotfiles. `[ -d ]` skips the
+    // literal `/workspace/*/` POSIX sh leaves when the Workspace is empty.
+    `for d in ${WORKSPACE_DIR}/*/; do [ -d "$d" ] || continue; b=$(basename "$d"); case "$b" in .*) ;; *) echo "$b";; esac; done 2>/dev/null`,
   ]);
 
   const slugs = listing.stdout
@@ -80,7 +83,7 @@ async function writeBoxFile(path: string, content: string): Promise<void> {
     BOX_CONTAINER,
     "sh",
     "-c",
-    `echo ${b64} | base64 -d > ${path}`,
+    `echo ${b64} | base64 -d > "${path}"`,
   ]);
 }
 
@@ -99,7 +102,7 @@ export async function boxUpload(sources: string[], slug: string): Promise<Upload
 
   // Pre-fetch existing names once so the resolver can dedupe synchronously.
   const existing = new Set<string>();
-  const listing = await run("docker", ["exec", BOX_CONTAINER, "sh", "-c", `ls -1 ${dir} 2>/dev/null`]);
+  const listing = await run("docker", ["exec", BOX_CONTAINER, "sh", "-c", `ls -1 "${dir}" 2>/dev/null`]);
   for (const name of listing.stdout.split("\n").map((s) => s.trim()).filter(Boolean)) {
     existing.add(`${dir}/${name}`);
   }

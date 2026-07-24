@@ -16,6 +16,7 @@ BLOCKED_CIDRS=(
   "172.16.0.0/12"
   "192.168.0.0/16"
   "169.254.0.0/16"
+  "100.64.0.0/10"
 )
 
 # The host gateway — the Box's default route. Blocking it stops the Box reaching
@@ -23,14 +24,28 @@ BLOCKED_CIDRS=(
 # still cover typical gateways).
 GATEWAY="$(ip route show default 2>/dev/null | awk '/default/ {print $3; exit}')"
 
-# Start from a clean OUTPUT chain each launch so re-runs are idempotent.
+# Fail CLOSED: set the default policy to DROP BEFORE touching the rules, so any
+# partial, interrupted, or maliciously re-triggered run (the sandbox user may
+# re-invoke this via sudo) leaves egress denied rather than wide open. The flush
+# then rebuilds the allow/deny rules on top of a deny-by-default chain.
+iptables -P OUTPUT DROP
 iptables -F OUTPUT
 
-# 1. Loopback — carries the embedded DNS resolver, so DNS keeps working.
+# 1. Loopback — under Docker Desktop this carries the embedded DNS resolver.
 iptables -A OUTPUT -o lo -j ACCEPT
 
 # 2. Return traffic for connections we initiated.
 iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+
+# 2b. DNS to the container's configured resolver(s). Under Colima the resolver is
+#     the gateway (e.g. 192.168.5.1) — inside a blocked range below — so without
+#     this every name lookup is dropped and the Box is offline. Port 53 ONLY:
+#     opens no other access to that host, and the gateway/CIDR DROPs below still
+#     block all non-DNS traffic to it even when the resolver IS the gateway.
+for ns in $(awk '/^nameserver/ {print $2}' /etc/resolv.conf 2>/dev/null); do
+  iptables -A OUTPUT -d "${ns}" -p udp --dport 53 -j ACCEPT
+  iptables -A OUTPUT -d "${ns}" -p tcp --dport 53 -j ACCEPT
+done
 
 # 3. Host gateway, blocked explicitly.
 if [[ -n "${GATEWAY}" ]]; then
@@ -45,4 +60,14 @@ done
 # 5. Everything else — the public internet — is allowed.
 iptables -A OUTPUT -j ACCEPT
 
-echo "[egress] policy applied (gateway=${GATEWAY:-none}); public internet open, private ranges blocked."
+# 6. IPv6: the Launcher disables IPv6 on the Box's interfaces (--sysctl
+#    disable_ipv6=1), so there is no v6 path to bypass the IPv4 rules above. This
+#    is the in-Box backstop — deny ALL v6 egress. Best-effort: never abort startup
+#    if the v6 stack/module is absent (the sysctl is the hard guarantee).
+if command -v ip6tables >/dev/null 2>&1; then
+  ip6tables -P OUTPUT DROP            2>/dev/null || true
+  ip6tables -F OUTPUT                 2>/dev/null || true
+  ip6tables -A OUTPUT -o lo -j ACCEPT 2>/dev/null || true
+fi
+
+echo "[egress] policy applied (gateway=${GATEWAY:-none}); default-drop, public internet open, private+CGNAT+IPv6 blocked."

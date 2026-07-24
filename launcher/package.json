@@ -9,11 +9,20 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "build": "tsc"
+    "build": "tsc && npm run assets",
+    "assets": "cp src/renderer/index.html src/renderer/styles.css node_modules/xterm/lib/xterm.js node_modules/xterm/css/xterm.css dist/renderer/",
+    "start": "npm run build && electron .",
+    "package": "npm run build && electron-packager . Claudebox --platform=darwin --arch=arm64 --out=release --overwrite --app-bundle-id=com.claudebox.launcher --ignore=\"/(src|test|release|\\.scratch|install)($|/)\""
   },
   "devDependencies": {
+    "@electron/packager": "^20.0.4",
     "@types/node": "^20.14.0",
+    "electron": "^43.2.0",
     "typescript": "^5.5.4",
     "vitest": "^2.0.5"
+  },
+  "dependencies": {
+    "node-pty": "^1.1.0",
+    "xterm": "^5.3.0"
   }
 }

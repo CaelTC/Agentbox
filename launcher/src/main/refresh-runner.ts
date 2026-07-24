@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
-import { BOX_IMAGE } from "../core/config";
-import { hashDefinition, refreshDecision, type DefinitionFile } from "../core/refresh";
+import { BOX_IMAGE, DEFINITION_REPO, PINNED_DEFINITION_COMMIT } from "../core/config";
+import { commitTrusted, hashDefinition, refreshDecision, type DefinitionFile } from "../core/refresh";
 import { run, runOk } from "./exec";
 import { claudeboxHome, hostBoxDefinitionDir, hostDefinitionDir } from "./paths";
 
@@ -29,6 +29,16 @@ export async function refreshOnLaunch(): Promise<RefreshResult> {
 
   switch (decision.action) {
     case "rebuild": {
+      // Integrity gate (threat B): never auto-build a definition we don't trust.
+      // Fail CLOSED — on any doubt keep the last-known-good image if we have one,
+      // else surface an error rather than build something unverified.
+      const untrusted = await definitionDistrustReason();
+      if (untrusted) {
+        return previousHash === undefined
+          ? { action: "error", reason: untrusted }
+          : { action: "started", reason: `${untrusted} Keeping the last-built Box image.` };
+      }
+
       const built = await run("docker", ["build", "-t", BOX_IMAGE, hostBoxDefinitionDir()]);
       if (built.code !== 0) {
         return { action: "error", reason: `Box rebuild failed: ${built.stderr}` };
@@ -41,6 +51,34 @@ export async function refreshOnLaunch(): Promise<RefreshResult> {
     case "error":
       return { action: "error", reason: decision.reason };
   }
+}
+
+/**
+ * Return a reason string if the pulled definition must NOT be trusted for an
+ * auto-build, or undefined if it's safe. Checks (a) the origin remote is exactly
+ * the expected public repo — a repointed origin could feed a malicious
+ * definition — and (b) the pulled HEAD matches PINNED_DEFINITION_COMMIT when a
+ * pin is configured. An unpinned boundary is allowed but logged.
+ */
+async function definitionDistrustReason(): Promise<string | undefined> {
+  const dir = hostDefinitionDir();
+
+  const origin = (await run("git", ["-C", dir, "config", "--get", "remote.origin.url"])).stdout.trim();
+  if (origin && origin !== DEFINITION_REPO) {
+    return `Refusing to build: the Box definition's origin is '${origin}', not the expected ${DEFINITION_REPO}.`;
+  }
+
+  const head = (await run("git", ["-C", dir, "rev-parse", "HEAD"])).stdout.trim() || undefined;
+  if (!commitTrusted(PINNED_DEFINITION_COMMIT, head)) {
+    return `Refusing to build: definition HEAD ${head ?? "(unknown)"} does not match the pinned commit ${PINNED_DEFINITION_COMMIT}.`;
+  }
+  if (!PINNED_DEFINITION_COMMIT) {
+    console.warn(
+      "Refresh on Launch: Box definition is UNPINNED — building whatever upstream serves. " +
+        "Set PINNED_DEFINITION_COMMIT to a reviewed commit to close this (threat B).",
+    );
+  }
+  return undefined;
 }
 
 function readStoredHash(): string | undefined {

@@ -41,6 +41,12 @@ describe("isColimaRunning", () => {
     expect(isColimaRunning("colima is running")).toBe(true);
   });
 
+  it("is true for the named-profile status line colima actually prints", () => {
+    // Real output: `colima [profile=claudebox] is running`. The old
+    // "colima is running" match missed this, so the Box was mis-built.
+    expect(isColimaRunning('time="..." level=info msg="colima [profile=claudebox] is running"')).toBe(true);
+  });
+
   it("is false when colima is not running", () => {
     expect(isColimaRunning("colima is not running")).toBe(false);
     expect(isColimaRunning("")).toBe(false);

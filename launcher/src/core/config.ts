@@ -49,3 +49,15 @@ export const HOME_DIR = "/home/sandbox";
 
 /** Public GitHub repo the Box definition is refreshed from (ADR 0002). */
 export const DEFINITION_REPO = "https://github.com/claudebox/claudebox.git";
+
+/**
+ * The reviewed Box-definition commit to build. The definition IS the security
+ * boundary and Refresh-on-Launch builds it automatically, so an unpinned build
+ * trusts whatever upstream currently serves (a compromised repo/namespace would
+ * silently redefine the walls — threat B). Set this to a maintainer-reviewed
+ * commit SHA on each Box release: the Launcher will then refuse to build any
+ * other HEAD and keep the last-known-good image. `undefined` = unpinned (the
+ * runner logs a warning). A pinned commit is NOT a credential — it stays
+ * consistent with ADR 0002's "no keys".
+ */
+export const PINNED_DEFINITION_COMMIT: string | undefined = undefined;

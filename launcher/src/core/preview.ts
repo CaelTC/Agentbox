@@ -13,6 +13,13 @@
 export const PREVIEW_PORTS: readonly number[] = [3000, 4321, 5173, 8000, 8080];
 
 /**
+ * The Box's web terminal (ttyd → tmux) listens here, published on loopback so the
+ * Mac's browser can open a tmux session. Kept OUT of PREVIEW_PORTS: it is always
+ * listening, so Preview must never mistake it for the user's dev server.
+ */
+export const TERMINAL_PORT = 7681;
+
+/**
  * `docker run` publish args, each bound to loopback on the host. Binding to
  * 127.0.0.1 (not 0.0.0.0) keeps the forward scoped to the Mac's browser and
  * off the LAN.
@@ -35,7 +42,9 @@ export function previewUrl(port: number): string {
  * resolve); otherwise fall back to the first listening port.
  */
 export function detectServedPort(listeningPorts: readonly number[]): number | undefined {
-  if (listeningPorts.length === 0) return undefined;
-  const known = listeningPorts.find((p) => PREVIEW_PORTS.includes(p));
-  return known ?? listeningPorts[0];
+  // The web terminal is always listening; it is never the page the user wants to preview.
+  const candidates = listeningPorts.filter((p) => p !== TERMINAL_PORT);
+  if (candidates.length === 0) return undefined;
+  const known = candidates.find((p) => PREVIEW_PORTS.includes(p));
+  return known ?? candidates[0];
 }

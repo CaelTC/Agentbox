@@ -1,0 +1,35 @@
+{% extends "_shell.html" %}
+{% block title %}Files · {{ s.title }}{% endblock %}
+{% block dock_main %}
+<div class="dock-doc">
+  <p class="muted">
+    <a href="/sessions/{{ s.id }}/files">repo</a>
+    {% if rel %}/ {{ rel }}{% endif %}
+  </p>
+
+  {% if is_dir %}
+  <table class="card" style="padding:0;">
+    <tbody>
+      {% if parent is not none %}
+      <tr><td><a href="/sessions/{{ s.id }}/files?path={{ parent }}">../</a></td></tr>
+      {% endif %}
+      {% for e in entries %}
+      <tr>
+        <td>
+          {% if e.is_dir %}📁{% else %}📄{% endif %}
+          <a href="/sessions/{{ s.id }}/files?path={{ e.rel }}">{{ e.name }}{{ "/" if e.is_dir }}</a>
+        </td>
+      </tr>
+      {% endfor %}
+      {% if not entries %}<tr><td class="muted">Empty directory.</td></tr>{% endif %}
+    </tbody>
+  </table>
+  {% else %}
+    {% if body is none %}
+    <p class="muted"><em>Binary file — not shown.</em></p>
+    {% else %}
+    <pre class="mono" style="overflow:auto;border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:.7rem .9rem;font-size:13px;line-height:1.5;">{{ body }}</pre>
+    {% endif %}
+  {% endif %}
+</div>
+{% endblock %}
