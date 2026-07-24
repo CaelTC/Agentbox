@@ -47,7 +47,8 @@ export const STARTER_TEMPLATES: readonly StarterTemplate[] = [
     defaultProjectName: "Spreadsheet Analysis",
     seedPrompt:
       "I'm going to upload a spreadsheet (CSV). Once it's here, read it, summarise " +
-      "what's in it, and point out anything interesting or surprising.",
+      "what's in it, and point out anything interesting or surprising. " +
+      "Anonymise any personal or identifying data before showing it back to me.",
     needs: ["upload"],
   },
 ];

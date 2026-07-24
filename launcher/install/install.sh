@@ -10,7 +10,7 @@
 set -euo pipefail
 
 # The single source of truth for the public definition repo. HTTPS, no auth.
-DEFINITION_REPO="https://github.com/claudebox/claudebox.git"
+DEFINITION_REPO="https://github.com/CaelTC/Claudebox.git"
 CLAUDEBOX_HOME="${CLAUDEBOX_HOME:-$HOME/.claudebox}"
 APPLICATIONS_DIR="${APPLICATIONS_DIR:-/Applications}"
 

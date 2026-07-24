@@ -48,7 +48,7 @@ export const HOME_VOLUME = "claudebox-home";
 export const HOME_DIR = "/home/sandbox";
 
 /** Public GitHub repo the Box definition is refreshed from (ADR 0002). */
-export const DEFINITION_REPO = "https://github.com/claudebox/claudebox.git";
+export const DEFINITION_REPO = "https://github.com/CaelTC/Claudebox.git";
 
 /**
  * The reviewed Box-definition commit to build. The definition IS the security
