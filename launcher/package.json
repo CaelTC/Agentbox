@@ -1,0 +1,19 @@
+{
+  "name": "claudebox-launcher",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The Claudebox Launcher — the double-clickable macOS app that is a Sandbox User's entire interface to Claudebox.",
+  "main": "dist/main/main.js",
+  "type": "commonjs",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "build": "tsc"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "typescript": "^5.5.4",
+    "vitest": "^2.0.5"
+  }
+}
