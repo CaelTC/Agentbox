@@ -48,7 +48,7 @@ $ProgramsDir = if ($env:CLAUDEBOX_PROGRAMS) { $env:CLAUDEBOX_PROGRAMS }
 $LauncherFolder = 'Claudebox-win32-x64'
 $LauncherExe = 'Claudebox.exe'
 
-# The Engine. Keep in step with launcher/src/core/config.ts (PODMAN_MACHINE,
+# The Engine. Keep in step with launcher/src/core/config.ts (ENGINE_PROFILE,
 # BOX_IMAGE) and core/podman.ts (the init flags).
 $PodmanMachine = 'claudebox'
 $BoxImage = 'claudebox:latest'
@@ -292,19 +292,24 @@ function Start-Machine {
   Invoke-Checked { podman machine start $PodmanMachine }
 }
 
-# Let podman do the parsing - `--format` prints the bare state, so there is no
-# JSON to pick through and a missing machine is just a non-zero exit. Mirrors
-# podmanMachineInspectArgs in core/podman.ts.
+# `--format` leaves podman to parse its own JSON and print the state alone, as
+# core/podman.ts's podmanMachineInspectArgs does. A missing machine exits
+# non-zero, which must read as "not running" rather than fail the install - and
+# it reaches that non-zero only because the preference is relaxed around the
+# call: a missing machine writes to stderr, and this redirects stderr, which is
+# precisely the 5.1 trap Invoke-Probe exists for (see its comment). Not routed
+# through Invoke-Probe itself because this needs the stdout, not just the code.
 function Test-MachineRunning {
   $previous = $ErrorActionPreference
   $ErrorActionPreference = 'Continue'
   try {
-    $state = & podman machine inspect --format '{{.State}}' $PodmanMachine 2>$null
+    $output = & podman machine inspect --format '{{.State}}' $PodmanMachine 2>$null
   }
   finally {
     $ErrorActionPreference = $previous
   }
-  return ($LASTEXITCODE -eq 0 -and "$state".Trim() -eq 'running')
+  if ($LASTEXITCODE -ne 0) { return $false }
+  return ($output | Out-String).Trim() -eq 'running'
 }
 
 # --- 7. Prepare the initial Box image ----------------------------------------

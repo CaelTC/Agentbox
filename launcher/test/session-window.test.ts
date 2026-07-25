@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   chromeAppLaunch,
-  chromeAppOpenArgs,
   ensureSessionExecArgs,
   sessionUrl,
   windowsChromePaths,
@@ -39,17 +38,6 @@ describe("ensureSessionExecArgs", () => {
   });
 });
 
-describe("chromeAppOpenArgs", () => {
-  it("opens a chromeless app-mode window (no URL bar or tabs)", () => {
-    expect(chromeAppOpenArgs("http://localhost:7681/sessions/x")).toEqual([
-      "-na",
-      "Google Chrome",
-      "--args",
-      "--app=http://localhost:7681/sessions/x",
-    ]);
-  });
-});
-
 describe("windowsChromePaths", () => {
   it("probes the three standard install locations, in order", () => {
     expect(windowsChromePaths(windowsEnv)).toEqual([
@@ -69,10 +57,10 @@ describe("windowsChromePaths", () => {
 describe("chromeAppLaunch", () => {
   const url = "http://localhost:7681/sessions/x";
 
-  it("on the Mac still goes through `open` with the unchanged argv", () => {
+  it("on the Mac still goes through `open`, in a chromeless app-mode window", () => {
     expect(chromeAppLaunch(url, "darwin")).toEqual({
       command: "open",
-      args: chromeAppOpenArgs(url),
+      args: ["-na", "Google Chrome", "--args", `--app=${url}`],
     });
   });
 

@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { RESOURCE_CAP } from "../src/core/config";
 import {
-  isPodmanMachineRunning,
   podmanMachineInitArgs,
   podmanMachineInspectArgs,
   podmanMachineSetRootfulArgs,
@@ -37,14 +35,23 @@ describe("podmanMachineInitArgs", () => {
   });
 
   it("names the machine last, so it is the positional arg and not a flag value", () => {
-    expect(podmanMachineInitArgs(RESOURCE_CAP, "other").at(-1)).toBe("other");
+    expect(podmanMachineInitArgs().at(-1)).toBe("claudebox");
   });
 });
 
 describe("podmanMachineStartArgs / podmanMachineInspectArgs", () => {
-  it("start and inspect address the claudebox machine", () => {
+  it("start addresses the claudebox machine", () => {
     expect(podmanMachineStartArgs()).toEqual(["machine", "start", "claudebox"]);
-    expect(podmanMachineInspectArgs()).toEqual(["machine", "inspect", "claudebox"]);
+  });
+
+  it("inspect asks podman for the State alone, so nothing here parses its JSON", () => {
+    expect(podmanMachineInspectArgs()).toEqual([
+      "machine",
+      "inspect",
+      "--format",
+      "{{.State}}",
+      "claudebox",
+    ]);
   });
 });
 
@@ -56,21 +63,5 @@ describe("podmanMachineSetRootfulArgs", () => {
       "--rootful",
       "claudebox",
     ]);
-  });
-});
-
-describe("isPodmanMachineRunning", () => {
-  it("is true for the JSON array podman machine inspect prints when the VM is up", () => {
-    expect(isPodmanMachineRunning('[{"Name":"claudebox","State":"running"}]')).toBe(true);
-  });
-
-  it("is false when the machine exists but is stopped", () => {
-    expect(isPodmanMachineRunning('[{"Name":"claudebox","State":"stopped"}]')).toBe(false);
-  });
-
-  it("is false for a bare error line or empty output, rather than throwing", () => {
-    expect(isPodmanMachineRunning("Error: claudebox: VM does not exist")).toBe(false);
-    expect(isPodmanMachineRunning("")).toBe(false);
-    expect(isPodmanMachineRunning("null")).toBe(false);
   });
 });

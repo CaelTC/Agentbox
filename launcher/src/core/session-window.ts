@@ -26,11 +26,6 @@ export function ensureSessionExecArgs(slug: string, container: string = BOX_CONT
   return ["exec", container, "claudebox-session", assertValidSlug(slug)];
 }
 
-/** `open` argv for a chromeless Chrome app-mode window showing `url`. */
-export function chromeAppOpenArgs(url: string): string[] {
-  return ["-na", "Google Chrome", "--args", `--app=${url}`];
-}
-
 /**
  * Where Chrome installs on Windows, in probe order (issue #10). These three
  * cover every winget/installer default, so no registry parsing — and "is it on
@@ -62,7 +57,8 @@ export function chromeAppLaunch(
   exists: (path: string) => boolean = existsSync,
 ): ChromeLaunch | undefined {
   if (platform !== "win32") {
-    return { command: "open", args: chromeAppOpenArgs(url) };
+    // `--app=` is what makes the window chromeless: no URL bar, no tabs.
+    return { command: "open", args: ["-na", "Google Chrome", "--args", `--app=${url}`] };
   }
   const chrome = windowsChromePaths(env).find(exists);
   return chrome === undefined ? undefined : { command: chrome, args: [`--app=${url}`] };
