@@ -119,6 +119,61 @@ docs/adr/    Architecture Decision Records.
 .scratch/    The originating tickets.
 ```
 
+## Installing
+
+The Install Script runs **once, on the machine being provisioned, by whoever
+provisions it** — never by the Sandbox User. It installs the Engine, Google
+Chrome (for the Project session window), the initial Box image and the Launcher,
+and it configures **no credential anywhere**: the definition repo is public, so
+there is no secret to leak (ADR 0002).
+
+### macOS
+
+```bash
+./launcher/install/install.sh
+```
+
+The Engine is Colima. No elevation is needed beyond Homebrew's own prompts.
+
+### Windows
+
+The Engine is **podman** on a WSL2 machine (Colima is macOS-only, and Docker
+Desktop reintroduces the licence Colima was chosen to avoid).
+
+**`install.ps1` must be run as Administrator.** This is a real difference from
+the Mac: `wsl --install` and several winget packages need it. Run it from the
+Sandbox User's own account, elevating when Windows asks, so the Launcher and its
+Start Menu entry land in that user's profile.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File launcher\install\install.ps1
+```
+
+It performs nine steps, all of them safely re-runnable:
+
+1. Require Administrator.
+2. Ensure WSL2. **On a machine that has never had WSL2, this enables it and then
+   stops with "restart Windows and run this script again".** That restart is
+   unavoidable; after it, re-running the script carries on from where it left off.
+3. `winget install` podman, git and Chrome (skipping any already present).
+4. Write `%USERPROFILE%\.wslconfig` with the Resource Cap's CPU/memory. Two
+   honest limits here: `.wslconfig` applies to *every* WSL distro on the machine,
+   and it has no disk ceiling — so on Windows the Resource Cap does not yet bound
+   disk the way it does on the Mac.
+5. Clone the public definition repo to `%USERPROFILE%\.claudebox\definition`
+   over HTTPS, with no authentication.
+6. `podman machine init` at the cap → `podman machine set --rootful` → `start`.
+7. `podman build` the Box image.
+8. Run `box/egress/verify-egress.sh` inside a throwaway Box. **If the Egress
+   Policy does not hold, the install stops here** — a Box that cannot keep
+   itself off the laptop and the LAN must never accept a Sandbox User.
+9. Copy the Launcher to `%LOCALAPPDATA%\Programs\Claudebox` and create a Start
+   Menu shortcut.
+
+Step 9 needs a prebuilt Launcher folder (`launcher/Claudebox-win32-x64`),
+cross-packaged from a Mac with `npm run package:win` — see `launcher/README.md`.
+Without it the script says so and finishes; everything else is already in place.
+
 ## Working on it
 
 The tested logic lives in `launcher/`:
