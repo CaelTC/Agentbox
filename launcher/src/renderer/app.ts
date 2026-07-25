@@ -14,44 +14,99 @@ function el(tag: string, props: Record<string, unknown> = {}, children: (Node | 
   return node;
 }
 
+/**
+ * The Nootka mark, held in the one circular element in the app — the barrel form,
+ * used as a single hero accent rather than blanket roundness. The supplied asset
+ * is the icon alone in black, so it sits on a white disc and is never recolored.
+ */
+function heroMark(): HTMLElement {
+  return el("div", { className: "hero__mark" }, [
+    el("div", { className: "hero__disc" }, [
+      el("img", { src: "./assets/nootka-mark.png", alt: "Nootka Saunas" }),
+    ]),
+  ]);
+}
+
+/** A full-bleed dark brand band split against a light panel holding the mark. */
+function hero(copy: (Node | string)[], modifier = ""): HTMLElement {
+  return el("header", { className: `hero ${modifier}`.trim() }, [
+    el("div", { className: "hero__copy" }, copy),
+    heroMark(),
+  ]);
+}
+
+function section(kind: string, children: (Node | string)[]): HTMLElement {
+  return el("section", { className: `section section--${kind}` }, [
+    el("div", { className: "container" }, children),
+  ]);
+}
+
+/** Place-anchored, and the same on every screen. */
+function footer(): HTMLElement {
+  return el("footer", { className: "footer" }, [
+    el("div", { className: "container" }, ["Claudebox runs on your Mac. Built in British Columbia."]),
+  ]);
+}
+
 async function renderHome(): Promise<void> {
   const [projects, templates] = await Promise.all([cb.listProjects(), cb.listTemplates()]);
   const root = app();
   root.replaceChildren();
-  root.append(el("h1", { textContent: "Claudebox" }));
-  root.append(el("p", { className: "sub", textContent: "Pick a Project, or start something new." }));
+
+  root.append(
+    hero([
+      el("p", { className: "eyebrow", textContent: "Claudebox" }),
+      el("h1", { className: "hero__title", textContent: "A sealed room." }),
+      el("p", {
+        className: "lead",
+        textContent: "Claude works inside a sandbox on your Mac. Nothing leaves it unless you carry it out.",
+      }),
+    ]),
+  );
 
   // Starter Templates — so the user never faces a blank chat (ticket 08).
-  root.append(el("h2", { textContent: "Start something new" }));
   const templateGrid = el("div", { className: "grid" });
   for (const t of templates) {
     templateGrid.append(templateCard(t));
   }
-  root.append(templateGrid);
 
   // A blank Project.
-  const nameInput = el("input", { type: "text", placeholder: "Name your Project…" }) as HTMLInputElement;
-  const createBtn = el("button", { textContent: "Create blank Project" });
+  const nameInput = el("input", { type: "text", placeholder: "Name your project…" }) as HTMLInputElement;
+  const createBtn = el("button", { className: "btn", textContent: "Create blank project" });
   createBtn.addEventListener("click", async () => {
     if (!nameInput.value.trim()) return;
     const project = await cb.createProject(nameInput.value.trim());
     await openProject(project);
   });
-  root.append(el("div", { className: "new-project" }, [nameInput, createBtn]));
 
-  // Existing Projects (ticket 05).
-  root.append(el("h2", { textContent: "Your Projects" }));
+  root.append(
+    section("light", [
+      el("p", { className: "eyebrow", textContent: "Start something new" }),
+      templateGrid,
+      el("div", { className: "new-project" }, [nameInput, createBtn]),
+    ]),
+  );
+
+  // Existing Projects (ticket 05) — a dark band, so the list reads as its own place.
+  const projectBlock: (Node | string)[] = [el("p", { className: "eyebrow", textContent: "Your projects" })];
   if (projects.length === 0) {
-    root.append(el("p", { className: "empty", textContent: "No Projects yet — create one above." }));
+    projectBlock.push(
+      el("p", { className: "empty", textContent: "Nothing here yet. Start one above and it will appear." }),
+    );
   } else {
     const list = el("ul", { className: "projects" });
     for (const p of projects) {
-      const open = el("button", { textContent: p.name });
+      const open = el("button", {}, [
+        el("span", { textContent: p.name }),
+        el("span", { className: "meta", textContent: "Open" }),
+      ]);
       open.addEventListener("click", () => openProject(p));
       list.append(el("li", {}, [open]));
     }
-    root.append(list);
+    projectBlock.push(list);
   }
+  root.append(section("water", projectBlock));
+  root.append(footer());
 }
 
 function templateCard(t: StarterTemplate): HTMLElement {
@@ -66,6 +121,16 @@ function templateCard(t: StarterTemplate): HTMLElement {
   return card;
 }
 
+/** One action, its plain-language consequence, and the click that does it. */
+function actionCard(title: string, description: string, onClick: () => void): HTMLElement {
+  const card = el("button", { className: "card" }, [
+    el("strong", { textContent: title }),
+    el("span", { textContent: description }),
+  ]);
+  card.addEventListener("click", onClick);
+  return card;
+}
+
 /**
  * The per-Project control panel (ticket 04). The Claude session itself opens in
  * a separate Chrome app-mode window (via openSession); this window becomes the
@@ -75,26 +140,34 @@ async function openProject(project: Project): Promise<void> {
   const root = app();
   root.replaceChildren();
 
-  const back = el("button", { className: "link", textContent: "← Projects" });
+  const back = el("button", { className: "btn--link", textContent: "← All projects" });
   back.addEventListener("click", () => void renderHome());
 
-  const upload = el("button", { textContent: "Upload files" });
-  upload.addEventListener("click", async () => {
+  // Re-open the Chrome window on the same live session (still alive in tmux).
+  const reopen = el("button", { className: "btn", textContent: "Reopen session" });
+  reopen.addEventListener("click", () => void cb.openSession(project.slug));
+
+  root.append(
+    hero(
+      [
+        el("p", { className: "eyebrow", textContent: "Open project" }),
+        el("h1", { className: "hero__title", textContent: project.name }),
+        el("p", { className: "lead", textContent: "Claude is waiting in its own window. This one holds the controls." }),
+        el("div", { className: "hero__actions" }, [reopen, back]),
+      ],
+      "hero--project",
+    ),
+  );
+
+  const upload = actionCard("Upload files", "Bring documents in from your Mac.", async () => {
     const copied = await cb.upload(project.slug);
     if (copied.length) flash(`Uploaded ${copied.length} file(s) into ${project.name}.`);
-  });
-
-  const preview = el("button", { textContent: "Preview" });
-  preview.addEventListener("click", async () => {
-    const res = await cb.openPreview();
-    flash(res.opened ? `Opened ${res.url}` : "Nothing is being served yet — ask Claude to start a server.");
   });
 
   // Export (tickets 07/08): carry the Project's documents onto the real MacBook.
   // Both of these reach into the Box, so both can fail before they show anything
   // — an unreported rejection would leave the button looking simply dead.
-  const save = el("button", { textContent: "Save to my Mac" });
-  save.addEventListener("click", async () => {
+  const save = actionCard("Save to my Mac", "Carry this project's files back out.", async () => {
     try {
       renderExportPicker(project, await cb.listExportFiles(project.slug));
     } catch (err) {
@@ -102,38 +175,31 @@ async function openProject(project: Project): Promise<void> {
     }
   });
 
-  const show = el("button", { textContent: "Show files" });
-  show.addEventListener("click", async () => {
+  const show = actionCard("Show saved files", "Open the folder the saved copies land in.", async () => {
     try {
       const res = await cb.showSavedFiles(project.slug);
       flash(
         res.opened
           ? `Last saved ${when(res.lastSaved)}.`
-          : `Nothing saved yet — “Save to my Mac” puts this Project in ${res.dir}.`,
+          : `Nothing saved yet — “Save to my Mac” puts this project in ${res.dir}.`,
       );
     } catch (err) {
       flash(`Couldn't show the saved files: ${(err as Error).message}`);
     }
   });
 
-  // Re-open the Chrome window on the same live session (still alive in tmux).
-  const reopen = el("button", { textContent: "Reopen terminal" });
-  reopen.addEventListener("click", () => void cb.openSession(project.slug));
+  const preview = actionCard("Preview", "Look at whatever this project is serving.", async () => {
+    const res = await cb.openPreview();
+    flash(res.opened ? `Opened ${res.url}` : "Nothing is being served yet — ask Claude to start a server.");
+  });
 
   root.append(
-    el("div", { className: "toolbar" }, [
-      back,
-      el("strong", { textContent: project.name }),
-      upload,
-      save,
-      show,
-      preview,
-      reopen,
+    section("light", [
+      el("p", { className: "eyebrow", textContent: "This project" }),
+      el("div", { className: "grid grid--actions" }, [upload, save, show, preview]),
     ]),
   );
-  root.append(
-    el("p", { className: "sub", textContent: `${project.name} is open in a Claude session window.` }),
-  );
+  root.append(footer());
 
   await cb.openSession(project.slug);
 }
@@ -189,8 +255,8 @@ function renderExportPicker(project: Project, listing: ExportListing): void {
   }
 
   const total = el("p", { className: "total" });
-  const saveBtn = el("button", { textContent: "Save" }) as HTMLButtonElement;
-  const cancel = el("button", { className: "link", textContent: "Cancel" });
+  const saveBtn = el("button", { className: "btn", textContent: "Save" }) as HTMLButtonElement;
+  const cancel = el("button", { className: "btn--link", textContent: "Cancel" });
 
   const selection = () => boxes.filter((b) => b.checked);
   const refresh = () => {
@@ -257,18 +323,22 @@ function flash(message: string): void {
 }
 
 function renderStarting(): void {
-  const root = app();
-  root.replaceChildren(
-    el("h1", { textContent: "Claudebox" }),
-    el("p", { className: "sub", textContent: "Starting up — getting the sandbox ready…" }),
+  app().replaceChildren(
+    hero([
+      el("p", { className: "eyebrow", textContent: "Claudebox" }),
+      el("h1", { className: "hero__title", textContent: "Warming the room." }),
+      el("p", { className: "lead", textContent: "Getting the sandbox ready. This takes a moment on the first run." }),
+    ]),
   );
 }
 
 function renderBootstrapError(message: string): void {
-  const root = app();
-  root.replaceChildren(
-    el("h1", { textContent: "Claudebox" }),
-    el("p", { className: "error", textContent: message }),
+  app().replaceChildren(
+    hero([
+      el("p", { className: "eyebrow", textContent: "Claudebox" }),
+      el("h1", { className: "hero__title", textContent: "The room stayed cold." }),
+      el("p", { className: "error", textContent: message }),
+    ]),
   );
 }
 

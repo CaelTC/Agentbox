@@ -10,7 +10,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "build": "tsc && npm run assets",
-    "assets": "cp src/renderer/index.html src/renderer/styles.css dist/renderer/",
+    "assets": "cp src/renderer/index.html src/renderer/styles.css dist/renderer/ && cp -R src/renderer/assets dist/renderer/",
     "start": "npm run build && electron .",
     "package": "npm run build && electron-packager . Claudebox --platform=darwin --arch=arm64 --out=release --overwrite --app-bundle-id=com.claudebox.launcher --ignore=\"/(src|test|release|\\.scratch|install)($|/)\""
   },
