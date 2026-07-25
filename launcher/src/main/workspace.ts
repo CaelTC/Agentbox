@@ -7,6 +7,7 @@ import {
   resolveExportDir,
   resolveExportTarget,
   type BoxFile,
+  type ExportListing,
   type ExportResult,
 } from "../core/export";
 import type { Project, ProjectMeta } from "../core/projects";
@@ -19,7 +20,6 @@ import {
 } from "../core/projects";
 import { previewDoc, projectDocRelPath } from "../core/preview";
 import { resolveUploadTargets, type UploadTarget } from "../core/upload";
-import type { ExportListing } from "../shared/api";
 import { run } from "./exec";
 
 /**

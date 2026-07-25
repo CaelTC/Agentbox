@@ -1,4 +1,4 @@
-import type { ExportCandidate, ExportResult } from "../core/export";
+import type { ExportListing, ExportResult } from "../core/export";
 import type { Project } from "../core/projects";
 import type { StarterTemplate } from "../core/templates";
 import type { UploadTarget } from "../core/upload";
@@ -48,15 +48,6 @@ export interface ClaudeboxApi {
 export interface BootstrapStatus {
   ok: boolean;
   message: string;
-}
-
-export interface ExportListing {
-  /** Every file in the Project, exportable or not, each with its reason. */
-  files: ExportCandidate[];
-  /** The host folder these files would land in. */
-  dir: string;
-  /** Ceiling on one Export — the running total is shown against this. */
-  capBytes: number;
 }
 
 export interface SavedFolder {
