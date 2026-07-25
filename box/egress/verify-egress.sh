@@ -16,8 +16,9 @@
 # non-technical user with no recourse.
 #
 # Exit 0 — the walls hold, OR the machine is offline (skipped, and says why).
-# Exit 1 — BREACHED: the public internet is reachable AND so is something
-#          private. The installer must hard-fail on this (threat B).
+# Exit 1 — BREACHED: something private answered. Checked before the offline
+#          case, because a private address answering is a breach whether or not
+#          the public internet is up. The installer hard-fails on this (threat B).
 set -eu
 
 log() { echo "[verify-egress] $*"; }
@@ -91,9 +92,22 @@ public="$(probe "$PUBLIC_URL")"
 log "  public internet (${PUBLIC_URL}): ${public}"
 
 # --- Verdict, fail-closed ----------------------------------------------------
+# The breach check comes FIRST, before the offline branch. A private address
+# answering is a breach on its own terms — the public target only ever told us
+# whether "nothing answered" means the walls hold or the machine has no network,
+# and it has no bearing on something that DID answer. Checking it the other way
+# round certifies the exact case threat B lives in: a corporate LAN whose gateway
+# replies while github.com is blocked would read as "offline, skipped, exit 0".
+if [ -n "$breach" ]; then
+  log "BREACHED:${breach} answered from inside the Box." >&2
+  log "The Egress Policy is NOT holding under this engine — threat B is open." >&2
+  exit 1
+fi
+
 if [ "$public" != "reachable" ]; then
   # Offline is not a breach. Skip rather than fail: an installer that refused to
-  # finish on a train would be worse than useless, and nothing private answered.
+  # finish on a train would be worse than useless. "Nothing private answered" is
+  # now true by construction — the breach check above already exited if it had.
   if [ "$public" = "no-dns" ]; then
     log "SKIPPED: no DNS. If this machine IS online, apply-egress.sh rule 2b is"
     log "         not covering this engine's resolver and the Box is silently offline."
@@ -102,12 +116,6 @@ if [ "$public" != "reachable" ]; then
     log "         Nothing private answered either. Re-run when it is online."
   fi
   exit 0
-fi
-
-if [ -n "$breach" ]; then
-  log "BREACHED:${breach} answered while the public internet is up." >&2
-  log "The Egress Policy is NOT holding under this engine — threat B is open." >&2
-  exit 1
 fi
 
 log "OK: the public internet is reachable and nothing private is."

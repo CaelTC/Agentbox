@@ -85,6 +85,31 @@ function Invoke-Checked {
   }
 }
 
+# The opposite of Invoke-Checked: run a command purely for its exit code, where
+# a non-zero answer is information rather than a failure ("is WSL there?", "does
+# the machine exist?").
+#
+# The relaxed preference is load-bearing on Windows PowerShell 5.1 - which is
+# what ships in the box, and what this script is written for. When a native
+# command writes to stderr AND stderr is redirected, 5.1 wraps the output in a
+# NativeCommandError record; with $ErrorActionPreference = 'Stop' that record is
+# TERMINATING. So `wsl.exe --status` on a machine with no WSL - the very first
+# probe this installer makes - would abort the script instead of returning
+# non-zero, and the "restart Windows and run this again" message would never be
+# reached. PowerShell 7 does not behave this way; 5.1 does.
+function Invoke-Probe {
+  param([Parameter(Mandatory = $true)][scriptblock]$Command)
+  $previous = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    & $Command *> $null
+    return $LASTEXITCODE
+  }
+  finally {
+    $ErrorActionPreference = $previous
+  }
+}
+
 # winget installs put podman and git on the machine PATH, but not into a shell
 # that was already open. Without this, a fresh machine would install the Engine
 # and then fail to find it two steps later.
@@ -122,8 +147,7 @@ function Test-Wsl2Ready {
   # We only need the exit code, and WSL_UTF8 keeps the output readable for the
   # human watching.
   $env:WSL_UTF8 = '1'
-  & wsl.exe --status *> $null
-  return ($LASTEXITCODE -eq 0)
+  return ((Invoke-Probe { wsl.exe --status }) -eq 0)
 }
 
 function Install-Wsl2 {
@@ -162,8 +186,7 @@ Installer" - install that from the Microsoft Store and run this script again.
   }
 
   foreach ($package in $WingetPackages) {
-    & winget.exe list --id $package.Id --exact --source winget *> $null
-    if ($LASTEXITCODE -eq 0) {
+    if ((Invoke-Probe { winget.exe list --id $package.Id --exact --source winget }) -eq 0) {
       Write-Log "$($package.What) already present."
       continue
     }
@@ -214,7 +237,7 @@ function Write-WslConfig {
   Set-Content -Path $path -Value $desired -Encoding ASCII
   # .wslconfig is read when WSL next starts, so a running WSL would keep the old
   # allocation. Shut it down now, before the podman machine is created.
-  if (Test-Wsl2Ready) { & wsl.exe --shutdown *> $null }
+  if (Test-Wsl2Ready) { [void](Invoke-Probe { wsl.exe --shutdown }) }
 }
 
 # --- 5. Fetch the public Box definition (no credentials) ---------------------
@@ -235,13 +258,12 @@ function Get-Definition {
 
 # --- 6. The Box's VM: podman machine at the cap, rootful ---------------------
 # The same sequence as launcher/src/main/engine.ts: `colima start` is
-# create-or-start in one command where podman splits init from start. Rootful is
-# set once, at init time - rootless podman is exactly where the namespaced
-# net.ipv6 sysctls get rejected and where pasta/slirp4netns move the gateway and
-# resolver that apply-egress.sh discovers (see core/podman.ts).
+# create-or-start in one command where podman splits init from start. Rootless
+# podman is exactly where the namespaced net.ipv6 sysctls get rejected and where
+# pasta/slirp4netns move the gateway and resolver that apply-egress.sh discovers
+# (see core/podman.ts), so rootful is not optional here.
 function Start-Machine {
-  & podman machine inspect $PodmanMachine *> $null
-  if ($LASTEXITCODE -ne 0) {
+  if ((Invoke-Probe { podman machine inspect $PodmanMachine }) -ne 0) {
     Write-Log "Creating the podman machine '$PodmanMachine' at the Resource Cap..."
     # podman machine's --memory is MiB where colima's is GiB (core/podman.ts).
     $memoryMiB = $CapMemoryGiB * 1024
@@ -252,30 +274,37 @@ function Start-Machine {
         --disk-size $CapDiskGiB `
         $PodmanMachine
     }
-    Invoke-Checked { podman machine set --rootful $PodmanMachine }
   }
 
   if (Test-MachineRunning) {
     Write-Log "The podman machine '$PodmanMachine' is already running."
     return
   }
+
+  # Rootful is set on every run where the machine is down, not once at init: if
+  # `init` succeeded and this failed, pinning it to the init branch would skip it
+  # on every later run and leave the machine rootless forever, self-healing only
+  # by deleting the VM. Re-applying it is a no-op when it is already set. It sits
+  # below the running check because podman refuses the change on a live machine.
+  Invoke-Checked { podman machine set --rootful $PodmanMachine }
+
   Write-Log "Starting the podman machine '$PodmanMachine'..."
   Invoke-Checked { podman machine start $PodmanMachine }
 }
 
-# `podman machine inspect` prints a JSON array whose State is "running". Parsed
-# defensively, exactly as isPodmanMachineRunning does: a missing machine makes
-# podman print a bare error line, which must read as "not running", not throw.
+# Let podman do the parsing - `--format` prints the bare state, so there is no
+# JSON to pick through and a missing machine is just a non-zero exit. Mirrors
+# podmanMachineInspectArgs in core/podman.ts.
 function Test-MachineRunning {
-  $output = & podman machine inspect $PodmanMachine 2>$null
-  if ($LASTEXITCODE -ne 0) { return $false }
+  $previous = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
   try {
-    $machines = @($output | ConvertFrom-Json)
+    $state = & podman machine inspect --format '{{.State}}' $PodmanMachine 2>$null
   }
-  catch {
-    return $false
+  finally {
+    $ErrorActionPreference = $previous
   }
-  return [bool]($machines | Where-Object { $_.State -eq 'running' })
+  return ($LASTEXITCODE -eq 0 -and "$state".Trim() -eq 'running')
 }
 
 # --- 7. Prepare the initial Box image ----------------------------------------
