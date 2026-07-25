@@ -62,8 +62,18 @@ describe("startEngine", () => {
 
     expect(calls).toEqual([
       "podman machine inspect --format {{.State}} claudebox",
+      "podman machine set --rootful claudebox",
       "podman machine start claudebox",
     ]);
+  });
+
+  it("re-applies rootful to an existing machine, so a stranded rootless one heals", async () => {
+    // The case this pins: `init` succeeded on an earlier run and `set --rootful`
+    // did not. The machine exists from then on, so if rootful lived in the init
+    // branch it would never be attempted again and the Box would run rootless
+    // forever — where boxRunArgs' NET_ADMIN and net.ipv6 sysctls are refused.
+    await startEngine("win32");
+    expect(calls).toContain("podman machine set --rootful claudebox");
   });
 
   it("self-heals: a machine deleted behind the Launcher's back is re-created on the next start", async () => {

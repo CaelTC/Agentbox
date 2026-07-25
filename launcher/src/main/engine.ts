@@ -36,7 +36,7 @@ export async function isEngineRunning(
  * `init` from `start` — the only place the two engines aren't shaped alike.
  * Resolved here, in the runner, rather than in the startup plan: the Launcher
  * then still self-heals if someone deletes the VM, and BoxState/StartupStep stay
- * as they are. Rootful is set at init time, once (see core/podman.ts).
+ * as they are. Rootful is re-applied on every start, not once at init (see below).
  */
 export async function startEngine(platform: NodeJS.Platform = process.platform): Promise<void> {
   if (platform !== "win32") {
@@ -49,7 +49,13 @@ export async function startEngine(platform: NodeJS.Platform = process.platform):
   // is an exit code, not a parse.
   if (!(await runOk(engine, podmanMachineInspectArgs()))) {
     await mustSucceed(engine, podmanMachineInitArgs());
-    await mustSucceed(engine, podmanMachineSetRootfulArgs());
   }
+  // Outside the init branch on purpose. If `init` succeeded and this failed,
+  // pinning it to that branch would skip it on every later run: the machine
+  // exists, so init is never reached again, and the Box runs rootless forever —
+  // self-healing only by deleting the VM. Re-applying is a no-op when it is
+  // already set, and it is safe here because the caller only starts an engine
+  // that isEngineRunning said was down (podman refuses the change on a live one).
+  await mustSucceed(engine, podmanMachineSetRootfulArgs());
   await mustSucceed(engine, podmanMachineStartArgs());
 }

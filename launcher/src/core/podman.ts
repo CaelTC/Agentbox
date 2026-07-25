@@ -45,7 +45,7 @@ export function podmanMachineInspectArgs(): string[] {
 }
 
 /**
- * Rootful, applied once at init time. boxRunArgs passes `--cap-add NET_ADMIN`
+ * Rootful, re-applied on every start (main/engine.ts). boxRunArgs passes `--cap-add NET_ADMIN`
  * plus two `net.ipv6.*` sysctls, which rootless podman rejects, and rootless
  * pasta/slirp4netns move the gateway and resolver `apply-egress.sh` discovers.
  * Rootless buys nothing here: the boundary is the container (ADR 0001) and the
