@@ -32,7 +32,8 @@ src/
   preload.ts   contextBridge exposing only ClaudeboxApi to the renderer.
   types/       Ambient Electron declaration (see "The Electron shim" below).
 test/          Vitest unit tests for every core module + pure main helpers.
-install/       The one-time Install Script (ticket 09).
+install/       The one-time Install Script — install.sh (macOS, ticket 09) and
+               install.ps1 (Windows, issue #11). Same contract, same steps.
 ```
 
 The split is deliberate: **`core/` holds the decisions and is fully tested**;
@@ -86,3 +87,29 @@ keeping both would double-declare the `electron` module.
    (`npm run package` wraps electron-packager).
 
 No code signing is required to run it locally (ADR 0002).
+
+## Packaging for Windows — from the same Mac
+
+```bash
+npm run package:win        # → release/Claudebox-win32-x64/Claudebox.exe
+```
+
+electron-packager cross-builds to win32 by downloading the win32 Electron
+binary, so **one build host packages both platforms** — a provisioning script
+should not need a Node toolchain and a multi-minute `npm install` on every
+machine it touches.
+
+Two deliberate omissions: no `--icon` and no `--win32metadata`. Both are written
+into the exe by `rcedit`, which needs Wine on a Mac. The cost is the default
+Electron icon, accepted for now rather than adding a build dependency.
+
+`install.ps1` installs this folder by copying it (plus a Start Menu `.lnk` via
+`WScript.Shell`) — the direct mirror of `install_launcher()` on the Mac, not an
+NSIS/electron-builder installer. A script-copied exe also carries no
+Mark-of-the-Web, so it dodges the SmartScreen prompt an unsigned *downloaded*
+installer would trigger. Commit the built folder into the definition repo as
+`launcher/Claudebox-win32-x64` for `install.ps1` to find, as with
+`Claudebox.app` on the Mac.
+
+`npm run assets` is plain Node (`fs.cpSync`) rather than `cp -R`, so `npm run
+build` works from either OS.
