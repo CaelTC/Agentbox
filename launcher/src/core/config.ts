@@ -20,11 +20,12 @@ export const RESOURCE_CAP: ResourceCap = {
   diskGiB: 25,
 };
 
-/** Colima profile that isolates Claudebox from any other Colima use on the Mac. */
-export const COLIMA_PROFILE = "claudebox";
-
-/** Podman machine that isolates Claudebox from any other podman use on Windows. */
-export const PODMAN_MACHINE = "claudebox";
+/**
+ * Names the Colima profile on the Mac and the podman machine on Windows — one
+ * host only ever runs one of them — so Claudebox is isolated from any other use
+ * of either engine.
+ */
+export const ENGINE_PROFILE = "claudebox";
 
 /**
  * The container engine's CLI (issue #10). The Mac drives Colima+Docker; Colima

@@ -87,20 +87,14 @@ export async function openProjectSession(
     return;
   }
 
-  // Windows spawns chrome.exe itself, DETACHED and unawaited: chrome.exe does not
-  // return until the user closes the session window, so awaiting it would fire the
-  // fallback at close time instead of at failure time. The probe (chromeAppLaunch)
-  // has already decided whether Chrome exists. `open` on the Mac returns
-  // immediately and reports a real failure, so it keeps its await (issue #10).
+  // Windows spawns chrome.exe itself, detached and unawaited: chrome.exe does not
+  // return until the user closes the session window (issue #10). `open` on the Mac
+  // returns immediately and reports a real failure, so it keeps its await below.
   if (platform === "win32") {
     const child = spawn(launch.command, [...launch.args], { detached: true, stdio: "ignore" });
-    // Chrome went away between the probe and the spawn — same fallback. It has to
-    // hang off 'error', not a try/catch: Node reports a failed spawn (ENOENT) on
-    // an asynchronous event, never as a throw, so a catch here could not fire —
-    // and an unhandled 'error' on a ChildProcess would take the Launcher's main
-    // process down with it. The fallback stays unawaited so this still returns
-    // without waiting on the window (issue #10); a rejected openExternal has
-    // nowhere left to go by then, and no third fallback to try.
+    // Chrome went away between the probe and the spawn — same fallback. Node
+    // reports a failed spawn asynchronously, never as a throw, and an unhandled
+    // 'error' would take the Launcher's main process down with it.
     child.on("error", () => void shell.openExternal(url).catch(() => {}));
     child.unref();
     return;

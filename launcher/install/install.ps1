@@ -48,7 +48,7 @@ $ProgramsDir = if ($env:CLAUDEBOX_PROGRAMS) { $env:CLAUDEBOX_PROGRAMS }
 $LauncherFolder = 'Claudebox-win32-x64'
 $LauncherExe = 'Claudebox.exe'
 
-# The Engine. Keep in step with launcher/src/core/config.ts (PODMAN_MACHINE,
+# The Engine. Keep in step with launcher/src/core/config.ts (ENGINE_PROFILE,
 # BOX_IMAGE) and core/podman.ts (the init flags).
 $PodmanMachine = 'claudebox'
 $BoxImage = 'claudebox:latest'
@@ -263,19 +263,13 @@ function Start-Machine {
   Invoke-Checked { podman machine start $PodmanMachine }
 }
 
-# `podman machine inspect` prints a JSON array whose State is "running". Parsed
-# defensively, exactly as isPodmanMachineRunning does: a missing machine makes
-# podman print a bare error line, which must read as "not running", not throw.
+# `--format` leaves podman to parse its own JSON and print the state alone, as
+# core/podman.ts's podmanMachineInspectArgs does. A missing machine exits
+# non-zero, which must read as "not running" rather than fail the install.
 function Test-MachineRunning {
-  $output = & podman machine inspect $PodmanMachine 2>$null
+  $output = & podman machine inspect --format '{{.State}}' $PodmanMachine 2>$null
   if ($LASTEXITCODE -ne 0) { return $false }
-  try {
-    $machines = @($output | ConvertFrom-Json)
-  }
-  catch {
-    return $false
-  }
-  return [bool]($machines | Where-Object { $_.State -eq 'running' })
+  return ($output | Out-String).Trim() -eq 'running'
 }
 
 # --- 7. Prepare the initial Box image ----------------------------------------

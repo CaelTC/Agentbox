@@ -1,4 +1,4 @@
-import { COLIMA_PROFILE, RESOURCE_CAP, type ResourceCap } from "./config";
+import { ENGINE_PROFILE, RESOURCE_CAP, type ResourceCap } from "./config";
 
 /**
  * Build the `colima` CLI args that start the Box's VM at the Resource Cap.
@@ -7,7 +7,7 @@ import { COLIMA_PROFILE, RESOURCE_CAP, type ResourceCap } from "./config";
  */
 export function colimaStartArgs(
   cap: ResourceCap = RESOURCE_CAP,
-  profile: string = COLIMA_PROFILE,
+  profile: string = ENGINE_PROFILE,
 ): string[] {
   return [
     "start",
@@ -22,7 +22,7 @@ export function colimaStartArgs(
   ];
 }
 
-export function colimaStatusArgs(profile: string = COLIMA_PROFILE): string[] {
+export function colimaStatusArgs(profile: string = ENGINE_PROFILE): string[] {
   return ["status", "--profile", profile];
 }
 

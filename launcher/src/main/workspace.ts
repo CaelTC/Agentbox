@@ -265,13 +265,9 @@ export async function boxExport(
  * `spawnPath(path, exists)` injects its probe, so both branches are assertable
  * from either host.
  *
- * Returns false instead of throwing, and the export continues. A failed mark is
- * not a reason to delete a Sandbox User's saved work — ADR 0003 already refused
- * host-side deletion for tidiness, and half an export is worse than an unmarked
- * one. It is not swallowed either: `boxExport` counts every false into
- * `ExportResult.unmarked`, which the renderer says out loud. A platform with no
- * mark we know (neither macOS nor Windows) counts as unmarked for the same
- * reason — silence there would be the exact asymmetry this change removes.
+ * Returns false rather than throwing: a failed mark is no reason to delete a
+ * Sandbox User's saved work. It is not swallowed either — `boxExport` counts
+ * every false into `ExportResult.unmarked`, which the renderer surfaces.
  */
 export async function markExportedUntrusted(
   target: string,

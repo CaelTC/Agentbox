@@ -50,7 +50,7 @@ describe("startEngine", () => {
     await startEngine("win32");
 
     expect(calls).toEqual([
-      "podman machine inspect claudebox",
+      "podman machine inspect --format {{.State}} claudebox",
       "podman machine init --cpus 4 --memory 6144 --disk-size 25 claudebox",
       "podman machine set --rootful claudebox",
       "podman machine start claudebox",
@@ -61,7 +61,7 @@ describe("startEngine", () => {
     await startEngine("win32"); // runOk defaults to true = machine present
 
     expect(calls).toEqual([
-      "podman machine inspect claudebox",
+      "podman machine inspect --format {{.State}} claudebox",
       "podman machine start claudebox",
     ]);
   });
@@ -95,11 +95,19 @@ describe("isEngineRunning", () => {
   it("on Windows reads `podman machine inspect`'s State", async () => {
     vi.mocked(run).mockImplementation(async (c, a) => {
       record(c, a);
-      return { code: 0, stdout: '[{"Name":"claudebox","State":"running"}]', stderr: "" };
+      return { code: 0, stdout: "running\n", stderr: "" };
     });
 
     expect(await isEngineRunning("win32")).toBe(true);
-    expect(calls).toEqual(["podman machine inspect claudebox"]);
+    expect(calls).toEqual(["podman machine inspect --format {{.State}} claudebox"]);
+  });
+
+  it("on Windows is false when the machine exists but is stopped", async () => {
+    vi.mocked(run).mockImplementation(async (c, a) => {
+      record(c, a);
+      return { code: 0, stdout: "stopped\n", stderr: "" };
+    });
+    expect(await isEngineRunning("win32")).toBe(false);
   });
 
   it("on Windows is false when there is no machine (non-zero exit)", async () => {

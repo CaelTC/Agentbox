@@ -135,14 +135,6 @@ export function exportFolderName(name: string, slug: string): string {
 }
 
 /**
- * The Windows `Zone.Identifier` stream's body. Zone 3 is URLZONE_INTERNET —
- * the zone a browser download lands in, which is what makes Office open the
- * file in Protected View and SmartScreen evaluate it. CRLF and the trailing
- * newline are the format Explorer actually writes and parses.
- */
-export const ZONE_IDENTIFIER_CONTENT = "[ZoneTransfer]\r\nZoneId=3\r\n";
-
-/**
  * The macOS quarantine attribute's four semicolon-separated fields:
  * `flags;hex-epoch-seconds;agent;event-uuid`. `0001` is the download flag on its
  * own — deliberately none of the "user approved"/"assessment ok" bits, so
@@ -185,7 +177,14 @@ export function untrustedMark(
 ): UntrustedMark | undefined {
   if (platform === "win32") {
     // Not path.join: the stream is a suffix on the file's own path, not a child.
-    return { kind: "stream", path: `${target}:Zone.Identifier`, content: ZONE_IDENTIFIER_CONTENT };
+    // Zone 3 is URLZONE_INTERNET — where a browser download lands, which is what
+    // makes Office use Protected View and SmartScreen evaluate the file. The
+    // CRLFs are the format Explorer itself writes and parses.
+    return {
+      kind: "stream",
+      path: `${target}:Zone.Identifier`,
+      content: "[ZoneTransfer]\r\nZoneId=3\r\n",
+    };
   }
   if (platform === "darwin") {
     return {

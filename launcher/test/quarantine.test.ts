@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ZONE_IDENTIFIER_CONTENT, quarantineValue, untrustedMark } from "../src/core/export";
+import { quarantineValue, untrustedMark } from "../src/core/export";
 import { markExportedUntrusted } from "../src/main/workspace";
 
 /**
@@ -61,7 +61,7 @@ describe("markExportedUntrusted", () => {
       never,
     );
     expect(marked).toBe(true);
-    expect(written).toEqual([[`${TARGET}:Zone.Identifier`, ZONE_IDENTIFIER_CONTENT]]);
+    expect(written).toEqual([[`${TARGET}:Zone.Identifier`, "[ZoneTransfer]\r\nZoneId=3\r\n"]]);
   });
 
   it("spawns xattr on macOS and reports success", async () => {

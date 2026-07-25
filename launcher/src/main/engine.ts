@@ -1,7 +1,6 @@
-import { COLIMA_PROFILE, engineCli } from "../core/config";
+import { engineCli } from "../core/config";
 import { colimaStartArgs, colimaStatusArgs, isColimaRunning } from "../core/colima";
 import {
-  isPodmanMachineRunning,
   podmanMachineInitArgs,
   podmanMachineInspectArgs,
   podmanMachineSetRootfulArgs,
@@ -24,9 +23,9 @@ export async function isEngineRunning(
 ): Promise<boolean> {
   if (platform === "win32") {
     const inspect = await run(engineCli(platform), podmanMachineInspectArgs());
-    return inspect.code === 0 && isPodmanMachineRunning(inspect.stdout);
+    return inspect.code === 0 && inspect.stdout.trim() === "running";
   }
-  const status = await run("colima", colimaStatusArgs(COLIMA_PROFILE));
+  const status = await run("colima", colimaStatusArgs());
   return isColimaRunning(status.stdout + status.stderr);
 }
 
