@@ -22,7 +22,7 @@ export interface ClaudeboxApi {
   openSession(slug: string): Promise<void>;
   /** Open a native file picker and copy the chosen files into the Project. */
   upload(slug: string): Promise<UploadTarget[]>;
-  /** Detect the served port and open it in the Mac's browser. */
+  /** Detect the served port and open it in the host's browser. */
   openPreview(): Promise<{ opened: boolean; url?: string }>;
 
   /**
@@ -32,10 +32,10 @@ export interface ClaudeboxApi {
    */
   listExportFiles(slug: string): Promise<ExportListing>;
   /**
-   * Copy the ticked files out of the Box onto the MacBook (Export). The
+   * Copy the ticked files out of the Box onto the user's computer (Export). The
    * selection is re-validated in the trusted layer before anything is written.
    */
-  saveToMac(slug: string, pick: string[]): Promise<ExportResult>;
+  saveToComputer(slug: string, pick: string[]): Promise<ExportResult>;
   /** Open the Project's saved folder in Finder and report when it was last saved. */
   showSavedFiles(slug: string): Promise<SavedFolder>;
 
@@ -48,7 +48,7 @@ export interface ClaudeboxApi {
   /**
    * "Bring it in" on the confirmation sheet: copy the folder into the Box as a
    * new Project. Re-measures the folder itself rather than trusting the
-   * listing above, exactly as `saveToMac` re-validates its selection.
+   * listing above, exactly as `saveToComputer` re-validates its selection.
    */
   importFolder(folder: string): Promise<Project>;
 
@@ -82,7 +82,7 @@ export const IPC = {
   upload: "upload:pick",
   openPreview: "preview:open",
   listExportFiles: "export:list",
-  saveToMac: "export:save",
+  saveToComputer: "export:save",
   showSavedFiles: "export:show",
   planImport: "import:plan",
   importFolder: "import:folder",

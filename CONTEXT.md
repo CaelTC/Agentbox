@@ -35,21 +35,21 @@ The Sandbox User's persistent project directory inside the Box, stored on a name
 A named unit of work inside the Workspace that the Sandbox User creates, resumes, and manages from the Launcher's home screen before entering a Claude Code chat.
 
 **Launcher**:
-The double-clickable macOS app that is the Sandbox User's entire interface to Claudebox. Trusted, host-side code (not Claude) that hides Docker: it starts the Box, shows the Project home screen, drops the user into Claude Code, and brokers file Uploads.
+The double-clickable app — macOS and Windows — that is the Sandbox User's entire interface to Claudebox. Trusted, host-side code (not Claude) that hides Docker: it starts the Box, shows the Project home screen, drops the user into Claude Code, and brokers file Uploads.
 
 **Upload**:
 A one-way, user-initiated copy of files from the MacBook into a Project's Workspace, performed by the trusted Launcher via a native file picker. Claude never gets direct host filesystem access — it only sees the copies. Preserves threat A.
 _Avoid_: mount, shared folder (deliberately not a live bind-mount)
 
 **Export**:
-A one-way, user-initiated copy of Project documents out of the Box onto the MacBook, performed by the trusted Launcher. The mirror of Upload. The Sandbox User picks the files, from a list the Launcher itself builds — the Box never names what crosses or where it lands. Only document-shaped files are offered, and the total is bounded, because an unbounded copy onto the host would be threat A. Carries threat C: what lands is document-shaped, not inert — a web file the Box wrote still runs script when it is opened. The allowlist reduces C to the risk class of an email attachment; it does not remove it, and it is the Sandbox User, not the Box, who decides whether to open what landed.
-_Avoid_: download (nothing is fetched over a network), sync (it is not continuous and never deletes), bare save (collides with saving a file inside Claude Code — the button is "Save to my Mac", which says where it goes)
+A one-way, user-initiated copy of Project documents out of the Box onto the MacBook, performed by the trusted Launcher. The mirror of Upload. The Sandbox User picks the files, from a list the Launcher itself builds — the Box never names what crosses or where it lands. Only document-shaped files are offered, and the total is bounded, because an unbounded copy onto the host would be threat A. Carries threat C: what lands is document-shaped, not inert — a web file the Box wrote still runs script when it is opened. So every exported file is marked untrusted as it lands, in the host's own terms — `Zone.Identifier` on Windows, `com.apple.quarantine` on macOS — which is what makes Protected View, SmartScreen and Gatekeeper apply to it. The allowlist and the mark together reduce C to the risk class of an email attachment; they do not remove it, and it is the Sandbox User, not the Box, who decides whether to open what landed.
+_Avoid_: download (nothing is fetched over a network), sync (it is not continuous and never deletes), bare save (collides with saving a file inside Claude Code — the button is "Save to my computer", which still says where it goes)
 
 **Install Script**:
-The one-time setup step, run by whoever provisions the MacBook (not the Sandbox User). Installs Colima, Google Chrome (for the Project session window), the Launcher, and the initial Box image. Replaces a signed installer, which is not available.
+The one-time setup step, run by whoever provisions the machine (not the Sandbox User). Installs the Engine, Google Chrome (for the Project session window), the Launcher, and the initial Box image. Replaces a signed installer, which is not available. The Windows script needs Administrator (WSL2 and the Podman machine both do); the macOS one does not.
 
 **Engine**:
-Colima — the headless, license-free container runtime that runs the Box on the MacBook in place of Docker Desktop.
+The headless, license-free container runtime that runs the Box on the host in place of Docker Desktop — Colima on macOS, a Podman machine (WSL2, rootful) on Windows. Two runtimes, one property: neither is headed and neither carries a commercial licence (ADR 0004).
 
 **Refresh on Launch**:
 On every start, the Launcher pulls the latest Box definition from the public Claudebox GitHub repo and rebuilds the image if it changed, then runs `claude update` inside the running Box (the image's npm layer is cached, so a rebuild alone would keep shipping a stale Claude). This is the sole update mechanism. Requires no credentials because the repo is public. Both halves are best-effort: an offline laptop still opens on its last-built image and its baked Claude.
@@ -61,7 +61,7 @@ The tooling pre-baked into the Box so Claude can act instantly without per-sessi
 A port forwarded by the Launcher from the Box to a browser tab on the MacBook, so the Sandbox User can see a page or app they built. The laptop reaching into the Box — does not weaken threat A or B.
 
 **Resource Cap**:
-The tuned, bounded Colima allocation baked into the Launcher (~4 CPU / 6 GB RAM / 25 GB disk cap). The disk cap bounds threat A — the Box can never grow past a known ceiling on the host.
+The tuned, bounded Engine allocation baked into the Launcher (~4 CPU / 6 GB RAM / 25 GB disk cap). On macOS Colima enforces all three, and the disk cap bounds threat A — the Box can never grow past a known ceiling on the host. On Windows it is weaker and deliberately so: CPU and RAM come from a global `%USERPROFILE%\.wslconfig` shared with every other WSL distribution, and **there is no disk ceiling at all** — the VHDX grows on demand, so the cap is documented rather than enforced (ADR 0004).
 
 **Starter Template**:
 A one-click starting point on the Launcher home screen (e.g. "Build a personal webpage", "Make a guessing game", "Analyze a spreadsheet") that seeds a Project and a first prompt, so a Sandbox User is never faced with a blank chat.

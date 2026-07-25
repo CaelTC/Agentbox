@@ -20,17 +20,18 @@ Two decisions carry the safety of the whole system (see `docs/adr/`):
 
 ## Architecture
 
-Two processes live on the **host** (the MacBook); everything else runs **inside
-the Box**, which is the security boundary (ADR 0001). The host reaches the Box
-only over a loopback-only port forward (`127.0.0.1:7681`) — never the LAN.
+Two processes live on the **host** (the Sandbox User's own computer); everything
+else runs **inside the Box**, which is the security boundary (ADR 0001). The host
+reaches the Box only over a loopback-only port forward (`127.0.0.1:7681`) — never
+the LAN.
 
 ```
-  MacBook (host, trusted)                 The Box  (Docker container = the boundary)
-  ───────────────────────                 ─────────────────────────────────────────
+  Host: macOS or Windows (trusted)        The Box  (Docker container = the boundary)
+  ────────────────────────────────        ─────────────────────────────────────────
 
   ┌─────────────────────────┐             entrypoint.sh
   │ Launcher (Electron)      │   docker      1. apply-egress.sh   (firewall first)
-  │  · start Colima + Box    │──  exec  ──▶  2. start-terminal.sh (web console)
+  │  · start Engine + Box    │──  exec  ──▶  2. start-terminal.sh (web console)
   │  · Project home screen   │  claudebox-   3. sleep infinity    (stays alive)
   │  · per-Project controls  │   session
   │  · quit ⇒ docker stop    │   <slug>    web console  (server.py / Starlette, :7681)
@@ -54,6 +55,13 @@ only over a loopback-only port forward (`127.0.0.1:7681`) — never the LAN.
                                                /workspace/<slug>/…      Workspace (the Projects)
                                                /home/sandbox            Login-with-Claude token
 ```
+
+The **Engine** in that first box is the host's headless, licence-free container
+runtime: Colima on macOS, a rootful Podman machine over WSL2 on Windows. The Box,
+the firewall and everything to the right of the arrow are identical on both — what
+differs is that the Windows Engine cannot enforce a disk ceiling, so the Resource
+Cap is documented rather than bounded there
+([ADR 0004](./docs/adr/0004-windows-runs-on-rootful-podman-wsl2-without-a-disk-cap.md)).
 
 **`claudebox-session` is the single source of truth for launching a Project.**
 Both the browser (via the web console's WebSocket) and the Launcher (via
@@ -96,7 +104,7 @@ box/         The Box — the public Docker image.
   egress/           The Egress Policy (iptables rules).
   terminal/         The web console — Starlette app (server.py) + templates + paths.
 scripts/     claudebox.sh — the walking-skeleton launcher (ticket 01).
-launcher/    The macOS Launcher app (Electron + TypeScript, tickets 04–09).
+launcher/    The Launcher app — macOS and Windows (Electron + TypeScript, tickets 04–09).
              Its src/core holds the pure, unit-tested logic for the whole system.
 docs/adr/    Architecture Decision Records.
 .scratch/    The originating tickets.

@@ -225,7 +225,10 @@ describe("parseDfAvailableBytes", () => {
 
 describe("IMPORT_SEED_PROMPT", () => {
   it("is the fixed orientation prompt, so an Import never opens on a blank chat", () => {
-    expect(IMPORT_SEED_PROMPT).toMatch(/brought this project in from my Mac/i);
+    // Neutral, not "my Mac": this is model-facing text on a Launcher that ships
+    // to Windows too (#12).
+    expect(IMPORT_SEED_PROMPT).toMatch(/brought this project in from my computer/i);
+    expect(IMPORT_SEED_PROMPT).not.toMatch(/mac/i);
     expect(IMPORT_SEED_PROMPT).toMatch(/what it is/i);
   });
 });
