@@ -1,6 +1,6 @@
-import { BOX_CONTAINER, BOX_IMAGE, COLIMA_PROFILE } from "../core/config";
-import { colimaStatusArgs, isColimaRunning } from "../core/colima";
+import { BOX_CONTAINER, BOX_IMAGE, ENGINE_CLI } from "../core/config";
 import type { BoxState } from "../core/startup";
+import { isEngineRunning } from "./engine";
 import { run } from "./exec";
 
 /**
@@ -8,20 +8,21 @@ import { run } from "./exec";
  * Isolated here so the decision logic (core/startup.ts) stays pure and testable.
  */
 export async function inspectBoxState(): Promise<BoxState> {
-  const colima = await run("colima", colimaStatusArgs(COLIMA_PROFILE));
-  const colimaRunning = isColimaRunning(colima.stdout + colima.stderr);
+  // BoxState still calls this `colimaRunning`; on Windows the engine is a Podman
+  // machine (issue #10), which is why the query lives behind main/engine.ts.
+  const colimaRunning = await isEngineRunning();
 
-  // If Colima isn't up, docker can't be queried; treat image/container as absent.
+  // If the VM isn't up, the engine can't be queried; treat image/container as absent.
   if (!colimaRunning) {
     return { colimaRunning: false, imageBuilt: false, containerExists: false, containerRunning: false };
   }
 
-  const images = await run("docker", ["images", "-q", BOX_IMAGE]);
+  const images = await run(ENGINE_CLI, ["images", "-q", BOX_IMAGE]);
   const imageBuilt = images.stdout.trim().length > 0;
 
   const nameFilter = ["--filter", `name=^${BOX_CONTAINER}$`, "--format", "{{.Names}}"];
-  const running = await run("docker", ["ps", ...nameFilter]);
-  const all = await run("docker", ["ps", "-a", ...nameFilter]);
+  const running = await run(ENGINE_CLI, ["ps", ...nameFilter]);
+  const all = await run(ENGINE_CLI, ["ps", "-a", ...nameFilter]);
 
   return {
     colimaRunning,

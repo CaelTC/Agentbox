@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
-import { BOX_IMAGE, DEFINITION_REPO, PINNED_DEFINITION_COMMIT } from "../core/config";
+import { BOX_IMAGE, DEFINITION_REPO, ENGINE_CLI, PINNED_DEFINITION_COMMIT } from "../core/config";
 import { commitTrusted, hashDefinition, refreshDecision, type DefinitionFile } from "../core/refresh";
 import { run, runOk } from "./exec";
 import { claudeboxHome, hostBoxDefinitionDir, hostDefinitionDir } from "./paths";
@@ -39,7 +39,7 @@ export async function refreshOnLaunch(): Promise<RefreshResult> {
           : { action: "started", reason: `${untrusted} Keeping the last-built Box image.` };
       }
 
-      const built = await run("docker", ["build", "-t", BOX_IMAGE, hostBoxDefinitionDir()]);
+      const built = await run(ENGINE_CLI, ["build", "-t", BOX_IMAGE, hostBoxDefinitionDir()]);
       if (built.code !== 0) {
         return { action: "error", reason: `Box rebuild failed: ${built.stderr}` };
       }

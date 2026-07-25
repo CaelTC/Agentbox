@@ -23,6 +23,24 @@ export const RESOURCE_CAP: ResourceCap = {
 /** Colima profile that isolates Claudebox from any other Colima use on the Mac. */
 export const COLIMA_PROFILE = "claudebox";
 
+/** Podman machine that isolates Claudebox from any other podman use on Windows. */
+export const PODMAN_MACHINE = "claudebox";
+
+/**
+ * The container engine's CLI (issue #10). The Mac drives Colima+Docker; Colima
+ * does not exist on Windows and Docker Desktop reintroduces exactly the licence
+ * Colima was chosen to avoid, so a Windows Launcher drives Podman instead.
+ * Podman's CLI covers every verb the Launcher uses. One Box, one threat model —
+ * only the host-side binary differs.
+ *
+ * `platform` is injectable so the Windows argv is assertable from a Mac.
+ */
+export function engineCli(platform: NodeJS.Platform = process.platform): "docker" | "podman" {
+  return platform === "win32" ? "podman" : "docker";
+}
+
+export const ENGINE_CLI = engineCli();
+
 /** The Box image tag and the long-lived container name. */
 export const BOX_IMAGE = "claudebox:latest";
 export const BOX_CONTAINER = "claudebox";

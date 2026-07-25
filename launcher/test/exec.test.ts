@@ -19,4 +19,8 @@ describe("spawnPath", () => {
     const path = spawnPath("/opt/homebrew/bin:/usr/bin", allExist);
     expect(path.split(":").filter((d) => d === "/opt/homebrew/bin")).toHaveLength(1);
   });
+
+  it("leaves PATH untouched on Windows — no Homebrew, and ':' is not the separator", () => {
+    expect(spawnPath("C:\\Windows;C:\\podman", allExist, "win32")).toBe("C:\\Windows;C:\\podman");
+  });
 });

@@ -1,18 +1,18 @@
 import { spawn } from "node:child_process";
 import { shell } from "electron";
-import { BOX_CONTAINER, BOX_IMAGE } from "../core/config";
+import { BOX_CONTAINER, BOX_IMAGE, ENGINE_CLI } from "../core/config";
 import { boxRunArgs, boxUpdateClaudeArgs } from "../core/box";
-import { colimaStartArgs } from "../core/colima";
-import { chromeAppOpenArgs, ensureSessionExecArgs, sessionUrl } from "../core/session-window";
+import { chromeAppLaunch, ensureSessionExecArgs, sessionUrl } from "../core/session-window";
+import { startEngine } from "./engine";
 import { inspectBoxState } from "./environment";
-import { run, runOk } from "./exec";
+import { mustSucceed, run, runOk } from "./exec";
 import { startupPlan, type StartupStep } from "../core/startup";
 
-/** Start Colima at the Resource Cap if it isn't already up (needed before any docker call). */
-export async function ensureColima(): Promise<void> {
+/** Start the Engine at the Resource Cap if it isn't already up (needed before any engine call). */
+export async function ensureEngine(): Promise<void> {
   const state = await inspectBoxState();
   if (!state.colimaRunning) {
-    await mustSucceed("colima", colimaStartArgs());
+    await startEngine();
   }
 }
 
@@ -22,7 +22,7 @@ export async function ensureColima(): Promise<void> {
  * named volumes that survive the recreate — only ephemeral container state is lost.
  */
 export async function removeBoxContainer(): Promise<void> {
-  await run("docker", ["rm", "-f", BOX_CONTAINER]);
+  await run(ENGINE_CLI, ["rm", "-f", BOX_CONTAINER]);
 }
 
 /**
@@ -41,27 +41,20 @@ export async function ensureBoxReady(boxDefinitionDir: string): Promise<void> {
 async function runStep(step: StartupStep, boxDefinitionDir: string): Promise<void> {
   switch (step) {
     case "start-colima":
-      await mustSucceed("colima", colimaStartArgs());
+      await startEngine();
       return;
     case "build-image":
-      await mustSucceed("docker", ["build", "-t", BOX_IMAGE, boxDefinitionDir]);
+      await mustSucceed(ENGINE_CLI, ["build", "-t", BOX_IMAGE, boxDefinitionDir]);
       return;
     case "run-box":
-      await mustSucceed("docker", boxRunArgs());
+      await mustSucceed(ENGINE_CLI, boxRunArgs());
       return;
     case "start-box":
       // Restart the existing container, preserving its filesystem (login, etc.).
-      await mustSucceed("docker", ["start", BOX_CONTAINER]);
+      await mustSucceed(ENGINE_CLI, ["start", BOX_CONTAINER]);
       return;
     case "attach":
       return; // the session is launched by the funnel, opened in Chrome (openProjectSession)
-  }
-}
-
-async function mustSucceed(command: string, args: readonly string[]): Promise<void> {
-  const res = await run(command, args);
-  if (res.code !== 0) {
-    throw new Error(`\`${command} ${args.join(" ")}\` failed (exit ${res.code}): ${res.stderr}`);
   }
 }
 
@@ -72,7 +65,7 @@ async function mustSucceed(command: string, args: readonly string[]): Promise<vo
  * opening — the version baked into the image keeps working.
  */
 export async function updateClaudeCode(): Promise<boolean> {
-  return runOk("docker", boxUpdateClaudeArgs());
+  return runOk(ENGINE_CLI, boxUpdateClaudeArgs());
 }
 
 /**
@@ -82,10 +75,35 @@ export async function updateClaudeCode(): Promise<boolean> {
  * If Chrome is missing, fall back to the default browser so opening never fails.
  * "Reopen terminal" is just this again — the funnel re-attaches the live session.
  */
-export async function openProjectSession(slug: string): Promise<void> {
-  await mustSucceed("docker", ensureSessionExecArgs(slug));
+export async function openProjectSession(
+  slug: string,
+  platform: NodeJS.Platform = process.platform,
+): Promise<void> {
+  await mustSucceed(ENGINE_CLI, ensureSessionExecArgs(slug));
   const url = sessionUrl(slug);
-  const opened = await run("open", chromeAppOpenArgs(url));
+  const launch = chromeAppLaunch(url, platform);
+  if (!launch) {
+    await shell.openExternal(url);
+    return;
+  }
+
+  // Windows spawns chrome.exe itself, DETACHED and unawaited: chrome.exe does not
+  // return until the user closes the session window, so awaiting it would fire the
+  // fallback at close time instead of at failure time. The probe (chromeAppLaunch)
+  // has already decided whether Chrome exists. `open` on the Mac returns
+  // immediately and reports a real failure, so it keeps its await (issue #10).
+  if (platform === "win32") {
+    try {
+      spawn(launch.command, [...launch.args], { detached: true, stdio: "ignore" }).unref();
+      return;
+    } catch {
+      // Chrome went away between the probe and the spawn — same fallback.
+    }
+    await shell.openExternal(url);
+    return;
+  }
+
+  const opened = await run(launch.command, launch.args);
   if (opened.code !== 0) {
     await shell.openExternal(url);
   }
@@ -93,13 +111,13 @@ export async function openProjectSession(slug: string): Promise<void> {
 
 /**
  * Stop the Box on Launcher quit (ticket 03) to free the Resource Cap. Fire-and-
- * forget in its own process group: a slow or failing `docker stop` must never
- * trap the user in a hanging app — the Resource Cap already bounds a lingering
- * container. Named volumes (Workspace, Claude login) survive the stop.
+ * forget in its own process group: a slow or failing `stop` must never trap the
+ * user in a hanging app — the Resource Cap already bounds a lingering container.
+ * Named volumes (Workspace, Claude login) survive the stop.
  */
 export function stopBoxDetached(): void {
   try {
-    spawn("docker", ["stop", BOX_CONTAINER], { detached: true, stdio: "ignore" }).unref();
+    spawn(ENGINE_CLI, ["stop", BOX_CONTAINER], { detached: true, stdio: "ignore" }).unref();
   } catch {
     // Engine already gone — nothing to stop.
   }
