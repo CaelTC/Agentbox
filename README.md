@@ -1,6 +1,6 @@
 # Claudebox
 
-A local development sandbox for running Claude Code on a colleague's MacBook. It
+A local development sandbox for running Claude Code on a colleague's computer. It
 lets people who are not fluent in Git or coding safely practice and play with
 Claude Code without risking their own machine or reaching company systems.
 
@@ -93,6 +93,15 @@ separate session state to keep in sync. Persistence is two named volumes: the
 **Workspace** (`/workspace`, the user's Projects) and the sandbox **home**
 (`/home/sandbox`, the Login-with-Claude token). Both survive Box stop/restart
 and image rebuilds; neither is a host mount (ADR 0001, threat A).
+
+Three more paths cross the boundary above, none through the loopback port —
+the Launcher brokers each of them directly via `docker exec`/`docker cp`,
+never a live mount (ADR 0001). **Upload** copies individual files host→Box
+into an existing Project. **Export** copies a Project's documents Box→host
+under an allowlist (ADR 0003). **Import** copies a whole folder host→Box,
+becoming a new Project outright, unfiltered but for `.gitignore` — its
+contents land at the Project root because `claudebox-session` above always
+starts Claude there ([ADR 0005](./docs/adr/0005-import-is-a-whole-project-not-a-filtered-copy.md)).
 
 ## Layout
 

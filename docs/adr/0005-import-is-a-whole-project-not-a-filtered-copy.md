@@ -6,9 +6,9 @@ accepted
 
 ## Context
 
-Sandbox Users sometimes already have a project on their MacBook — a folder of
-code with a `.git` history — and want to keep working on it inside the Box
-rather than starting from a blank Project. Export (ADR 0003) moves the
+Sandbox Users sometimes already have a project on their own computer — a
+folder of code with a `.git` history — and want to keep working on it inside
+the Box rather than starting from a blank Project. Export (ADR 0003) moves the
 opposite direction, and under an allowlist: it copies Project documents out of
 the Box, deliberately partial, because an unbounded copy onto the host is
 threat A. None of that reasoning transfers here. A repo the Sandbox User chose
@@ -21,7 +21,7 @@ being merely big.
 
 ## Decision
 
-A folder on the MacBook *becomes* a Project. Concretely:
+A folder on the Sandbox User's computer *becomes* a Project. Concretely:
 
 1. **Whole-project entry, contents at the Project root.** The folder's
    contents land directly at the new Project's root, never nested one level
@@ -80,10 +80,13 @@ A folder on the MacBook *becomes* a Project. Concretely:
   time `claudebox-session` starts a fresh tmux session for that slug,
   including after a Box restart — so a Sandbox User who restarts the Box
   before their first message sees the Import seed prompt again, not silence.
-- Getting a real macOS folder into a Linux container needed its own fixes,
-  live-discovered against a running Box rather than guessed at: `tar` must
-  suppress macOS xattrs (`com.apple.provenance` makes `docker cp` abort on
-  overlayfs) and the AppleDouble `._name` sidecars bsdtar otherwise writes
-  beside every entry, and the copied tree is `chown`-ed to the sandbox user
-  afterward, because `docker cp` synthesises the parent directories
-  `git ls-files` never listed (`src/`, …) as root.
+- Getting a real folder into the Box needed its own fixes, live-discovered
+  against a running Box rather than guessed at: `tar` must suppress macOS
+  xattrs (`com.apple.provenance` makes `docker cp` abort on overlayfs) and the
+  AppleDouble `._name` sidecars bsdtar otherwise writes beside every entry, and
+  the copied tree is `chown`-ed to the sandbox user afterward, because
+  `docker cp` synthesises the parent directories `git ls-files` never listed
+  (`src/`, …) as root. These fixes are macOS-specific — `tar`'s argv is not yet
+  branched on host platform the way the `docker`/Engine invocation now is
+  (ADR 0004), so a Windows Import is unproven; the code says so and leaves it
+  for a later issue.

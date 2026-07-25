@@ -93,13 +93,16 @@ export async function openProjectSession(
   // has already decided whether Chrome exists. `open` on the Mac returns
   // immediately and reports a real failure, so it keeps its await (issue #10).
   if (platform === "win32") {
-    try {
-      spawn(launch.command, [...launch.args], { detached: true, stdio: "ignore" }).unref();
-      return;
-    } catch {
-      // Chrome went away between the probe and the spawn — same fallback.
-    }
-    await shell.openExternal(url);
+    const child = spawn(launch.command, [...launch.args], { detached: true, stdio: "ignore" });
+    // Chrome went away between the probe and the spawn — same fallback. It has to
+    // hang off 'error', not a try/catch: Node reports a failed spawn (ENOENT) on
+    // an asynchronous event, never as a throw, so a catch here could not fire —
+    // and an unhandled 'error' on a ChildProcess would take the Launcher's main
+    // process down with it. The fallback stays unawaited so this still returns
+    // without waiting on the window (issue #10); a rejected openExternal has
+    // nowhere left to go by then, and no third fallback to try.
+    child.on("error", () => void shell.openExternal(url).catch(() => {}));
+    child.unref();
     return;
   }
 
