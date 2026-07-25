@@ -3,6 +3,7 @@ import {
   assertNoHostMounts,
   boxBuildArgs,
   boxRunArgs,
+  boxUpdateClaudeArgs,
   isHostMount,
 } from "../src/core/box";
 
@@ -51,6 +52,14 @@ describe("boxRunArgs", () => {
   it("keeps the container alive so a Claude session can be exec'd into it", () => {
     // last tokens are the long-lived command
     expect(args.slice(-2).join(" ")).toBe("sleep infinity");
+  });
+});
+
+describe("boxUpdateClaudeArgs", () => {
+  const args = boxUpdateClaudeArgs();
+
+  it("updates Claude Code as root in the running Box (root owns the global install)", () => {
+    expect(args.join(" ")).toBe("exec -u root claudebox timeout 180 claude update");
   });
 });
 

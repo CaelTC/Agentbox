@@ -1,11 +1,11 @@
 import { spawn } from "node:child_process";
 import { shell } from "electron";
 import { BOX_CONTAINER, BOX_IMAGE } from "../core/config";
-import { boxRunArgs } from "../core/box";
+import { boxRunArgs, boxUpdateClaudeArgs } from "../core/box";
 import { colimaStartArgs } from "../core/colima";
 import { chromeAppOpenArgs, ensureSessionExecArgs, sessionUrl } from "../core/session-window";
 import { inspectBoxState } from "./environment";
-import { run } from "./exec";
+import { run, runOk } from "./exec";
 import { startupPlan, type StartupStep } from "../core/startup";
 import { boxEnsureProjectDoc } from "./workspace";
 
@@ -64,6 +64,16 @@ async function mustSucceed(command: string, args: readonly string[]): Promise<vo
   if (res.code !== 0) {
     throw new Error(`\`${command} ${args.join(" ")}\` failed (exit ${res.code}): ${res.stderr}`);
   }
+}
+
+/**
+ * Update Claude Code in the Box to the latest release, once per launch. Blocking
+ * (not backgrounded) so no Project session can start mid-install. Best effort by
+ * design: offline, a slow registry or a bad publish must never stop the Box from
+ * opening — the version baked into the image keeps working.
+ */
+export async function updateClaudeCode(): Promise<boolean> {
+  return runOk("docker", boxUpdateClaudeArgs());
 }
 
 /**

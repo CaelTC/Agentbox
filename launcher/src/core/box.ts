@@ -83,6 +83,23 @@ export function boxRunArgs(options: BoxRunOptions = {}): string[] {
   return args;
 }
 
+/**
+ * `docker exec` argv that updates Claude Code inside the Box to the latest
+ * release — run on every launch (ADR 0002, refresh on launch). A rebuild alone
+ * is not enough: the Dockerfile's `npm install -g` layer is cached, so the image
+ * can keep shipping a months-old Claude.
+ *
+ * `claude update` over `npm install -g`: it detects the global install and only
+ * downloads when a newer version exists (~1s no-op vs ~15s every launch).
+ * Runs as root because that global install lives in /usr/local, which the Box's
+ * `sandbox` user deliberately can't write to — as `sandbox` the updater would
+ * migrate Claude into ~/.claude/local, which a session's PATH never sees.
+ * `timeout` is applied IN the Box so a stalled download can't hang startup.
+ */
+export function boxUpdateClaudeArgs(container: string = BOX_CONTAINER): string[] {
+  return ["exec", "-u", "root", container, "timeout", "180", "claude", "update"];
+}
+
 /** A `-v` value is a host bind mount unless its source is a bare named volume. */
 export function isHostMount(volumeSpec: string): boolean {
   const source = volumeSpec.split(":")[0] ?? "";

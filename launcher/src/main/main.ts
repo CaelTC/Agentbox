@@ -4,7 +4,13 @@ import { IPC, type BootstrapStatus } from "../shared/api";
 import { registerIpc } from "./ipc";
 import { hostBoxDefinitionDir } from "./paths";
 import { refreshOnLaunch } from "./refresh-runner";
-import { ensureBoxReady, ensureColima, removeBoxContainer, stopBoxDetached } from "./session";
+import {
+  ensureBoxReady,
+  ensureColima,
+  removeBoxContainer,
+  stopBoxDetached,
+  updateClaudeCode,
+} from "./session";
 
 /**
  * Electron entry point (ticket 04). Double-clicking the Launcher lands here: it
@@ -50,6 +56,11 @@ async function bootstrap(window: BrowserWindow): Promise<void> {
       await removeBoxContainer();
     }
     await ensureBoxReady(hostBoxDefinitionDir());
+    // Every open gets the latest Claude Code, before any session can attach.
+    send({ ok: true, message: "Updating Claude Code…" });
+    if (!(await updateClaudeCode())) {
+      console.warn("Claude Code update skipped; keeping the version baked into the Box image.");
+    }
     send({ ok: true, message: "Claudebox is ready." });
   } catch (error) {
     send({ ok: false, message: `Couldn't start Claudebox: ${String(error)}` });

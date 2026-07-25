@@ -52,7 +52,7 @@ The one-time setup step, run by whoever provisions the MacBook (not the Sandbox 
 Colima — the headless, license-free container runtime that runs the Box on the MacBook in place of Docker Desktop.
 
 **Refresh on Launch**:
-On every start, the Launcher pulls the latest Box definition from the public Claudebox GitHub repo and rebuilds the image if it changed. This is the sole update mechanism. Requires no credentials because the repo is public.
+On every start, the Launcher pulls the latest Box definition from the public Claudebox GitHub repo and rebuilds the image if it changed, then runs `claude update` inside the running Box (the image's npm layer is cached, so a rebuild alone would keep shipping a stale Claude). This is the sole update mechanism. Requires no credentials because the repo is public. Both halves are best-effort: an offline laptop still opens on its last-built image and its baked Claude.
 
 **Batteries**:
 The tooling pre-baked into the Box so Claude can act instantly without per-session installs — Node.js, Python, Rust, git, a shell, and the mattpocock-skills Claude Code plugin (pre-installed so its skills are available with no setup).
