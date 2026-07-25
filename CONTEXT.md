@@ -12,7 +12,7 @@ A non-technical colleague using Claudebox to learn. Assumed to have little or no
 _Avoid_: developer, engineer
 
 **Threat Model**:
-The two harms Claudebox exists to prevent — (A) damage to the Sandbox User's own MacBook, and (B) any path from the sandbox to company systems, credentials, or private repos.
+The harms Claudebox exists to prevent — (A) damage to the Sandbox User's own MacBook, and (B) any path from the sandbox to company systems, credentials, or private repos. Export adds (C): content produced inside the Box being executed on the host after the Sandbox User carries it across. The Box's walls cannot defend C, because C happens outside them.
 
 **The Box**:
 The Docker container that is Claudebox at runtime. The filesystem and network boundary that enforces the Threat Model.
@@ -40,6 +40,10 @@ The double-clickable macOS app that is the Sandbox User's entire interface to Cl
 **Upload**:
 A one-way, user-initiated copy of files from the MacBook into a Project's Workspace, performed by the trusted Launcher via a native file picker. Claude never gets direct host filesystem access — it only sees the copies. Preserves threat A.
 _Avoid_: mount, shared folder (deliberately not a live bind-mount)
+
+**Export**:
+A one-way, user-initiated copy of Project documents out of the Box onto the MacBook, performed by the trusted Launcher. The mirror of Upload. The Sandbox User picks the files, from a list the Launcher itself builds — the Box never names what crosses or where it lands. Only document-shaped files are offered, and the total is bounded, because an unbounded copy onto the host would be threat A. Carries threat C: what lands is document-shaped, not inert — a web file the Box wrote still runs script when it is opened. The allowlist reduces C to the risk class of an email attachment; it does not remove it, and it is the Sandbox User, not the Box, who decides whether to open what landed.
+_Avoid_: download (nothing is fetched over a network), sync (it is not continuous and never deletes), bare save (collides with saving a file inside Claude Code — the button is "Save to my Mac", which says where it goes)
 
 **Install Script**:
 The one-time setup step, run by whoever provisions the MacBook (not the Sandbox User). Installs Colima, Google Chrome (for the Project session window), the Launcher, and the initial Box image. Replaces a signed installer, which is not available.

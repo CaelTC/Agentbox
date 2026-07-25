@@ -17,3 +17,12 @@ export function hostDefinitionDir(): string {
 export function hostBoxDefinitionDir(): string {
   return join(hostDefinitionDir(), "box");
 }
+
+/**
+ * Where Exported Project documents land on the real MacBook (ticket 07). A
+ * visible folder in the user's home, not inside `.claudebox` — the whole point
+ * is that the Sandbox User can find their work in Finder.
+ */
+export function exportRoot(): string {
+  return process.env.CLAUDEBOX_EXPORT_ROOT ?? join(homedir(), "Claudebox");
+}

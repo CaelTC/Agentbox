@@ -7,3 +7,5 @@ interface Window {
 // classic script instead of a CommonJS module the browser can't run.
 type Project = import("../core/projects").Project;
 type StarterTemplate = import("../core/templates").StarterTemplate;
+type ExportCandidate = import("../core/export").ExportCandidate;
+type ExportListing = import("../shared/api").ExportListing;
