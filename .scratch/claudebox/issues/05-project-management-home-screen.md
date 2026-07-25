@@ -4,7 +4,7 @@
 
 **Blocked by:** 04 — Launcher skeleton.
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] The Launcher opens to a home screen listing existing Projects (rather than straight into a chat).
 - [ ] The user can create a new Project, which appears as its own folder in the Workspace.

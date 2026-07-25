@@ -4,7 +4,7 @@
 
 **Blocked by:** 05 — Project management home screen. (Enhanced by #06 Upload and #07 Web Preview — the spreadsheet template wants Upload, the webpage template wants Preview — but does not require them to ship.)
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] The home screen presents a small set of Starter Templates.
 - [ ] Clicking a template creates a new Project and seeds its first prompt.

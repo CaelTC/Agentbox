@@ -4,7 +4,7 @@
 
 **Blocked by:** 05 — Project management home screen.
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] The Launcher can forward a port from the Box to the MacBook and open it in a browser tab.
 - [ ] After Claude starts a dev server / serves a page in the Box, clicking Preview shows it in the browser.

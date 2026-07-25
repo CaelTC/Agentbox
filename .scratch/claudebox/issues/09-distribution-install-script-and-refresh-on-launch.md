@@ -4,7 +4,7 @@
 
 **Blocked by:** 04 — Launcher skeleton.
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] Running the Install Script on a clean Mac installs Colima and the Launcher (in Applications) and prepares the initial image.
 - [ ] On each start, the Launcher pulls the latest Box definition from the public repo.

@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 — Walking skeleton. (Independent of #02; may proceed in parallel with it.)
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] Node.js, Python, Rust, and git are pre-installed in the image.
 - [ ] Claude can run a hello-world in each of Node, Python, and Rust with no install step.

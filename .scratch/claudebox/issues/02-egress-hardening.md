@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 — Walking skeleton. (Independent of #03; may proceed in parallel with it.)
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] Firewall rules block egress to all private/reserved ranges: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, and the host gateway.
 - [ ] Public internet egress still works (e.g. a public HTTPS request succeeds).

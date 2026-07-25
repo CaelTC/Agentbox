@@ -4,7 +4,7 @@
 
 **Blocked by:** 05 — Project management home screen.
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] The Launcher offers an Upload action within a Project that opens a native macOS file picker.
 - [ ] Selected files are copied into the current Project's Workspace.

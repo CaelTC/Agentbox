@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] A Dockerfile builds the Box from a base image with Claude Code installed.
 - [ ] A shell script starts Colima with the Resource Cap (~4 CPU / 6 GB RAM / 25 GB disk) and drops the user into a Claude Code session in the Box.

@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 — Walking skeleton. (Best sequenced after #02 and #03 so it launches the hardened, batteried Box.)
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] A double-clickable macOS Launcher app exists (no signing required to run locally).
 - [ ] Launching it starts Colima with the Resource Cap and the Box if not already running.
