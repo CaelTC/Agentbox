@@ -19,8 +19,16 @@ export interface RunResult {
  * that actually exist so every spawn can find colima/docker. Colleagues without
  * Homebrew get an unchanged PATH (no phantom dirs added).
  * ponytail: covers Homebrew installs; if colima lives elsewhere, add its dir here.
+ *
+ * Windows returns PATH untouched: there is no Homebrew there, `podman` comes
+ * from a per-user installer already on PATH, and `":"` is not the separator.
  */
-export function spawnPath(path = process.env.PATH ?? "", exists = existsSync): string {
+export function spawnPath(
+  path = process.env.PATH ?? "",
+  exists = existsSync,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  if (platform === "win32") return path;
   const brew = ["/opt/homebrew/bin", "/opt/homebrew/sbin", "/usr/local/bin"];
   const add = brew.filter((d) => exists(d) && !path.split(":").includes(d));
   return [...add, path].filter(Boolean).join(":");
@@ -39,6 +47,14 @@ export function run(command: string, args: readonly string[]): Promise<RunResult
     child.on("error", reject);
     child.on("close", (code) => resolve({ code: code ?? -1, stdout, stderr }));
   });
+}
+
+/** Run a command, throwing its stderr if it did not exit 0. */
+export async function mustSucceed(command: string, args: readonly string[]): Promise<void> {
+  const res = await run(command, args);
+  if (res.code !== 0) {
+    throw new Error(`\`${command} ${args.join(" ")}\` failed (exit ${res.code}): ${res.stderr}`);
+  }
 }
 
 /** Run a command and resolve to true only on a clean (exit 0) run. */
