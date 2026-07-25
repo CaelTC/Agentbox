@@ -222,11 +222,11 @@ export function planExport(files: readonly BoxFile[], pick?: readonly string[]):
 
 export interface ExportListing {
   /** Every file in the Project, exportable or not, each with its reason. */
-  files: ExportCandidate[];
+  readonly files: readonly ExportCandidate[];
   /** The host folder these files would land in. */
-  dir: string;
+  readonly dir: string;
   /** Ceiling on one Export — the running total is shown against this. */
-  capBytes: number;
+  readonly capBytes: number;
 }
 
 /** What one Export actually did, for the confirmation the Sandbox User sees. */

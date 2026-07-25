@@ -175,7 +175,7 @@ export async function boxExportListing(
     boxListProjectFiles(slug),
   ]);
   const plan = planExport(files);
-  return { files: [...plan.candidates], dir, capBytes: plan.capBytes };
+  return { files: plan.candidates, dir, capBytes: plan.capBytes };
 }
 
 /**
