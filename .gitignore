@@ -1,8 +1,14 @@
-node_modules/
+# No trailing slash: a symlinked node_modules (how an agent worktree borrows the
+# real one) is not a directory, and `node_modules/` would not match it.
+node_modules
 dist/
 *.log
 .DS_Store
 release/
+
+# Agent worktrees are checkouts of this same repo; `git add -A` would otherwise
+# commit them as embedded gitlinks.
+.claude/worktrees/
 
 # Python bytecode
 __pycache__/
