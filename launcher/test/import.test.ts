@@ -83,7 +83,22 @@ describe("importTarArgs", () => {
   });
 
   it("reads the file list from stdin, NUL-separated, rooted at the folder", () => {
-    expect(importTarArgs("/tmp/proj", false)).toEqual(["-c", "-C", "/tmp/proj", "--null", "-T", "-"]);
+    const args = importTarArgs("/tmp/proj", false);
+    expect(args.slice(-5)).toEqual(["-C", "/tmp/proj", "--null", "-T", "-"]);
+  });
+
+  // Each of these was live-reproduced against a real Box; see the comment on
+  // importTarArgs for what breaks when the flag is missing.
+  it("suppresses macOS xattrs, which Linux overlayfs refuses and docker cp dies on", () => {
+    expect(importTarArgs("/tmp/proj", true)).toContain("--no-xattrs");
+  });
+
+  it("suppresses AppleDouble sidecars, so no ._file junk lands in the Project", () => {
+    expect(importTarArgs("/tmp/proj", true)).toContain("--no-mac-metadata");
+  });
+
+  it("does not set ownership here — docker cp synthesises parent dirs as root regardless, so boxImportFolder chowns instead", () => {
+    expect(importTarArgs("/tmp/proj", true)).not.toContain("--uid");
   });
 
   it("adds .git as an extra positional path for a repo, since git ls-files never lists it", () => {
@@ -210,7 +225,10 @@ describe("parseDfAvailableBytes", () => {
 
 describe("IMPORT_SEED_PROMPT", () => {
   it("is the fixed orientation prompt, so an Import never opens on a blank chat", () => {
-    expect(IMPORT_SEED_PROMPT).toMatch(/brought this project in from my Mac/i);
+    // Neutral, not "my Mac": this is model-facing text on a Launcher that ships
+    // to Windows too (#12).
+    expect(IMPORT_SEED_PROMPT).toMatch(/brought this project in from my computer/i);
+    expect(IMPORT_SEED_PROMPT).not.toMatch(/mac/i);
     expect(IMPORT_SEED_PROMPT).toMatch(/what it is/i);
   });
 });

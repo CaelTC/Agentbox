@@ -44,7 +44,7 @@ function section(kind: string, children: (Node | string)[]): HTMLElement {
 /** Place-anchored, and the same on every screen. */
 function footer(): HTMLElement {
   return el("footer", { className: "footer" }, [
-    el("div", { className: "container" }, ["Claudebox runs on your Mac. Built in British Columbia."]),
+    el("div", { className: "container" }, ["Claudebox runs on your computer. Built in British Columbia."]),
   ]);
 }
 
@@ -59,7 +59,8 @@ async function renderHome(): Promise<void> {
       el("h1", { className: "hero__title", textContent: "A sealed room." }),
       el("p", {
         className: "lead",
-        textContent: "Claude works inside a sandbox on your Mac. Nothing leaves it unless you carry it out.",
+        textContent:
+          "Claude works inside a sandbox on your computer. Nothing leaves it unless you carry it out.",
       }),
     ]),
   );
@@ -79,9 +80,9 @@ async function renderHome(): Promise<void> {
     await openProject(project);
   });
 
-  // Project Import (ticket 09): a folder on the Mac becomes a Project. One
+  // Project Import (ticket 09): a folder on the host becomes a Project. One
   // confirmation sheet stands between the folder picker and anything crossing.
-  const importBtn = el("button", { className: "btn", textContent: "Open a folder from my Mac" });
+  const importBtn = el("button", { className: "btn", textContent: "Open a folder from my computer" });
   importBtn.addEventListener("click", () => void startImport());
 
   root.append(
@@ -165,15 +166,15 @@ async function openProject(project: Project): Promise<void> {
     ),
   );
 
-  const upload = actionCard("Upload files", "Bring documents in from your Mac.", async () => {
+  const upload = actionCard("Upload files", "Bring documents in from your computer.", async () => {
     const copied = await cb.upload(project.slug);
     if (copied.length) flash(`Uploaded ${copied.length} file(s) into ${project.name}.`);
   });
 
-  // Export (tickets 07/08): carry the Project's documents onto the real MacBook.
+  // Export (tickets 07/08): carry the Project's documents onto the real computer.
   // Both of these reach into the Box, so both can fail before they show anything
   // — an unreported rejection would leave the button looking simply dead.
-  const save = actionCard("Save to my Mac", "Carry this project's files back out.", async () => {
+  const save = actionCard("Save to my computer", "Carry this project's files back out.", async () => {
     try {
       renderExportPicker(project, await cb.listExportFiles(project.slug));
     } catch (err) {
@@ -187,7 +188,7 @@ async function openProject(project: Project): Promise<void> {
       flash(
         res.opened
           ? `Last saved ${when(res.lastSaved)}.`
-          : `Nothing saved yet — “Save to my Mac” puts this project in ${res.dir}.`,
+          : `Nothing saved yet — “Save to my computer” puts this project in ${res.dir}.`,
       );
     } catch (err) {
       flash(`Couldn't show the saved files: ${(err as Error).message}`);
@@ -211,7 +212,7 @@ async function openProject(project: Project): Promise<void> {
 }
 
 /**
- * "Open a folder from my Mac" (ticket 09): picking a folder measures it, then
+ * "Open a folder from my computer" (ticket 09): picking a folder measures it, then
  * shows the one confirmation sheet. Nothing crosses if the picker is cancelled.
  */
 async function startImport(): Promise<void> {
@@ -315,7 +316,7 @@ function renderExportPicker(project: Project, listing: ExportListing): void {
   const dialog = el("div", { className: "sheet" }) as HTMLDivElement;
   const panel = el("div", { className: "panel" });
 
-  panel.append(el("h2", { textContent: "Save to my Mac" }));
+  panel.append(el("h2", { textContent: "Save to my computer" }));
   panel.append(
     el("p", {
       className: "sub",
@@ -380,12 +381,12 @@ function renderExportPicker(project: Project, listing: ExportListing): void {
     saveBtn.disabled = true;
     saveBtn.textContent = "Saving…";
     try {
-      const res = await cb.saveToMac(project.slug, pick);
+      const res = await cb.saveToComputer(project.slug, pick);
       dialog.remove();
       flash(
         res.overCap
           ? `Too big to save: ${size(res.totalBytes)}, and the limit is ${size(res.capBytes)}. Nothing was saved.`
-          : `Saved ${res.saved} file(s) to ${res.dir}.`,
+          : saved(res),
       );
     } catch (err) {
       dialog.remove();
@@ -397,6 +398,18 @@ function renderExportPicker(project: Project, listing: ExportListing): void {
   panel.append(el("div", { className: "actions" }, [cancel, saveBtn]));
   dialog.append(panel);
   document.body.append(dialog);
+}
+
+/**
+ * What one Export did. Files that landed without the host's untrusted mark
+ * (#12) are named rather than folded into the count: the mark is what puts them
+ * in "the risk class of an email attachment" (ADR 0003), so its absence is
+ * something the Sandbox User is entitled to hear before they open one.
+ */
+function saved(res: ExportResult): string {
+  const done = `Saved ${res.saved} file(s) to ${res.dir}.`;
+  if (res.unmarked === 0) return done;
+  return `${done} ${res.unmarked} couldn't be marked as coming from Claudebox — open those with the same care as an email attachment.`;
 }
 
 /** Sizes for a Sandbox User: no bytes, no decimals below a gigabyte. */

@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { BOX_CONTAINER } from "./config";
 import { assertValidSlug } from "./projects";
 import { TERMINAL_PORT } from "./preview";
@@ -25,7 +26,40 @@ export function ensureSessionExecArgs(slug: string, container: string = BOX_CONT
   return ["exec", container, "claudebox-session", assertValidSlug(slug)];
 }
 
-/** `open` argv for a chromeless Chrome app-mode window showing `url`. */
-export function chromeAppOpenArgs(url: string): string[] {
-  return ["-na", "Google Chrome", "--args", `--app=${url}`];
+/**
+ * Where Chrome installs on Windows, in probe order (issue #10). These three
+ * cover every winget/installer default, so no registry parsing — and "is it on
+ * disk" is knowable BEFORE launching, which is what lets the Windows fallback be
+ * decided without waiting on the process.
+ */
+export function windowsChromePaths(env: NodeJS.ProcessEnv = process.env): string[] {
+  return [env["ProgramFiles"], env["ProgramFiles(x86)"], env["LOCALAPPDATA"]]
+    .filter((root): root is string => Boolean(root))
+    .map((root) => `${root}\\Google\\Chrome\\Application\\chrome.exe`);
+}
+
+/** The command and argv that show a session in a Chrome app-mode window. */
+export interface ChromeLaunch {
+  readonly command: string;
+  readonly args: readonly string[];
+}
+
+/**
+ * How to open the session window on this platform: the Mac hands the URL to
+ * `open`, Windows spawns the probed `chrome.exe` itself. `undefined` means no
+ * Chrome was found, and the caller falls back to the default browser — the same
+ * fallback the Mac already has.
+ */
+export function chromeAppLaunch(
+  url: string,
+  platform: NodeJS.Platform = process.platform,
+  env: NodeJS.ProcessEnv = process.env,
+  exists: (path: string) => boolean = existsSync,
+): ChromeLaunch | undefined {
+  if (platform !== "win32") {
+    // `--app=` is what makes the window chromeless: no URL bar, no tabs.
+    return { command: "open", args: ["-na", "Google Chrome", "--args", `--app=${url}`] };
+  }
+  const chrome = windowsChromePaths(env).find(exists);
+  return chrome === undefined ? undefined : { command: chrome, args: [`--app=${url}`] };
 }

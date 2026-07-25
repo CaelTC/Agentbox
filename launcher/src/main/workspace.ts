@@ -1,11 +1,20 @@
-import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, utimesSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
-import { BOX_CONTAINER, WORKSPACE_DIR } from "../core/config";
+import { BOX_CONTAINER, BOX_USER, ENGINE_CLI, WORKSPACE_DIR } from "../core/config";
 import {
   parseBoxFileListing,
   planExport,
   resolveExportDir,
   resolveExportTarget,
+  untrustedMark,
   type BoxFile,
   type ExportListing,
   type ExportResult,
@@ -49,7 +58,7 @@ const projectPath = (slug: string) => `${WORKSPACE_DIR}/${assertValidSlug(slug)}
 
 /** List Projects by inspecting /workspace inside the Box. */
 export async function boxListProjects(): Promise<Project[]> {
-  const listing = await run("docker", [
+  const listing = await run(ENGINE_CLI, [
     "exec",
     BOX_CONTAINER,
     "sh",
@@ -73,13 +82,13 @@ export async function boxListProjects(): Promise<Project[]> {
 }
 
 async function readBoxMeta(slug: string): Promise<ProjectMeta | undefined> {
-  const res = await run("docker", ["exec", BOX_CONTAINER, "cat", metaPath(slug)]);
+  const res = await run(ENGINE_CLI, ["exec", BOX_CONTAINER, "cat", metaPath(slug)]);
   if (res.code !== 0) return undefined;
   return parseProjectMeta(res.stdout);
 }
 
 async function boxPathExists(path: string): Promise<boolean> {
-  const res = await run("docker", ["exec", BOX_CONTAINER, "test", "-e", path]);
+  const res = await run(ENGINE_CLI, ["exec", BOX_CONTAINER, "test", "-e", path]);
   return res.code === 0;
 }
 
@@ -93,7 +102,7 @@ export async function boxCreateProject(
     throw new Error(`A Project already exists at '${slug}'.`);
   }
 
-  await run("docker", ["exec", BOX_CONTAINER, "mkdir", "-p", `${projectPath(slug)}/.claudebox`]);
+  await run(ENGINE_CLI, ["exec", BOX_CONTAINER, "mkdir", "-p", `${projectPath(slug)}/.claudebox`]);
   await writeBoxFile(metaPath(slug), serializeProjectMeta({ name, slug, seedPrompt }));
 
   return { name, slug, dir: projectPath(slug) };
@@ -102,7 +111,7 @@ export async function boxCreateProject(
 async function writeBoxFile(path: string, content: string): Promise<void> {
   // Use base64 to avoid any shell-quoting hazards with arbitrary content.
   const b64 = Buffer.from(content, "utf8").toString("base64");
-  await run("docker", [
+  await run(ENGINE_CLI, [
     "exec",
     BOX_CONTAINER,
     "sh",
@@ -121,7 +130,7 @@ export async function boxUpload(sources: string[], slug: string): Promise<Upload
 
   // Pre-fetch existing names once so the resolver can dedupe synchronously.
   const existing = new Set<string>();
-  const listing = await run("docker", ["exec", BOX_CONTAINER, "sh", "-c", `ls -1 "${dir}" 2>/dev/null`]);
+  const listing = await run(ENGINE_CLI, ["exec", BOX_CONTAINER, "sh", "-c", `ls -1 "${dir}" 2>/dev/null`]);
   for (const name of listing.stdout.split("\n").map((s) => s.trim()).filter(Boolean)) {
     existing.add(`${dir}/${name}`);
   }
@@ -131,7 +140,7 @@ export async function boxUpload(sources: string[], slug: string): Promise<Upload
   });
 
   for (const { source, dest } of targets) {
-    await run("docker", ["cp", source, `${BOX_CONTAINER}:${dest}`]);
+    await run(ENGINE_CLI, ["cp", source, `${BOX_CONTAINER}:${dest}`]);
   }
   return targets;
 }
@@ -150,7 +159,7 @@ export async function boxListProjectFiles(slug: string): Promise<BoxFile[]> {
   // the classifier rejects them either way, but one `npm install` would otherwise
   // put tens of thousands of identically-greyed rows in the picker. -mindepth 1
   // keeps the prune from matching "." itself and emptying the listing.
-  const listing = await run("docker", [
+  const listing = await run(ENGINE_CLI, [
     "exec",
     BOX_CONTAINER,
     "sh",
@@ -223,6 +232,7 @@ export async function boxExport(
     totalBytes: plan.totalBytes,
     capBytes: plan.capBytes,
     overCap: plan.overCap,
+    unmarked: 0,
   };
 
   // Over the cap nothing at all is written — an unbounded copy onto the user's
@@ -230,16 +240,52 @@ export async function boxExport(
   if (plan.overCap) return { ...result, saved: 0 };
 
   mkdirSync(dir, { recursive: true });
+  let unmarked = 0;
   for (const file of plan.selected) {
     const target = resolveExportTarget(dir, file.path);
     mkdirSync(dirname(target), { recursive: true }); // keep the Project's structure
-    await run("docker", ["cp", `${BOX_CONTAINER}:${projectPath(slug)}/${file.path}`, target]);
-    chmodSync(target, 0o644); // nothing lands executable, whatever the Box said
+    await run(ENGINE_CLI, ["cp", `${BOX_CONTAINER}:${projectPath(slug)}/${file.path}`, target]);
+    // Nothing lands executable, whatever the Box said. Kept because it is still
+    // correct on macOS and costs nothing — but it is a no-op for executability
+    // on Windows, which is why the untrusted mark below exists (#12).
+    chmodSync(target, 0o644);
+    if (!(await markExportedUntrusted(target))) unmarked += 1;
   }
 
   const now = new Date();
   utimesSync(dir, now, now); // stamps "last saved", which Show files reports
-  return result;
+  return { ...result, unmarked };
+}
+
+/**
+ * Apply this host's untrusted mark to one file that has just landed (#12) —
+ * `Zone.Identifier` on Windows, `com.apple.quarantine` on macOS. The DECISION of
+ * which mark, and its exact bytes, is the pure `untrustedMark`; only the write
+ * and the spawn are here. `platform` and the two effects are injected the way
+ * `spawnPath(path, exists)` injects its probe, so both branches are assertable
+ * from either host.
+ *
+ * Returns false rather than throwing: a failed mark is no reason to delete a
+ * Sandbox User's saved work. It is not swallowed either — `boxExport` counts
+ * every false into `ExportResult.unmarked`, which the renderer surfaces.
+ */
+export async function markExportedUntrusted(
+  target: string,
+  platform: NodeJS.Platform = process.platform,
+  write: (path: string, data: string) => void = writeFileSync,
+  exec: (command: string, args: readonly string[]) => Promise<{ code: number }> = run,
+): Promise<boolean> {
+  const mark = untrustedMark(target, platform, Date.now());
+  if (!mark) return false;
+  try {
+    if (mark.kind === "stream") {
+      write(mark.path, mark.content);
+      return true;
+    }
+    return (await exec(mark.command, mark.args)).code === 0;
+  } catch {
+    return false;
+  }
 }
 
 /** True when the folder itself is a git working tree (not merely inside one). */
@@ -302,7 +348,7 @@ function statImportFiles(folder: string, paths: readonly string[]): ImportFile[]
 async function freeSpaceBytes(): Promise<number> {
   // -P (POSIX) guarantees one line per filesystem; plain `df` wraps a long
   // device name onto its own line, which would feed the parser the wrong row.
-  const res = await run("docker", ["exec", BOX_CONTAINER, "df", "-kP", WORKSPACE_DIR]);
+  const res = await run(ENGINE_CLI, ["exec", BOX_CONTAINER, "df", "-kP", WORKSPACE_DIR]);
   if (res.code !== 0) {
     throw new Error(`Could not read the Box's free space: ${res.stderr}`);
   }
@@ -388,20 +434,44 @@ export async function boxImportFolder(folder: string): Promise<Project> {
   );
   const dir = projectPath(slug);
 
-  await run("docker", ["exec", BOX_CONTAINER, "mkdir", "-p", dir]);
+  await run(ENGINE_CLI, ["exec", BOX_CONTAINER, "mkdir", "-p", dir]);
 
   const copy = await runPipe(
     { command: "tar", args: importTarArgs(resolved, gathered.isGitRepo) },
-    { command: "docker", args: ["cp", "-", `${BOX_CONTAINER}:${dir}`] },
+    { command: ENGINE_CLI, args: ["cp", "-", `${BOX_CONTAINER}:${dir}`] },
     importTarInput(gathered.paths),
   );
   if (copy.code !== 0) {
+    // A failed `docker cp` still leaves whatever it managed to write. Without
+    // this the half-copied directory survives, and since project.json is only
+    // written below, it shows up in the Project list as an openable Project
+    // that has no metadata — "nothing partial lands" has to mean this too.
+    // As root: a partial copy's synthesised directories are root-owned, so the
+    // sandbox user cannot remove them (see the chown below for why).
+    await run(ENGINE_CLI, ["exec", "-u", "root", BOX_CONTAINER, "rm", "-rf", dir]);
     throw new Error(`Import failed copying '${resolved}' into the Box: ${copy.stderr}`);
   }
 
+  // `docker cp` writes files with the archive's ownership, but SYNTHESISES the
+  // parent directories (`src/`, …) as root, because `git ls-files` lists only
+  // files and so tar never emits a directory entry for them. Left alone, the
+  // sandbox user can edit an imported file but cannot create a new one beside
+  // it, and git refuses the repo for "dubious ownership". Root-owned dirs are
+  // also why this runs as root.
+  await run(ENGINE_CLI, [
+    "exec",
+    "-u",
+    "root",
+    BOX_CONTAINER,
+    "chown",
+    "-R",
+    `${BOX_USER}:${BOX_USER}`,
+    dir,
+  ]);
+
   // Written AFTER the copy, so a stray .claudebox/ carried in from the source
   // folder can't clobber this Project's real metadata (ticket 09).
-  await run("docker", ["exec", BOX_CONTAINER, "mkdir", "-p", `${dir}/${META_DIR}`]);
+  await run(ENGINE_CLI, ["exec", BOX_CONTAINER, "mkdir", "-p", `${dir}/${META_DIR}`]);
   await writeBoxFile(
     metaPath(slug),
     serializeProjectMeta({ name, slug, seedPrompt: IMPORT_SEED_PROMPT }),

@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
-  chromeAppOpenArgs,
+  chromeAppLaunch,
   ensureSessionExecArgs,
   sessionUrl,
+  windowsChromePaths,
 } from "../src/core/session-window";
+
+const windowsEnv = {
+  ProgramFiles: "C:\\Program Files",
+  "ProgramFiles(x86)": "C:\\Program Files (x86)",
+  LOCALAPPDATA: "C:\\Users\\sandbox\\AppData\\Local",
+};
 
 describe("sessionUrl", () => {
   it("points at the loopback-forwarded console port for the Project", () => {
@@ -31,13 +38,54 @@ describe("ensureSessionExecArgs", () => {
   });
 });
 
-describe("chromeAppOpenArgs", () => {
-  it("opens a chromeless app-mode window (no URL bar or tabs)", () => {
-    expect(chromeAppOpenArgs("http://localhost:7681/sessions/x")).toEqual([
-      "-na",
-      "Google Chrome",
-      "--args",
-      "--app=http://localhost:7681/sessions/x",
+describe("windowsChromePaths", () => {
+  it("probes the three standard install locations, in order", () => {
+    expect(windowsChromePaths(windowsEnv)).toEqual([
+      "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+      "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
+      "C:\\Users\\sandbox\\AppData\\Local\\Google\\Chrome\\Application\\chrome.exe",
     ]);
+  });
+
+  it("skips roots the environment doesn't define (no `undefined\\Google\\…` path)", () => {
+    expect(windowsChromePaths({ LOCALAPPDATA: "C:\\local" })).toEqual([
+      "C:\\local\\Google\\Chrome\\Application\\chrome.exe",
+    ]);
+  });
+});
+
+describe("chromeAppLaunch", () => {
+  const url = "http://localhost:7681/sessions/x";
+
+  it("on the Mac still goes through `open`, in a chromeless app-mode window", () => {
+    expect(chromeAppLaunch(url, "darwin")).toEqual({
+      command: "open",
+      args: ["-na", "Google Chrome", "--args", `--app=${url}`],
+    });
+  });
+
+  it("on the Mac never probes for chrome.exe", () => {
+    const exists = () => {
+      throw new Error("the Mac must not probe the filesystem");
+    };
+    expect(chromeAppLaunch(url, "darwin", windowsEnv, exists)?.command).toBe("open");
+  });
+
+  it("on Windows spawns the first chrome.exe found, in app mode", () => {
+    const launch = chromeAppLaunch(url, "win32", windowsEnv, (p) => p.startsWith("C:\\Users"));
+    expect(launch).toEqual({
+      command: "C:\\Users\\sandbox\\AppData\\Local\\Google\\Chrome\\Application\\chrome.exe",
+      args: [`--app=${url}`],
+    });
+  });
+
+  it("on Windows prefers ProgramFiles when several copies exist", () => {
+    expect(chromeAppLaunch(url, "win32", windowsEnv, () => true)?.command).toBe(
+      "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+    );
+  });
+
+  it("is undefined when Chrome is absent, so the caller falls back to the default browser", () => {
+    expect(chromeAppLaunch(url, "win32", windowsEnv, () => false)).toBeUndefined();
   });
 });

@@ -6,7 +6,7 @@ import { hostBoxDefinitionDir } from "./paths";
 import { refreshOnLaunch } from "./refresh-runner";
 import {
   ensureBoxReady,
-  ensureColima,
+  ensureEngine,
   removeBoxContainer,
   stopBoxDetached,
   updateClaudeCode,
@@ -37,14 +37,14 @@ function createWindow(): BrowserWindow {
 
 /**
  * Get the Engine and the Box running BEFORE the home screen queries Projects.
- * Order matters: Colima must be up before Refresh-on-Launch can `docker build`,
+ * Order matters: the Engine must be up before Refresh-on-Launch can build,
  * and the Box must be running before Projects (which live on the named volume)
  * can be listed or created. Status is reported to the renderer, not swallowed.
  */
 async function bootstrap(window: BrowserWindow): Promise<void> {
   const send = (status: BootstrapStatus) => window.webContents.send(IPC.bootstrap, status);
   try {
-    await ensureColima();
+    await ensureEngine();
     const refresh = await refreshOnLaunch(); // pull + rebuild only if changed
     if (refresh.action === "error") {
       // Non-fatal for a machine that already has an image; fatal only if there's

@@ -2,13 +2,15 @@ import { join, resolve, sep } from "node:path";
 
 /**
  * Export (ticket 07/08): a one-way, user-initiated copy of a Project's documents
- * out of the Box onto the MacBook — the mirror of Upload, and the first Box→host
- * path in the system (ADR 0003). This module holds every DECISION; the Docker
- * calls and the filesystem writes live in the effects layer.
+ * out of the Box onto the user's computer — the mirror of Upload, and the first
+ * Box→host path in the system (ADR 0003). This module holds every DECISION; the
+ * Docker calls and the filesystem writes live in the effects layer.
  *
- * Three rules make the feature safe enough to exist:
+ * Four rules make the feature safe enough to exist:
  *   - only document-shaped files cross (threat C is reduced to the risk class of
  *     an email attachment — it is not eliminated);
+ *   - what lands carries the host OS's own untrusted mark, so "the risk class of
+ *     an email attachment" is literally true and not merely aspirational (#12);
  *   - the total is bounded, because an unbounded copy onto the user's real disk
  *     is threat A by name;
  *   - every path that reaches a host write is asserted inside the landing root,
@@ -132,6 +134,68 @@ export function exportFolderName(name: string, slug: string): string {
   return safe.length > 0 ? safe : slug;
 }
 
+/**
+ * The macOS quarantine attribute's four semicolon-separated fields:
+ * `flags;hex-epoch-seconds;agent;event-uuid`. `0001` is the download flag on its
+ * own — deliberately none of the "user approved"/"assessment ok" bits, so
+ * Gatekeeper still gets its say on what the Box wrote. The UUID names a row in
+ * the LaunchServices quarantine database; the Launcher writes no row, so the
+ * field is left empty, which is legal and is what plain `xattr -w` users do.
+ */
+const QUARANTINE_FLAGS = "0001";
+const QUARANTINE_AGENT = "Claudebox";
+
+export function quarantineValue(nowMs: number): string {
+  const seconds = Math.floor(nowMs / 1000).toString(16).padStart(8, "0");
+  return `${QUARANTINE_FLAGS};${seconds};${QUARANTINE_AGENT};`;
+}
+
+/**
+ * How this host marks a file as "came from somewhere else". A `stream` is a
+ * plain file write (an NTFS alternate data stream is addressed as a path); a
+ * `command` is spawned, because Node has no xattr API.
+ */
+export type UntrustedMark =
+  | { readonly kind: "stream"; readonly path: string; readonly content: string }
+  | { readonly kind: "command"; readonly command: string; readonly args: readonly string[] };
+
+/**
+ * The untrusted mark for one exported file (#12). Threat C's second layer used
+ * to be `chmod 0o644` alone, which on Windows only toggles the read-only bit —
+ * executability there is decided by extension — so the defence silently dropped
+ * to the allowlist on half the platforms we ship to. Both hosts now get their
+ * native mark instead, and the decision of WHICH is testable from either one.
+ *
+ * `undefined` for any other platform: the Launcher ships on macOS and Windows,
+ * and a host whose mark we do not know must be reported as unmarked rather than
+ * counted as a success (`ExportResult.unmarked`).
+ */
+export function untrustedMark(
+  target: string,
+  platform: NodeJS.Platform,
+  nowMs: number,
+): UntrustedMark | undefined {
+  if (platform === "win32") {
+    // Not path.join: the stream is a suffix on the file's own path, not a child.
+    // Zone 3 is URLZONE_INTERNET — where a browser download lands, which is what
+    // makes Office use Protected View and SmartScreen evaluate the file. The
+    // CRLFs are the format Explorer itself writes and parses.
+    return {
+      kind: "stream",
+      path: `${target}:Zone.Identifier`,
+      content: "[ZoneTransfer]\r\nZoneId=3\r\n",
+    };
+  }
+  if (platform === "darwin") {
+    return {
+      kind: "command",
+      command: "xattr",
+      args: ["-w", "com.apple.quarantine", quarantineValue(nowMs), target],
+    };
+  }
+  return undefined;
+}
+
 export interface ProjectIdentity {
   readonly name: string;
   readonly slug: string;
@@ -239,4 +303,11 @@ export interface ExportResult {
   readonly capBytes: number;
   /** True when the Export was refused for size — nothing at all was written. */
   readonly overCap: boolean;
+  /**
+   * How many of the saved files landed WITHOUT their untrusted mark (#12).
+   * Surfaced rather than swallowed: the files are on the user's disk either way,
+   * and a threat-C mitigation that quietly stopped applying is the thing this
+   * whole change exists to prevent.
+   */
+  readonly unmarked: number;
 }
