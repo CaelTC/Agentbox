@@ -1,14 +1,33 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { exportRoot } from "../src/main/paths";
+import { claudeboxHome, exportRoot } from "../src/main/paths";
 
-const saved = process.env.CLAUDEBOX_EXPORT_ROOT;
+const saved = {
+  CLAUDEBOX_HOME: process.env.CLAUDEBOX_HOME,
+  CLAUDEBOX_EXPORT_ROOT: process.env.CLAUDEBOX_EXPORT_ROOT,
+};
 afterEach(() => {
   // The whole suite shares one process, so an override left set here would
   // silently redirect every later test that resolves a host path.
-  if (saved === undefined) delete process.env.CLAUDEBOX_EXPORT_ROOT;
-  else process.env.CLAUDEBOX_EXPORT_ROOT = saved;
+  for (const [name, value] of Object.entries(saved)) {
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  }
+});
+
+// Both host roots are overridable for the same reason, and the pair is tested
+// together so the symmetry can't rot on one side.
+describe("claudeboxHome", () => {
+  it("keeps the Launcher's own state out of sight, beside the user's other dotfiles", () => {
+    delete process.env.CLAUDEBOX_HOME;
+    expect(claudeboxHome()).toBe(join(homedir(), ".claudebox"));
+  });
+
+  it("can be pointed elsewhere, so a test never writes to the real home", () => {
+    process.env.CLAUDEBOX_HOME = "/tmp/claudebox-home";
+    expect(claudeboxHome()).toBe("/tmp/claudebox-home");
+  });
 });
 
 describe("exportRoot", () => {
