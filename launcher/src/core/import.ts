@@ -1,7 +1,7 @@
 import { sanitizeProjectName } from "./projects";
 
 /**
- * Project Import (ticket 09): a folder on the MacBook *becomes* a Project — the
+ * Project Import (ticket 09): a folder on the user's computer *becomes* a Project — the
  * opposite direction and shape from Export. Export carries documents out under
  * an allowlist; Import carries a whole project in, unfiltered, because a repo
  * the user chose to bring in is the thing they came here to work on. This
@@ -186,4 +186,4 @@ export interface ImportListing {
  * the user just handed Claude a codebase it doesn't understand yet.
  */
 export const IMPORT_SEED_PROMPT =
-  "I've just brought this project in from my Mac. Take a look around, tell me what it is, and suggest a few things I could do with it.";
+  "I've just brought this project in from my computer. Take a look around, tell me what it is, and suggest a few things I could do with it.";

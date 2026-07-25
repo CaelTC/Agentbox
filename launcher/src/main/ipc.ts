@@ -64,7 +64,7 @@ export function registerIpc(window: BrowserWindow): void {
   // `pick` comes from the renderer, so it is input rather than truth: boxExport
   // re-enumerates the Project inside the Box and re-runs the allowlist over every
   // ticked path before a byte is copied.
-  ipcMain.handle(IPC.saveToMac, async (_e, slug: string, pick: string[]) => {
+  ipcMain.handle(IPC.saveToComputer, async (_e, slug: string, pick: string[]) => {
     await ensureBoxReady(hostBoxDefinitionDir());
     return boxExport(slug, exportRoot(), pick);
   });
@@ -86,7 +86,7 @@ export function registerIpc(window: BrowserWindow): void {
   // (`df`) that both the sheet and the actual copy rely on.
   ipcMain.handle(IPC.planImport, async () => {
     const picked = await dialog.showOpenDialog(window, {
-      title: "Open a folder from your Mac",
+      title: "Open a folder from your computer",
       properties: ["openDirectory"],
     });
     if (picked.canceled || picked.filePaths.length === 0) return undefined;

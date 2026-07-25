@@ -36,3 +36,32 @@ Four properties carry it:
 - It introduces **threat C** (CONTEXT.md): content generated in the Box being executed on the host. The Box's walls cannot defend it, because it happens outside them. The realistic chain is prompt injection over the open egress the design deliberately allows — Claude fetches a page, the page tells it to write something poisoned, the user carries it across and opens it. The allowlist reduces this to the risk class of an email attachment; it does not eliminate it.
 - Export never deletes on the host. Files removed inside the Box linger in the exported folder. Accepted: stale files are a smaller harm than the Launcher deleting a user's work.
 - Backup, version history, and sharing remain **unsolved**. That is deliberate, not an oversight.
+
+## Amendment — what lands carries the host's untrusted mark
+
+Threat C's second layer was `chmod 0o644` on every exported file: nothing lands
+executable, whatever the Box said. Porting the Launcher to Windows showed that
+this layer is macOS-only — Windows' `chmod` toggles the read-only bit and decides
+executability by extension, so on that host the defence quietly fell back to the
+extension allowlist alone. An undocumented asymmetry in the one place these walls
+admit they cannot defend is not something to ship.
+
+Export now applies the host's own untrusted mark to each file as it lands, next
+to the `chmod`, which stays: `Zone.Identifier` with `ZoneId=3` on Windows,
+`com.apple.quarantine` on macOS. This is what makes "the risk class of an email
+attachment", above, literally true rather than aspirational — Office opens marked
+files in Protected View, SmartScreen and Gatekeeper get their say, browsers warn.
+
+**The Sandbox User will see a Gatekeeper prompt on the Mac that they did not see
+before.** That is the intended behaviour, not a regression: this ADR already says
+the allowlist does not eliminate threat C and that opening what landed is the
+user's call, and the prompt is the operating system asking exactly that question
+at exactly the right moment. It is written here because it is a visible change to
+a flow that worked, and a reader who finds a new dialog in front of a Sandbox
+User deserves to find the reason for it.
+
+A mark that fails to apply does **not** roll the export back — the files have
+landed, and deleting a user's saved work to tidy up is the host-side deletion
+this ADR refused above. The count of unmarked files is returned and shown
+instead, because a mitigation that silently stopped applying is the failure this
+amendment exists to prevent.

@@ -49,7 +49,7 @@ export function previewDoc(): string {
   return `# Preview in Claudebox
 
 The user views web pages by clicking **Preview** in the Launcher, which opens
-whatever is serving inside this Box in their Mac's browser.
+whatever is serving inside this Box in their computer's browser.
 
 For that to work:
 

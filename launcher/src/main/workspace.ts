@@ -1,4 +1,12 @@
-import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, utimesSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { BOX_CONTAINER, WORKSPACE_DIR } from "../core/config";
 import {
@@ -6,6 +14,7 @@ import {
   planExport,
   resolveExportDir,
   resolveExportTarget,
+  untrustedMark,
   type BoxFile,
   type ExportListing,
   type ExportResult,
@@ -223,6 +232,7 @@ export async function boxExport(
     totalBytes: plan.totalBytes,
     capBytes: plan.capBytes,
     overCap: plan.overCap,
+    unmarked: 0,
   };
 
   // Over the cap nothing at all is written — an unbounded copy onto the user's
@@ -230,16 +240,56 @@ export async function boxExport(
   if (plan.overCap) return { ...result, saved: 0 };
 
   mkdirSync(dir, { recursive: true });
+  let unmarked = 0;
   for (const file of plan.selected) {
     const target = resolveExportTarget(dir, file.path);
     mkdirSync(dirname(target), { recursive: true }); // keep the Project's structure
     await run("docker", ["cp", `${BOX_CONTAINER}:${projectPath(slug)}/${file.path}`, target]);
-    chmodSync(target, 0o644); // nothing lands executable, whatever the Box said
+    // Nothing lands executable, whatever the Box said. Kept because it is still
+    // correct on macOS and costs nothing — but it is a no-op for executability
+    // on Windows, which is why the untrusted mark below exists (#12).
+    chmodSync(target, 0o644);
+    if (!(await markExportedUntrusted(target))) unmarked += 1;
   }
 
   const now = new Date();
   utimesSync(dir, now, now); // stamps "last saved", which Show files reports
-  return result;
+  return { ...result, unmarked };
+}
+
+/**
+ * Apply this host's untrusted mark to one file that has just landed (#12) —
+ * `Zone.Identifier` on Windows, `com.apple.quarantine` on macOS. The DECISION of
+ * which mark, and its exact bytes, is the pure `untrustedMark`; only the write
+ * and the spawn are here. `platform` and the two effects are injected the way
+ * `spawnPath(path, exists)` injects its probe, so both branches are assertable
+ * from either host.
+ *
+ * Returns false instead of throwing, and the export continues. A failed mark is
+ * not a reason to delete a Sandbox User's saved work — ADR 0003 already refused
+ * host-side deletion for tidiness, and half an export is worse than an unmarked
+ * one. It is not swallowed either: `boxExport` counts every false into
+ * `ExportResult.unmarked`, which the renderer says out loud. A platform with no
+ * mark we know (neither macOS nor Windows) counts as unmarked for the same
+ * reason — silence there would be the exact asymmetry this change removes.
+ */
+export async function markExportedUntrusted(
+  target: string,
+  platform: NodeJS.Platform = process.platform,
+  write: (path: string, data: string) => void = writeFileSync,
+  exec: (command: string, args: readonly string[]) => Promise<{ code: number }> = run,
+): Promise<boolean> {
+  const mark = untrustedMark(target, platform, Date.now());
+  if (!mark) return false;
+  try {
+    if (mark.kind === "stream") {
+      write(mark.path, mark.content);
+      return true;
+    }
+    return (await exec(mark.command, mark.args)).code === 0;
+  } catch {
+    return false;
+  }
 }
 
 /** True when the folder itself is a git working tree (not merely inside one). */
