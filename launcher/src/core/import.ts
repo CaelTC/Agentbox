@@ -51,9 +51,36 @@ export function assertRepoRelativePaths(paths: readonly string[]): readonly stri
  *
  * `.git` rides along as an extra positional path: it always crosses, history
  * included, and `git ls-files` never lists it.
+ *
+ * Every other flag here is a macOS↔Linux impedance mismatch, each one live-
+ * reproduced against a real Box rather than guessed at:
+ *
+ * - `--no-xattrs`: macOS stamps `com.apple.provenance` on every file. Linux
+ *   overlayfs refuses to set it, so `docker cp` aborts on the FIRST file —
+ *   import was failing on essentially any real folder.
+ * - `--no-mac-metadata`: bsdtar otherwise emits an AppleDouble `._name` sidecar
+ *   beside every entry, which lands in the Box as visible junk in every Project.
+ *
+ * Ownership is deliberately NOT set here. `docker cp` would honour a `--uid`,
+ * but `git ls-files` lists only files, so the archive has no entry for `src/` —
+ * `docker cp` synthesises those parent directories itself, as root, whatever tar
+ * says. The effects layer chowns the tree afterwards instead; see `boxImportFolder`.
+ *
+ * ponytail: `--no-mac-metadata` is bsdtar-only, which is what `/usr/bin/tar` is
+ * on macOS — the only host Claudebox installs on today. Revisit with issue #10.
  */
 export function importTarArgs(folder: string, isGitRepo: boolean): readonly string[] {
-  return ["-c", "-C", folder, "--null", "-T", "-", ...(isGitRepo ? [".git"] : [])];
+  return [
+    "-c",
+    "--no-xattrs",
+    "--no-mac-metadata",
+    "-C",
+    folder,
+    "--null",
+    "-T",
+    "-",
+    ...(isGitRepo ? [".git"] : []),
+  ];
 }
 
 /** The NUL-separated, NUL-terminated list `tar --null -T -` reads from stdin. */

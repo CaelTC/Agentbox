@@ -1,6 +1,6 @@
 import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, utimesSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
-import { BOX_CONTAINER, WORKSPACE_DIR } from "../core/config";
+import { BOX_CONTAINER, BOX_USER, WORKSPACE_DIR } from "../core/config";
 import {
   parseBoxFileListing,
   planExport,
@@ -396,8 +396,32 @@ export async function boxImportFolder(folder: string): Promise<Project> {
     importTarInput(gathered.paths),
   );
   if (copy.code !== 0) {
+    // A failed `docker cp` still leaves whatever it managed to write. Without
+    // this the half-copied directory survives, and since project.json is only
+    // written below, it shows up in the Project list as an openable Project
+    // that has no metadata — "nothing partial lands" has to mean this too.
+    // As root: a partial copy's synthesised directories are root-owned, so the
+    // sandbox user cannot remove them (see the chown below for why).
+    await run("docker", ["exec", "-u", "root", BOX_CONTAINER, "rm", "-rf", dir]);
     throw new Error(`Import failed copying '${resolved}' into the Box: ${copy.stderr}`);
   }
+
+  // `docker cp` writes files with the archive's ownership, but SYNTHESISES the
+  // parent directories (`src/`, …) as root, because `git ls-files` lists only
+  // files and so tar never emits a directory entry for them. Left alone, the
+  // sandbox user can edit an imported file but cannot create a new one beside
+  // it, and git refuses the repo for "dubious ownership". Root-owned dirs are
+  // also why this runs as root.
+  await run("docker", [
+    "exec",
+    "-u",
+    "root",
+    BOX_CONTAINER,
+    "chown",
+    "-R",
+    `${BOX_USER}:${BOX_USER}`,
+    dir,
+  ]);
 
   // Written AFTER the copy, so a stray .claudebox/ carried in from the source
   // folder can't clobber this Project's real metadata (ticket 09).

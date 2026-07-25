@@ -27,6 +27,9 @@ export const COLIMA_PROFILE = "claudebox";
 export const BOX_IMAGE = "claudebox:latest";
 export const BOX_CONTAINER = "claudebox";
 
+/** The unprivileged user everything in the Box runs as (`box/Dockerfile`). */
+export const BOX_USER = "sandbox";
+
 /**
  * The Workspace lives on a named Docker volume — NOT a host mount — so the Box
  * cannot see a single real file on the laptop (ADR 0001, threat A) yet work
