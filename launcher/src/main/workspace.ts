@@ -1,5 +1,5 @@
-import { chmodSync, mkdirSync, utimesSync } from "node:fs";
-import { dirname } from "node:path";
+import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, utimesSync } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
 import { BOX_CONTAINER, WORKSPACE_DIR } from "../core/config";
 import {
   parseBoxFileListing,
@@ -10,17 +10,29 @@ import {
   type ExportListing,
   type ExportResult,
 } from "../core/export";
+import {
+  IMPORT_SEED_PROMPT,
+  assertRepoRelativePaths,
+  deriveImportIdentity,
+  importTarArgs,
+  importTarInput,
+  parseDfAvailableBytes,
+  parseGitLsFiles,
+  planImport,
+  type ImportFile,
+  type ImportListing,
+} from "../core/import";
 import type { Project, ProjectMeta } from "../core/projects";
 import {
+  META_DIR,
   assertValidSlug,
   metaRelPath,
   parseProjectMeta,
   sanitizeProjectName,
   serializeProjectMeta,
 } from "../core/projects";
-import { previewDoc, projectDocRelPath } from "../core/preview";
 import { resolveUploadTargets, type UploadTarget } from "../core/upload";
-import { run } from "./exec";
+import { run, runPipe } from "./exec";
 
 /**
  * Box-side Workspace operations. Because the Workspace is a NAMED VOLUME and not
@@ -85,17 +97,6 @@ export async function boxCreateProject(
   await writeBoxFile(metaPath(slug), serializeProjectMeta({ name, slug, seedPrompt }));
 
   return { name, slug, dir: projectPath(slug) };
-}
-
-/**
- * Drop the Preview contract into the Project as `CLAUDE.md`, which Claude Code
- * reads at every session start. Written only when absent, so any later edit by
- * the user or by Claude survives.
- */
-export async function boxEnsureProjectDoc(slug: string): Promise<void> {
-  const path = `${projectPath(slug)}/${projectDocRelPath}`;
-  if (await boxPathExists(path)) return;
-  await writeBoxFile(path, previewDoc());
 }
 
 async function writeBoxFile(path: string, content: string): Promise<void> {
@@ -239,4 +240,176 @@ export async function boxExport(
   const now = new Date();
   utimesSync(dir, now, now); // stamps "last saved", which Show files reports
   return result;
+}
+
+/** True when the folder itself is a git working tree (not merely inside one). */
+async function isGitRepo(folder: string): Promise<boolean> {
+  const res = await run("git", ["-C", folder, "rev-parse", "--is-inside-work-tree"]);
+  return res.code === 0 && res.stdout.trim() === "true";
+}
+
+/**
+ * Tracked plus untracked-not-ignored paths, NUL-separated exactly as `tar
+ * --null -T -` wants them. Kept as the raw string (not just the parsed array)
+ * so it can be fed straight to `tar`'s stdin without re-serializing it.
+ */
+async function gitLsFilesRaw(folder: string): Promise<string> {
+  const res = await run("git", [
+    "-C",
+    folder,
+    "ls-files",
+    "--cached",
+    "--others",
+    "--exclude-standard",
+    "-z",
+  ]);
+  if (res.code !== 0) {
+    throw new Error(`'git ls-files' failed in '${folder}': ${res.stderr}`);
+  }
+  return res.stdout;
+}
+
+/**
+ * Every regular file and symlink under `folder`, relative paths — used when
+ * there is no repo to ask `git ls-files`. No `.gitignore` at the root means
+ * nothing is filtered here: everything crosses (matches the confirmation
+ * sheet's warning for exactly this case).
+ */
+function listAllFiles(folder: string, dir: string = folder): string[] {
+  const found: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      // A stray `.git` here means a repo `git rev-parse` refused (corrupt, or a
+      // vendored one nested in the tree). Walking it turns every loose object
+      // into its own tar directive; the repo path never expands `.git` either.
+      if (entry.name === ".git") continue;
+      found.push(...listAllFiles(folder, full));
+    } else if (entry.isFile() || entry.isSymbolicLink()) {
+      found.push(full.slice(folder.length + 1));
+    }
+  }
+  return found;
+}
+
+/** Stat each path in Node for an exact total (~100ms for 20k files) — symmetric with `planExport`. */
+function statImportFiles(folder: string, paths: readonly string[]): ImportFile[] {
+  // lstat, not stat: a dangling symlink (pointing outside the folder) must not
+  // crash the size pass — it lands as a symlink in the Box, harmlessly (ticket 09).
+  return paths.map((path) => ({ path, size: lstatSync(join(folder, path)).size }));
+}
+
+async function freeSpaceBytes(): Promise<number> {
+  // -P (POSIX) guarantees one line per filesystem; plain `df` wraps a long
+  // device name onto its own line, which would feed the parser the wrong row.
+  const res = await run("docker", ["exec", BOX_CONTAINER, "df", "-kP", WORKSPACE_DIR]);
+  if (res.code !== 0) {
+    throw new Error(`Could not read the Box's free space: ${res.stderr}`);
+  }
+  return parseDfAvailableBytes(res.stdout);
+}
+
+interface GatheredImport {
+  readonly isGitRepo: boolean;
+  readonly hasGitignore: boolean;
+  readonly paths: readonly string[];
+}
+
+/**
+ * The mechanism forks on whether the folder is a git repo at all; the warning
+ * (`hasGitignore`) is a SEPARATE condition — a repo with no root `.gitignore`
+ * still warns even though `git ls-files` is doing the listing.
+ */
+async function gatherImport(folder: string): Promise<GatheredImport> {
+  const hasGitignore = existsSync(join(folder, ".gitignore"));
+  if (await isGitRepo(folder)) {
+    const paths = assertRepoRelativePaths(parseGitLsFiles(await gitLsFilesRaw(folder)));
+    return { isGitRepo: true, hasGitignore, paths };
+  }
+  return { isGitRepo: false, hasGitignore, paths: listAllFiles(folder) };
+}
+
+/**
+ * Measure a folder for the one confirmation sheet (ticket 09): what crosses,
+ * whether `.gitignore` filtered anything, the exact size, and whether it fits
+ * the Box. Nothing is copied here — `importFolder` re-measures independently
+ * rather than trusting this listing's byte counts back from the renderer.
+ */
+export async function boxPlanImport(folder: string): Promise<ImportListing> {
+  const resolved = resolve(folder);
+  // Independent: the `df` round trip into the Box needs nothing from the walk.
+  const [gathered, freeBytes] = await Promise.all([gatherImport(resolved), freeSpaceBytes()]);
+  const plan = planImport(statImportFiles(resolved, gathered.paths), freeBytes);
+
+  return {
+    folder: resolved,
+    folderName: basename(resolved),
+    isGitRepo: gathered.isGitRepo,
+    hasGitignore: gathered.hasGitignore,
+    fileCount: plan.fileCount,
+    totalBytes: plan.totalBytes,
+    warnBytes: plan.warnBytes,
+    overWarnThreshold: plan.overWarnThreshold,
+    freeBytes: plan.freeBytes,
+    fitsFreeSpace: plan.fitsFreeSpace,
+  };
+}
+
+/**
+ * Project Import (ticket 09): a folder on the MacBook *becomes* a Project, its
+ * contents landing at the Project root (never nested — `claudebox-session`
+ * launches Claude's cwd at exactly that root). One `tar` stream piped straight
+ * into `docker cp -`, so 5000 files are one round trip instead of 5000; `.git`
+ * always crosses alongside whatever `git ls-files` listed, history included.
+ *
+ * Re-measures the folder rather than trusting the sheet's listing, exactly as
+ * `boxExport` re-enumerates the Box before writing: nothing from the renderer
+ * is trusted for the write itself, only for what it showed the user.
+ */
+export async function boxImportFolder(folder: string): Promise<Project> {
+  const resolved = resolve(folder);
+  // Independent: the `df` round trip into the Box needs nothing from the walk.
+  const [gathered, freeBytes] = await Promise.all([gatherImport(resolved), freeSpaceBytes()]);
+  const plan = planImport(statImportFiles(resolved, gathered.paths), freeBytes);
+
+  if (!plan.fitsFreeSpace) {
+    // Refused before a single byte crosses — "there isn't room" as a sentence,
+    // not `docker cp` dying mid-stream and leaving a half-copied Project.
+    throw new Error(
+      `Not enough room in the Box: this needs ${describeBytes(plan.totalBytes)}, ` +
+        `and only ${describeBytes(plan.freeBytes)} is free.`,
+    );
+  }
+
+  const existing = await boxListProjects();
+  const { name, slug } = deriveImportIdentity(
+    basename(resolved),
+    existing.map((p) => p.slug),
+  );
+  const dir = projectPath(slug);
+
+  await run("docker", ["exec", BOX_CONTAINER, "mkdir", "-p", dir]);
+
+  const copy = await runPipe(
+    { command: "tar", args: importTarArgs(resolved, gathered.isGitRepo) },
+    { command: "docker", args: ["cp", "-", `${BOX_CONTAINER}:${dir}`] },
+    importTarInput(gathered.paths),
+  );
+  if (copy.code !== 0) {
+    throw new Error(`Import failed copying '${resolved}' into the Box: ${copy.stderr}`);
+  }
+
+  // Written AFTER the copy, so a stray .claudebox/ carried in from the source
+  // folder can't clobber this Project's real metadata (ticket 09).
+  await run("docker", ["exec", BOX_CONTAINER, "mkdir", "-p", `${dir}/${META_DIR}`]);
+  await writeBoxFile(
+    metaPath(slug),
+    serializeProjectMeta({ name, slug, seedPrompt: IMPORT_SEED_PROMPT }),
+  );
+
+  return { name, slug, dir };
+}
+
+function describeBytes(bytes: number): string {
+  return `${Math.round((bytes / 1024 ** 3) * 10) / 10} GB`;
 }

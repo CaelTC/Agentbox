@@ -9,3 +9,4 @@ type Project = import("../core/projects").Project;
 type StarterTemplate = import("../core/templates").StarterTemplate;
 type ExportCandidate = import("../core/export").ExportCandidate;
 type ExportListing = import("../core/export").ExportListing;
+type ImportListing = import("../core/import").ImportListing;

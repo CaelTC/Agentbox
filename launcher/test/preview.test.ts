@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   PREVIEW_PORTS,
@@ -74,5 +76,21 @@ describe("detectServedPort", () => {
   it("only ever returns a port inside the published (forwardable) set or a live port", () => {
     // 5173 is well-known AND published; picking it means Preview will actually resolve.
     expect(PREVIEW_PORTS).toContain(detectServedPort([5173, 3000]));
+  });
+});
+
+describe("the Preview contract's two copies", () => {
+  // core/preview.ts's previewDoc() is the source of truth; box/entrypoint.sh
+  // duplicates the text verbatim because a bash build context cannot import
+  // it. previewDoc()'s docstring claims a test keeps the two from drifting —
+  // this is that test. Without it, changing PREVIEW_PORTS updates the doc the
+  // Launcher reasons about and silently leaves the Box shipping the old ports.
+  it("box/entrypoint.sh writes exactly what previewDoc() returns", () => {
+    const script = readFileSync(join(__dirname, "..", "..", "box", "entrypoint.sh"), "utf8");
+    const heredoc = script.match(
+      /cat > \/home\/sandbox\/\.claude\/CLAUDE\.md <<'EOF'\n([\s\S]*?)\nEOF\n/,
+    );
+    expect(heredoc, "entrypoint.sh no longer writes ~/.claude/CLAUDE.md").not.toBeNull();
+    expect(heredoc![1]).toBe(previewDoc().trimEnd());
   });
 });

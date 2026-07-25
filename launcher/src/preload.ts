@@ -19,6 +19,8 @@ const api: ClaudeboxApi = {
   listExportFiles: (slug) => ipcRenderer.invoke(IPC.listExportFiles, slug),
   saveToMac: (slug, pick) => ipcRenderer.invoke(IPC.saveToMac, slug, pick),
   showSavedFiles: (slug) => ipcRenderer.invoke(IPC.showSavedFiles, slug),
+  planImport: () => ipcRenderer.invoke(IPC.planImport),
+  importFolder: (folder) => ipcRenderer.invoke(IPC.importFolder, folder),
   onBootstrap: (listener) =>
     ipcRenderer.on(IPC.bootstrap, (_e, result) => listener(result)),
 };

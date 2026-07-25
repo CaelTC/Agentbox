@@ -10,7 +10,9 @@ import {
   boxExport,
   boxExportDir,
   boxExportListing,
+  boxImportFolder,
   boxListProjects,
+  boxPlanImport,
   boxUpload,
 } from "./workspace";
 
@@ -78,5 +80,24 @@ export function registerIpc(window: BrowserWindow): void {
     // ponytail: "last saved" is the folder's mtime, which Finder also bumps when
     // it drops a .DS_Store in. Write a stamp file if the drift ever matters.
     return { dir, opened: true, lastSaved: stat.mtimeMs };
+  });
+
+  // Project Import (ticket 09). The Box must be up for the free-space check
+  // (`df`) that both the sheet and the actual copy rely on.
+  ipcMain.handle(IPC.planImport, async () => {
+    const picked = await dialog.showOpenDialog(window, {
+      title: "Open a folder from your Mac",
+      properties: ["openDirectory"],
+    });
+    if (picked.canceled || picked.filePaths.length === 0) return undefined;
+    await ensureBoxReady(hostBoxDefinitionDir());
+    return boxPlanImport(picked.filePaths[0]!);
+  });
+
+  // The folder path comes from the sheet the plan above produced, but the
+  // copy re-measures it rather than trusting those numbers back.
+  ipcMain.handle(IPC.importFolder, async (_e, folder: string) => {
+    await ensureBoxReady(hostBoxDefinitionDir());
+    return boxImportFolder(folder);
   });
 }

@@ -33,14 +33,17 @@ export function loopbackPublishArgs(ports: readonly number[] = PREVIEW_PORTS): s
 }
 
 /**
- * The per-Project `CLAUDE.md` Claude Code reads at session start. It exists
- * because the published ports forward to the container's BRIDGE ip, not its
- * loopback: a dev server bound to 127.0.0.1 *inside* the Box is unreachable
- * from the Mac, and Preview opens a silent dead page. Ports come from
- * PREVIEW_PORTS so the doc cannot drift from what is actually published.
+ * The Box-global `~/.claude/CLAUDE.md` Claude Code reads at session start
+ * (written by `box/entrypoint.sh` on every start, ticket 09 — a per-Project
+ * doc would otherwise get buried by an imported Project's own CLAUDE.md). It
+ * exists because the published ports forward to the container's BRIDGE ip,
+ * not its loopback: a dev server bound to 127.0.0.1 *inside* the Box is
+ * unreachable from the Mac, and Preview opens a silent dead page. Ports come
+ * from PREVIEW_PORTS so the doc cannot drift from what is actually published
+ * — `entrypoint.sh` duplicates this text verbatim since a bash build context
+ * cannot import it directly; this function is the source of truth and the
+ * test below is what keeps the two from drifting apart.
  */
-export const projectDocRelPath = "CLAUDE.md";
-
 export function previewDoc(): string {
   const ports = PREVIEW_PORTS.join(", ");
   return `# Preview in Claudebox

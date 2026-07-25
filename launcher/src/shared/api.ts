@@ -1,4 +1,5 @@
 import type { ExportListing, ExportResult } from "../core/export";
+import type { ImportListing } from "../core/import";
 import type { Project } from "../core/projects";
 import type { StarterTemplate } from "../core/templates";
 import type { UploadTarget } from "../core/upload";
@@ -39,6 +40,19 @@ export interface ClaudeboxApi {
   showSavedFiles(slug: string): Promise<SavedFolder>;
 
   /**
+   * Project Import (ticket 09): open a native folder picker and measure what
+   * bringing it in would cost — for the one confirmation sheet. Undefined if
+   * the Sandbox User cancels the picker.
+   */
+  planImport(): Promise<ImportListing | undefined>;
+  /**
+   * "Bring it in" on the confirmation sheet: copy the folder into the Box as a
+   * new Project. Re-measures the folder itself rather than trusting the
+   * listing above, exactly as `saveToMac` re-validates its selection.
+   */
+  importFolder(folder: string): Promise<Project>;
+
+  /**
    * Resolves once the Engine + Box are up so the home screen can safely query
    * Projects. Rejects (with a message to show) if bootstrap failed.
    */
@@ -70,6 +84,8 @@ export const IPC = {
   listExportFiles: "export:list",
   saveToMac: "export:save",
   showSavedFiles: "export:show",
+  planImport: "import:plan",
+  importFolder: "import:folder",
   bootstrap: "app:bootstrap",
 } as const;
 

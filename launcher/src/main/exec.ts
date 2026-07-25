@@ -49,3 +49,58 @@ export async function runOk(command: string, args: readonly string[]): Promise<b
     return false;
   }
 }
+
+export interface PipeStage {
+  readonly command: string;
+  readonly args: readonly string[];
+}
+
+/**
+ * Pipe `a`'s stdout into `b`'s stdin, spawned directly — no `sh -c`. Import
+ * (ticket 09) is the first host-side command built from a user-chosen path
+ * (the folder they picked); a shell there is a quoting hazard for nothing.
+ *
+ * `input` is written to `a`'s stdin and resolves with BOTH stages' stderr.
+ */
+export function runPipe(a: PipeStage, b: PipeStage, input = ""): Promise<RunResult> {
+  return new Promise((promiseResolve, reject) => {
+    const env = { ...process.env, PATH: spawnPath() };
+    const first = spawn(a.command, a.args, { stdio: ["pipe", "pipe", "pipe"], env });
+    const second = spawn(b.command, b.args, { stdio: ["pipe", "pipe", "pipe"], env });
+
+    first.stdout.pipe(second.stdin);
+    // `b` exiting early makes the pipe write EPIPE. Node emits that on the
+    // stream, and an 'error' with no listener takes down the whole Launcher.
+    second.stdin.on("error", () => {});
+
+    let settled = false;
+    const fail = (err: Error) => {
+      if (settled) return;
+      settled = true;
+      reject(err);
+    };
+    first.on("error", fail);
+    second.on("error", fail);
+
+    let stdout = "";
+    let stderr = "";
+    second.stdout.on("data", (d) => (stdout += String(d)));
+    first.stderr.on("data", (d) => (stderr += String(d)));
+    second.stderr.on("data", (d) => (stderr += String(d)));
+
+    // BOTH exit codes matter, and `a`'s is reported first: a `tar` that dies
+    // mid-stream still leaves `docker cp` exiting 0 on the truncated archive it
+    // did receive, so checking only `b` reports a partial copy as a success.
+    let firstCode: number | null = null;
+    let secondCode: number | null = null;
+    const settle = () => {
+      if (settled || firstCode === null || secondCode === null) return;
+      settled = true;
+      promiseResolve({ code: firstCode !== 0 ? firstCode : secondCode, stdout, stderr });
+    };
+    first.on("close", (code) => ((firstCode = code ?? -1), settle()));
+    second.on("close", (code) => ((secondCode = code ?? -1), settle()));
+
+    first.stdin.end(input);
+  });
+}

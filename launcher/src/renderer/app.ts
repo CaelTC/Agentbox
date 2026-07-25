@@ -79,11 +79,17 @@ async function renderHome(): Promise<void> {
     await openProject(project);
   });
 
+  // Project Import (ticket 09): a folder on the Mac becomes a Project. One
+  // confirmation sheet stands between the folder picker and anything crossing.
+  const importBtn = el("button", { className: "btn", textContent: "Open a folder from my Mac" });
+  importBtn.addEventListener("click", () => void startImport());
+
   root.append(
     section("light", [
       el("p", { className: "eyebrow", textContent: "Start something new" }),
       templateGrid,
       el("div", { className: "new-project" }, [nameInput, createBtn]),
+      el("div", { className: "new-project" }, [importBtn]),
     ]),
   );
 
@@ -202,6 +208,101 @@ async function openProject(project: Project): Promise<void> {
   root.append(footer());
 
   await cb.openSession(project.slug);
+}
+
+/**
+ * "Open a folder from my Mac" (ticket 09): picking a folder measures it, then
+ * shows the one confirmation sheet. Nothing crosses if the picker is cancelled.
+ */
+async function startImport(): Promise<void> {
+  let listing: ImportListing | undefined;
+  try {
+    listing = await cb.planImport();
+  } catch (err) {
+    flash(`Couldn't read that folder: ${(err as Error).message}`);
+    return;
+  }
+  if (!listing) return; // the native picker was cancelled
+  renderImportSheet(listing);
+}
+
+/**
+ * The Project Import confirmation sheet (ticket 09) — folder name, exact size,
+ * whether `.gitignore` filtered anything, and the consent sentence, reusing
+ * the `sheet`/`panel` pattern from `renderExportPicker`. Cancel copies nothing;
+ * "Bring it in" is disabled outright when the folder doesn't fit the Box.
+ */
+function renderImportSheet(listing: ImportListing): void {
+  const dialog = el("div", { className: "sheet" }) as HTMLDivElement;
+  const panel = el("div", { className: "panel" });
+
+  panel.append(el("h2", { textContent: "Bring in a project" }));
+  panel.append(el("p", { className: "sub", textContent: listing.folderName }));
+
+  // The warning and the mechanism key off different conditions (ticket 09):
+  // this fires on the absence of a root .gitignore, regardless of whether the
+  // folder is a git repo at all.
+  panel.append(
+    el("p", {
+      textContent: listing.hasGitignore
+        ? "Filtered by this project's .gitignore — files it ignores (like node_modules) are left out."
+        : "No .gitignore was found here, so everything in the folder will be copied.",
+    }),
+  );
+
+  if (listing.isGitRepo) {
+    panel.append(
+      el("p", { textContent: "This is a git repository — its full history (.git) comes along too." }),
+    );
+  }
+
+  panel.append(
+    el("p", {
+      className: "total",
+      textContent: listing.overWarnThreshold
+        ? `${listing.fileCount} file(s), ${size(listing.totalBytes)} — that's a lot to bring in.`
+        : `${listing.fileCount} file(s), ${size(listing.totalBytes)}.`,
+    }),
+  );
+
+  if (!listing.fitsFreeSpace) {
+    panel.append(
+      el("p", {
+        className: "total over",
+        textContent: `Not enough room in the Box: this needs ${size(listing.totalBytes)}, and only ${size(listing.freeBytes)} is free.`,
+      }),
+    );
+  }
+
+  panel.append(
+    el("p", {
+      className: "sub",
+      textContent: "Once you click below, Claude will be able to read and change everything in this folder.",
+    }),
+  );
+
+  const bring = el("button", { className: "btn", textContent: "Bring it in" }) as HTMLButtonElement;
+  bring.disabled = !listing.fitsFreeSpace; // refused before anything crosses, not after
+  const cancel = el("button", { className: "btn--link", textContent: "Cancel" });
+
+  cancel.addEventListener("click", () => dialog.remove()); // cancelling copies nothing
+
+  bring.addEventListener("click", async () => {
+    bring.disabled = true;
+    bring.textContent = "Bringing it in…";
+    try {
+      const project = await cb.importFolder(listing.folder);
+      dialog.remove();
+      await openProject(project);
+    } catch (err) {
+      dialog.remove();
+      flash(`Couldn't bring that in: ${(err as Error).message}`);
+    }
+  });
+
+  panel.append(el("div", { className: "actions" }, [cancel, bring]));
+  dialog.append(panel);
+  document.body.append(dialog);
 }
 
 /**

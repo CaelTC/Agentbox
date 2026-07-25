@@ -7,7 +7,6 @@ import { chromeAppOpenArgs, ensureSessionExecArgs, sessionUrl } from "../core/se
 import { inspectBoxState } from "./environment";
 import { run, runOk } from "./exec";
 import { startupPlan, type StartupStep } from "../core/startup";
-import { boxEnsureProjectDoc } from "./workspace";
 
 /** Start Colima at the Resource Cap if it isn't already up (needed before any docker call). */
 export async function ensureColima(): Promise<void> {
@@ -84,9 +83,6 @@ export async function updateClaudeCode(): Promise<boolean> {
  * "Reopen terminal" is just this again — the funnel re-attaches the live session.
  */
 export async function openProjectSession(slug: string): Promise<void> {
-  // Before `claude` starts (it reads CLAUDE.md at process start). Best-effort:
-  // a failed doc write must never stop a Project from opening.
-  await boxEnsureProjectDoc(slug).catch(() => {});
   await mustSucceed("docker", ensureSessionExecArgs(slug));
   const url = sessionUrl(slug);
   const opened = await run("open", chromeAppOpenArgs(url));
