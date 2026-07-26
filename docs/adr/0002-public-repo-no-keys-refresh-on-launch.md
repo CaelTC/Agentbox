@@ -2,7 +2,10 @@
 
 ## Status
 
-accepted
+accepted — amended by ADR 0006, which introduces the one credential Claudebox
+has: a GitHub token, held on the host by the Launcher, never in the Box. The
+"no keys" rule holds for the repo, the image, and the Box; it no longer holds
+for the host.
 
 ## Context
 

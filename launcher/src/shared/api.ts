@@ -1,4 +1,5 @@
 import type { ExportListing, ExportResult } from "../core/export";
+import type { PublishResult } from "../core/github";
 import type { ImportListing } from "../core/import";
 import type { Project } from "../core/projects";
 import type { StarterTemplate } from "../core/templates";
@@ -53,10 +54,39 @@ export interface ClaudeboxApi {
   importFolder(folder: string): Promise<Project>;
 
   /**
+   * Save to GitHub (ADR 0006). The token lives in the Launcher and never enters
+   * the Box, so all four of these are host-side operations the renderer only
+   * triggers — no token ever crosses this bridge in either direction.
+   */
+  githubStatus(): Promise<GithubStatus>;
+  /** Begin the device flow: returns the code to type at github.com/login/device. */
+  startGithubLogin(): Promise<GithubDeviceCode>;
+  /** Resolve once the Sandbox User has approved (or GitHub has refused) that code. */
+  awaitGithubLogin(): Promise<GithubStatus>;
+  disconnectGithub(): Promise<GithubStatus>;
+  /** Publish the Project to a private repo on the connected account. */
+  saveToGithub(slug: string): Promise<PublishResult>;
+
+  /**
    * Resolves once the Engine + Box are up so the home screen can safely query
    * Projects. Rejects (with a message to show) if bootstrap failed.
    */
   onBootstrap(listener: (result: BootstrapStatus) => void): void;
+}
+
+export interface GithubStatus {
+  /** False when this build ships no GitHub App client id — connecting is impossible. */
+  configured: boolean;
+  connected: boolean;
+  login?: string;
+}
+
+/** The public half of a device code. The secret `device_code` stays in main. */
+export interface GithubDeviceCode {
+  userCode: string;
+  verificationUri: string;
+  intervalSeconds: number;
+  expiresInSeconds: number;
 }
 
 export interface BootstrapStatus {
@@ -86,6 +116,11 @@ export const IPC = {
   showSavedFiles: "export:show",
   planImport: "import:plan",
   importFolder: "import:folder",
+  githubStatus: "github:status",
+  startGithubLogin: "github:login-start",
+  awaitGithubLogin: "github:login-await",
+  disconnectGithub: "github:disconnect",
+  saveToGithub: "github:save",
   bootstrap: "app:bootstrap",
 } as const;
 

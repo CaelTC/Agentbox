@@ -34,11 +34,20 @@ export function spawnPath(
   return [...add, path].filter(Boolean).join(":");
 }
 
-export function run(command: string, args: readonly string[]): Promise<RunResult> {
+/**
+ * `env` adds variables to the spawn's environment. The GitHub token travels this
+ * way and never as an argument (ADR 0006): argv is world-readable in `ps`, so a
+ * token on the command line is a token any process on the laptop can read.
+ */
+export function run(
+  command: string,
+  args: readonly string[],
+  env?: Readonly<Record<string, string>>,
+): Promise<RunResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env, PATH: spawnPath() },
+      env: { ...process.env, ...env, PATH: spawnPath() },
     });
     let stdout = "";
     let stderr = "";

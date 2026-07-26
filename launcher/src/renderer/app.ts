@@ -113,7 +113,40 @@ async function renderHome(): Promise<void> {
     projectBlock.push(list);
   }
   root.append(section("water", projectBlock));
+  const account = await githubAccountSection();
+  if (account) root.append(account);
   root.append(footer());
+}
+
+/**
+ * The connected GitHub Account (ADR 0006). One account at a time — the token is
+ * the Sandbox User's own — and this is the only place to change which one, so it
+ * lives on the home screen rather than inside a Project.
+ *
+ * Absent entirely when nothing is connected: the "Save to GitHub" card already
+ * offers to connect, and an empty row here would be a second, deader door.
+ */
+async function githubAccountSection(): Promise<HTMLElement | undefined> {
+  let status: GithubStatus;
+  try {
+    status = await cb.githubStatus();
+  } catch {
+    return undefined; // never let a GitHub hiccup keep the home screen from rendering
+  }
+  if (!status.connected) return undefined;
+
+  const swap = el("button", { className: "btn--link", textContent: "Use a different account" });
+  swap.addEventListener("click", async () => {
+    await cb.disconnectGithub();
+    flash("Signed out of GitHub. The next “Save to GitHub” will ask which account to use.");
+    await renderHome();
+  });
+
+  return section("light", [
+    el("p", { className: "eyebrow", textContent: "GitHub" }),
+    el("p", { textContent: `Saving to ${status.login}'s account.` }),
+    swap,
+  ]);
 }
 
 function templateCard(t: StarterTemplate): HTMLElement {
@@ -200,15 +233,123 @@ async function openProject(project: Project): Promise<void> {
     flash(res.opened ? `Opened ${res.url}` : "Nothing is being served yet — ask Claude to start a server.");
   });
 
+  // Save to GitHub (ADR 0006). The token lives in the Launcher; this button only
+  // asks for the publish, and the two-container split happens on the host side.
+  const github = actionCard("Save to GitHub", "Keep this project in a private repo on your account.", () =>
+    startPublish(project),
+  );
+
   root.append(
     section("light", [
       el("p", { className: "eyebrow", textContent: "This project" }),
-      el("div", { className: "grid grid--actions" }, [upload, save, show, preview]),
+      el("div", { className: "grid grid--actions" }, [upload, save, show, preview, github]),
     ]),
   );
   root.append(footer());
 
   await cb.openSession(project.slug);
+}
+
+/**
+ * "Save to GitHub" (ADR 0006). Connecting comes first if it has to, and the
+ * publish follows from the same click — a Sandbox User asked to save, not to
+ * sign in, so the sign-in is a step inside that, never a separate errand.
+ */
+async function startPublish(project: Project): Promise<void> {
+  let status: GithubStatus;
+  try {
+    status = await cb.githubStatus();
+  } catch (err) {
+    flash(`Couldn't check your GitHub account: ${(err as Error).message}`);
+    return;
+  }
+
+  if (!status.configured) {
+    flash("This copy of Claudebox has no GitHub sign-in configured, so it can't save there yet.");
+    return;
+  }
+  if (!status.connected) {
+    renderGithubConnect(project);
+    return;
+  }
+  await publish(project);
+}
+
+async function publish(project: Project): Promise<void> {
+  flash(`Saving ${project.name} to GitHub…`);
+  try {
+    const res = await cb.saveToGithub(project.slug);
+    // Naming the branch matters: it is whatever was checked out in the Box, and
+    // on a feature branch the repo's front page will not show what was just
+    // saved. "(private)" only when Claudebox made the repo — a Project that came
+    // in with its own remote publishes back to it, whatever that repo already is.
+    flash(
+      res.created
+        ? `Created ${res.url} (private) — branch ${res.branch}.`
+        : `Saved to ${res.url} — branch ${res.branch}.`,
+    );
+  } catch (err) {
+    flash(`Couldn't save to GitHub: ${(err as Error).message}`);
+  }
+}
+
+/**
+ * The GitHub device-flow sheet. Shows the code to type at github.com/login/device
+ * and — plainly, because it is the whole cost of this feature — what the sign-in
+ * lets Claudebox reach.
+ */
+function renderGithubConnect(project: Project): void {
+  const dialog = el("div", { className: "sheet" }) as HTMLDivElement;
+  const panel = el("div", { className: "panel" });
+
+  panel.append(el("h2", { textContent: "Connect GitHub" }));
+  const step = el("p", { className: "sub", textContent: "Asking GitHub for a code…" });
+  panel.append(step);
+
+  const code = el("p", { className: "total" });
+  panel.append(code);
+
+  panel.append(
+    el("p", {
+      className: "sub",
+      textContent:
+        "Claudebox asks for access to your repositories so it can create a private one and save this project into it. " +
+        "The sign-in is kept by this launcher and is never given to Claude.",
+    }),
+  );
+
+  // The switching trap: the code is approved by whoever is signed in at
+  // github.com, so a second account needs a signed-out (or private) browser.
+  panel.append(
+    el("p", {
+      className: "sub",
+      textContent:
+        "GitHub connects whichever account is signed in to your browser. To use a different one, sign out of github.com first.",
+    }),
+  );
+
+  const cancel = el("button", { className: "btn--link", textContent: "Cancel" });
+  cancel.addEventListener("click", () => dialog.remove());
+  panel.append(el("div", { className: "actions" }, [cancel]));
+
+  dialog.append(panel);
+  document.body.append(dialog);
+
+  void (async () => {
+    try {
+      const device = await cb.startGithubLogin();
+      step.textContent = `Go to ${device.verificationUri} and enter this code:`;
+      code.textContent = device.userCode;
+      // Resolves only once the user has approved on github.com, so the sheet
+      // stays up — cancelling here just closes it; nothing is stored either way.
+      await cb.awaitGithubLogin();
+      dialog.remove();
+      await publish(project);
+    } catch (err) {
+      dialog.remove();
+      flash(`Couldn't connect GitHub: ${(err as Error).message}`);
+    }
+  })();
 }
 
 /**

@@ -2,6 +2,13 @@ import { BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { statSync } from "node:fs";
 import { STARTER_TEMPLATES, templateById } from "../core/templates";
 import { IPC, type SavedFolder } from "../shared/api";
+import {
+  awaitGithubLogin,
+  disconnectGithub,
+  githubStatus,
+  saveToGithub,
+  startGithubLogin,
+} from "./github";
 import { exportRoot, hostBoxDefinitionDir } from "./paths";
 import { detectPreviewUrl } from "./preview";
 import { ensureBoxReady, openProjectSession } from "./session";
@@ -99,5 +106,19 @@ export function registerIpc(window: BrowserWindow): void {
   ipcMain.handle(IPC.importFolder, async (_e, folder: string) => {
     await ensureBoxReady(hostBoxDefinitionDir());
     return boxImportFolder(folder);
+  });
+
+  // Save to GitHub (ADR 0006). The three sign-in handlers are pure host work —
+  // no Box involved, and no token crosses back to the renderer.
+  ipcMain.handle(IPC.githubStatus, () => githubStatus());
+  ipcMain.handle(IPC.startGithubLogin, () => startGithubLogin());
+  ipcMain.handle(IPC.awaitGithubLogin, () => awaitGithubLogin());
+  ipcMain.handle(IPC.disconnectGithub, () => (disconnectGithub(), githubStatus()));
+
+  // Publishing runs two ephemeral containers off the Box image, so the image has
+  // to exist — the same reason Export brings the Box up first.
+  ipcMain.handle(IPC.saveToGithub, async (_e, slug: string) => {
+    await ensureBoxReady(hostBoxDefinitionDir());
+    return saveToGithub(slug);
   });
 }

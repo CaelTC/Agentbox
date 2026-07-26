@@ -21,6 +21,11 @@ const api: ClaudeboxApi = {
   showSavedFiles: (slug) => ipcRenderer.invoke(IPC.showSavedFiles, slug),
   planImport: () => ipcRenderer.invoke(IPC.planImport),
   importFolder: (folder) => ipcRenderer.invoke(IPC.importFolder, folder),
+  githubStatus: () => ipcRenderer.invoke(IPC.githubStatus),
+  startGithubLogin: () => ipcRenderer.invoke(IPC.startGithubLogin),
+  awaitGithubLogin: () => ipcRenderer.invoke(IPC.awaitGithubLogin),
+  disconnectGithub: () => ipcRenderer.invoke(IPC.disconnectGithub),
+  saveToGithub: (slug) => ipcRenderer.invoke(IPC.saveToGithub, slug),
   onBootstrap: (listener) =>
     ipcRenderer.on(IPC.bootstrap, (_e, result) => listener(result)),
 };
