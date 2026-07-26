@@ -115,7 +115,48 @@ async function renderHome(): Promise<void> {
   root.append(section("water", projectBlock));
   const account = await githubAccountSection();
   if (account) root.append(account);
+  root.append(updateSection());
   root.append(footer());
+}
+
+/**
+ * "Update Claudebox" — Refresh on Launch (ADR 0002) on a button, for the gap it
+ * leaves: a fix ships, and a Sandbox User who never quits the Launcher stays on
+ * last week's Box with no way to ask for the new one.
+ *
+ * Home screen only, and a quiet link rather than a card. Updating restarts the
+ * sandbox and closes every open Claude session, which is not a thing to put a
+ * click away from "Open project" — and it is nobody's reason for opening the
+ * Launcher.
+ */
+function updateSection(): HTMLElement {
+  const update = el("button", { className: "btn--link", textContent: "Update Claudebox" }) as HTMLButtonElement;
+
+  update.addEventListener("click", async () => {
+    update.disabled = true;
+    const label = update.textContent;
+    update.textContent = "Checking…";
+    try {
+      // Undefined means the confirmation was cancelled: nothing was checked, so
+      // there is nothing to report.
+      const message = await cb.updateBox();
+      if (message) flash(message);
+    } catch (err) {
+      flash(`Couldn't update Claudebox: ${(err as Error).message}`);
+    } finally {
+      update.disabled = false;
+      update.textContent = label;
+    }
+  });
+
+  return section("light", [
+    el("p", { className: "eyebrow", textContent: "Claudebox itself" }),
+    el("p", {
+      textContent:
+        "Claudebox updates itself each time you open it. If you've been told there's a fix, you can check now instead.",
+    }),
+    update,
+  ]);
 }
 
 /**

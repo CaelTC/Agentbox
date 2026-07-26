@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { commitTrusted, hashDefinition, refreshDecision, shouldRebuild } from "../src/core/refresh";
+import {
+  commitTrusted,
+  hashDefinition,
+  refreshDecision,
+  shouldRebuild,
+  updateMessage,
+} from "../src/core/refresh";
 
 const defA = [
   { path: "Dockerfile", content: "FROM node:22" },
@@ -79,5 +85,41 @@ describe("refreshDecision", () => {
   it("offline with no prior image => must build once before it can run", () => {
     const d = refreshDecision({ previousHash: undefined, currentHash: undefined, online: false });
     expect(d.action).toBe("error");
+  });
+});
+
+/**
+ * What "Update Claudebox" says afterwards. The failure that matters here is
+ * silent-success: an offline check, or an integrity refusal, must never come
+ * back reading as "you're up to date".
+ */
+describe("updateMessage", () => {
+  it("confirms a real update, and says the sandbox restarted", () => {
+    const m = updateMessage({ action: "rebuilt", reason: "changed upstream", online: true });
+    expect(m).toMatch(/up to date/i);
+    expect(m).toMatch(/restarted/i);
+  });
+
+  it("says nothing was new when the definition is unchanged", () => {
+    expect(updateMessage({ action: "started", reason: "unchanged", online: true })).toMatch(
+      /already up to date/i,
+    );
+  });
+
+  it("does NOT claim up-to-date when the pull never happened", () => {
+    const m = updateMessage({ action: "started", reason: "Offline;", online: false });
+    expect(m).not.toMatch(/already up to date/i);
+    expect(m).toMatch(/couldn't fetch/i);
+  });
+
+  it("passes an integrity refusal through verbatim, so the reason is visible", () => {
+    const reason = "Refusing to build: the Box definition's origin is 'evil.example', not…";
+    expect(updateMessage({ action: "blocked", reason, online: true })).toBe(reason);
+  });
+
+  it("reports a failure as a failure", () => {
+    expect(updateMessage({ action: "error", reason: "Box rebuild failed: boom", online: true })).toMatch(
+      /^Couldn't update Claudebox: /,
+    );
   });
 });
