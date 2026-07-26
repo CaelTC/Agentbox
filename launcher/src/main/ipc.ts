@@ -1,7 +1,6 @@
 import { BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { statSync } from "node:fs";
 import { confirmsProjectName, type DeleteListing } from "../core/delete";
-import { STARTER_TEMPLATES, templateById } from "../core/templates";
 import { IPC, type SavedFolder } from "../shared/api";
 import { exportRoot, hostBoxDefinitionDir } from "./paths";
 import { detectPreviewUrl } from "./preview";
@@ -28,14 +27,6 @@ export function registerIpc(window: BrowserWindow): void {
   ipcMain.handle(IPC.listProjects, () => boxListProjects());
 
   ipcMain.handle(IPC.createProject, (_e, name: string) => boxCreateProject(name));
-
-  ipcMain.handle(IPC.listTemplates, () => STARTER_TEMPLATES);
-
-  ipcMain.handle(IPC.createFromTemplate, async (_e, templateId: string, name?: string) => {
-    const template = templateById(templateId);
-    if (!template) throw new Error(`Unknown Starter Template: '${templateId}'.`);
-    return boxCreateProject(name ?? template.defaultProjectName, template.seedPrompt);
-  });
 
   ipcMain.handle(IPC.openSession, async (_e, slug: string) => {
     await ensureBoxReady(hostBoxDefinitionDir());

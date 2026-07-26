@@ -71,5 +71,5 @@ A port forwarded by the Launcher from the Box to a browser tab on the Sandbox Us
 **Resource Cap**:
 The tuned, bounded Engine allocation baked into the Launcher (~4 CPU / 6 GB RAM / 25 GB disk cap). On macOS Colima enforces all three, and the disk cap bounds threat A — the Box can never grow past a known ceiling on the host. On Windows it is weaker and deliberately so: CPU and RAM come from a global `%USERPROFILE%\.wslconfig` shared with every other WSL distribution, and **there is no disk ceiling at all** — the VHDX grows on demand, so the cap is documented rather than enforced (ADR 0004).
 
-**Starter Template**:
-A one-click starting point on the Launcher home screen (e.g. "Build a personal webpage", "Make a guessing game", "Analyze a spreadsheet") that seeds a Project and a first prompt, so a Sandbox User is never faced with a blank chat.
+**Seed Prompt**:
+A first prompt stored with a Project and fed to Claude when its session first opens, so a Sandbox User is never faced with a blank chat. Used by Project Import, where the user has just handed Claude a codebase it doesn't understand yet.

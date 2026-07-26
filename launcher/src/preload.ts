@@ -10,9 +10,6 @@ import { IPC } from "./shared/api";
 const api: ClaudeboxApi = {
   listProjects: () => ipcRenderer.invoke(IPC.listProjects),
   createProject: (name) => ipcRenderer.invoke(IPC.createProject, name),
-  listTemplates: () => ipcRenderer.invoke(IPC.listTemplates),
-  createFromTemplate: (templateId, name) =>
-    ipcRenderer.invoke(IPC.createFromTemplate, templateId, name),
   openSession: (slug) => ipcRenderer.invoke(IPC.openSession, slug),
   upload: (slug) => ipcRenderer.invoke(IPC.upload, slug),
   openPreview: () => ipcRenderer.invoke(IPC.openPreview),

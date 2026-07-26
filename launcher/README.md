@@ -20,7 +20,6 @@ src/
     projects.ts    Project naming / creation / listing (Workspace-safe paths).
     upload.ts      Upload target resolution (collisions, path-safety).
     preview.ts     Loopback publish args, preview URL, served-port detection.
-    templates.ts   Starter Template registry + instantiation.
     refresh.ts     Refresh-on-Launch decision (hash + rebuild-if-changed).
     session-window.ts  Session URL + funnel `docker exec` + Chrome app-mode argv.
   main/        Electron main process — the EFFECTS around the pure core. Runs
@@ -52,7 +51,7 @@ kept thin so little logic escapes the tests.
   place; only the effect target differs.
 - Web Preview publishes a fixed set of common dev-server ports
   (`PREVIEW_PORTS`). A server on some other port won't be auto-detected — the
-  Starter Templates steer Claude to a published port (e.g. 5173).
+  Project's `CLAUDE.md` steers Claude to a published port (e.g. 5173).
 
 ## Develop
 

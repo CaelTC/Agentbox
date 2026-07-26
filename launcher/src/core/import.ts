@@ -205,7 +205,7 @@ export interface ImportListing {
 }
 
 /**
- * Fixed seed prompt (CONTEXT.md's Starter Template principle: a Sandbox User is
+ * Fixed seed prompt (CONTEXT.md's Seed Prompt principle: a Sandbox User is
  * never faced with a blank chat) — an Import is where that bites hardest, since
  * the user just handed Claude a codebase it doesn't understand yet.
  */
