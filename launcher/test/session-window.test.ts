@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   chromeAppLaunch,
   ensureSessionExecArgs,
+  killSessionExecArgs,
   sessionUrl,
   windowsChromePaths,
 } from "../src/core/session-window";
@@ -35,6 +36,36 @@ describe("ensureSessionExecArgs", () => {
   });
   it("refuses an unsafe slug", () => {
     expect(() => ensureSessionExecArgs("a; rm -rf /")).toThrow(/unsafe/i);
+  });
+});
+
+describe("killSessionExecArgs", () => {
+  it("kills the Project's tmux session by name, slug as its own argv", () => {
+    expect(killSessionExecArgs("game2")).toEqual([
+      "exec",
+      "claudebox",
+      "tmux",
+      "kill-session",
+      "-t",
+      "game2",
+    ]);
+  });
+
+  it("targets exactly the session the funnel would re-attach to", () => {
+    // The funnel does `tmux new-session -A -s <slug>`, so a Project deleted while
+    // its session lives would otherwise leave that session to be re-attached by
+    // the next Project with the same slug — cwd on a directory that is gone.
+    const [, , , , , killed] = killSessionExecArgs("portfolio");
+    const ensured = ensureSessionExecArgs("portfolio");
+    expect(killed).toBe(ensured[ensured.length - 1]);
+  });
+
+  it("does not run as root — the tmux server belongs to the sandbox user", () => {
+    expect(killSessionExecArgs("game2")).not.toContain("-u");
+  });
+
+  it("refuses an unsafe slug", () => {
+    expect(() => killSessionExecArgs("a; rm -rf /")).toThrow(/unsafe/i);
   });
 });
 

@@ -1,5 +1,6 @@
 import { BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { statSync } from "node:fs";
+import { confirmsProjectName, type DeleteListing } from "../core/delete";
 import { STARTER_TEMPLATES, templateById } from "../core/templates";
 import { IPC, type SavedFolder } from "../shared/api";
 import { exportRoot, hostBoxDefinitionDir } from "./paths";
@@ -7,12 +8,15 @@ import { detectPreviewUrl } from "./preview";
 import { ensureBoxReady, openProjectSession } from "./session";
 import {
   boxCreateProject,
+  boxDeleteProject,
   boxExport,
   boxExportDir,
   boxExportListing,
+  boxFindProject,
   boxImportFolder,
   boxListProjects,
   boxPlanImport,
+  boxProjectUsage,
   boxUpload,
 } from "./workspace";
 
@@ -99,5 +103,40 @@ export function registerIpc(window: BrowserWindow): void {
   ipcMain.handle(IPC.importFolder, async (_e, folder: string) => {
     await ensureBoxReady(hostBoxDefinitionDir());
     return boxImportFolder(folder);
+  });
+
+  // Delete Project. The Box must be up to measure the Project, and the sheet
+  // this feeds is the last thing standing between a click and permanent loss —
+  // so it reports the Exported copies that will SURVIVE as well as what won't.
+  ipcMain.handle(IPC.planDelete, async (_e, slug: string): Promise<DeleteListing> => {
+    await ensureBoxReady(hostBoxDefinitionDir());
+    const { project } = await boxFindProject(slug);
+    const [usage, exportDir] = await Promise.all([
+      boxProjectUsage(slug),
+      boxExportDir(slug, exportRoot()),
+    ]);
+    const saved = statSync(exportDir, { throwIfNoEntry: false });
+
+    return {
+      slug,
+      name: project.name,
+      ...usage, // absent when the probe failed — the sheet says so rather than showing "0 files"
+      exportDir,
+      ...(saved ? { lastSaved: saved.mtimeMs } : {}),
+    };
+  });
+
+  // The typed name arrives from the renderer, so it is input rather than truth:
+  // it is re-checked here against the Project's real name inside the Box before
+  // anything is removed, exactly as `saveToComputer` re-validates its selection.
+  // A renderer bug (or a stale sheet naming a Project that has since been
+  // renamed) must not be able to delete the wrong thing.
+  ipcMain.handle(IPC.deleteProject, async (_e, slug: string, typed: string) => {
+    await ensureBoxReady(hostBoxDefinitionDir());
+    const { project } = await boxFindProject(slug);
+    if (!confirmsProjectName(typed ?? "", project.name)) {
+      throw new Error(`That isn't the name of this project, so nothing was deleted.`);
+    }
+    return boxDeleteProject(slug);
   });
 }

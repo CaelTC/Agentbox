@@ -265,7 +265,8 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 /* ------------------------------------------------------- new + open lists ---- */
 
 .new-project { display: flex; gap: var(--radius-md); margin-top: var(--space-block); }
-.new-project input {
+.new-project input,
+.confirm input {
   flex: 1;
   padding: 0.85em 1em;
   font-family: inherit;
@@ -276,7 +277,8 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   border-radius: var(--radius-sm);
 }
 /* 0.75 is the floor here: Evergreen any lighter on white drops under AA. */
-.new-project input::placeholder { color: var(--color-text); opacity: 0.75; }
+.new-project input::placeholder,
+.confirm input::placeholder { color: var(--color-text); opacity: 0.75; }
 
 .projects { list-style: none; margin: 0; padding: 0; }
 .projects li + li { margin-top: var(--radius-md); }
@@ -361,6 +363,38 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   gap: var(--radius-lg);
   margin-top: var(--space-block);
 }
+
+/* Type-the-name confirmation. Full width because a cramped field reads as a
+   formality, and this one is the opposite of a formality. */
+.confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: var(--space-block);
+  font-size: var(--text-meta);
+}
+.confirm input { width: 100%; }
+
+/* --------------------------------------------------------- delete project ---- */
+
+/* Separated from the action grid by a rule, not by colour: same reasoning as
+   `.total.over` — weight and distance carry the stop, no off-palette red. The
+   four cards above are all repeatable; this is the one control that destroys
+   work, so it must not look like a fifth of them. */
+.danger {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--radius-lg);
+  flex-wrap: wrap;
+  margin-top: var(--space-block);
+  padding-top: var(--radius-lg);
+  border-top: 1px solid var(--line-light);
+  font-size: var(--text-meta);
+  opacity: 0.85;
+}
+.danger p { max-width: 62ch; margin: 0; }
+.destroy { font-weight: var(--weight-bold); white-space: nowrap; }
 
 /* ----------------------------------------------------------------- flash ---- */
 

@@ -32,6 +32,12 @@ import {
   type ImportFile,
   type ImportListing,
 } from "../core/import";
+import {
+  assertDeletableProjectPath,
+  parseProjectUsage,
+  type DeleteResult,
+} from "../core/delete";
+import { killSessionExecArgs } from "../core/session-window";
 import type { Project, ProjectMeta } from "../core/projects";
 import {
   META_DIR,
@@ -122,6 +128,69 @@ async function writeBoxFile(path: string, content: string): Promise<void> {
 }
 
 /**
+ * How much of the Workspace one Project is holding. Unlike `boxListProjectFiles`
+ * (which prunes dot-directories and `node_modules` because the Export picker
+ * would drown in them), this counts EVERYTHING — the delete sheet is answering
+ * "what am I about to lose", and an imported repo's `.git` is exactly the part a
+ * Sandbox User would most regret.
+ */
+export async function boxProjectUsage(
+  slug: string,
+): Promise<{ fileCount: number; totalBytes: number } | undefined> {
+  const dir = projectPath(slug);
+  // Two lines: the file count, then the size in KiB. `du` reports allocated
+  // blocks, which is the truer answer to what the Resource Cap is holding.
+  const res = await run(ENGINE_CLI, [
+    "exec",
+    BOX_CONTAINER,
+    "sh",
+    "-c",
+    `cd "${dir}" && { find . -mindepth 1 -type f | wc -l; du -sk . | cut -f1; }`,
+  ]);
+  if (res.code !== 0) return undefined;
+  return parseProjectUsage(res.stdout);
+}
+
+/**
+ * Delete Project: remove a Project and everything in it from the Workspace,
+ * permanently (core/delete.ts explains why there is no trash).
+ *
+ * Order matters. The tmux session dies FIRST — see `killSessionExecArgs` — and
+ * only then does the directory go, so the slug is genuinely free afterwards.
+ *
+ * The `rm -rf` runs as root for the same reason the failed-import cleanup does:
+ * `docker cp` synthesises parent directories as root, so a Project that arrived
+ * through Import can contain directories the sandbox user cannot unlink. A
+ * delete that half-works would leave exactly the metadata-less directory that
+ * shows up in the Project list as an openable Project with nothing in it.
+ */
+export async function boxDeleteProject(slug: string): Promise<DeleteResult> {
+  const dir = assertDeletableProjectPath(WORKSPACE_DIR, slug);
+
+  const meta = await readBoxMeta(slug);
+  if (!(await boxPathExists(dir))) {
+    throw new Error(`No Project named '${slug}'.`);
+  }
+
+  // Non-zero simply means there was no live session — not a failure.
+  const killed = await run(ENGINE_CLI, killSessionExecArgs(slug));
+
+  const removed = await run(ENGINE_CLI, ["exec", "-u", "root", BOX_CONTAINER, "rm", "-rf", dir]);
+  if (removed.code !== 0) {
+    throw new Error(`Couldn't delete '${slug}': ${removed.stderr}`);
+  }
+
+  // Confirmed gone rather than assumed: `rm -rf` exits 0 on plenty of paths it
+  // never touched, and the one thing this operation promises is that the Project
+  // is not there any more.
+  if (await boxPathExists(dir)) {
+    throw new Error(`'${slug}' is still in the Workspace after deleting it.`);
+  }
+
+  return { slug, name: meta?.name ?? slug, sessionKilled: killed.code === 0 };
+}
+
+/**
  * Copy host files into a Project via `docker cp` — a one-way host→Box copy with
  * no live mount (ticket 06). Collision-free destinations come from the pure
  * resolver, using a Box-backed existence check.
@@ -196,11 +265,22 @@ export async function boxExportListing(
  * asserts containment before it is used.
  */
 export async function boxExportDir(slug: string, exportRoot: string): Promise<string> {
+  const { project, projects } = await boxFindProject(slug);
+  return resolveExportDir(exportRoot, project, projects);
+}
+
+/**
+ * One Project by slug, alongside the full listing it came from — `resolveExportDir`
+ * needs the siblings to disambiguate two Projects whose friendly names collide.
+ */
+export async function boxFindProject(
+  slug: string,
+): Promise<{ project: Project; projects: Project[] }> {
   assertValidSlug(slug);
   const projects = await boxListProjects();
   const project = projects.find((p) => p.slug === slug);
   if (!project) throw new Error(`No Project named '${slug}'.`);
-  return resolveExportDir(exportRoot, project, projects);
+  return { project, projects };
 }
 
 /**
