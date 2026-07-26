@@ -49,7 +49,7 @@ function footer(): HTMLElement {
 }
 
 async function renderHome(): Promise<void> {
-  const [projects, templates] = await Promise.all([cb.listProjects(), cb.listTemplates()]);
+  const projects = await cb.listProjects();
   const root = app();
   root.replaceChildren();
 
@@ -64,12 +64,6 @@ async function renderHome(): Promise<void> {
       }),
     ]),
   );
-
-  // Starter Templates — so the user never faces a blank chat (ticket 08).
-  const templateGrid = el("div", { className: "grid" });
-  for (const t of templates) {
-    templateGrid.append(templateCard(t));
-  }
 
   // A blank Project.
   const nameInput = el("input", { type: "text", placeholder: "Name your project…" }) as HTMLInputElement;
@@ -88,7 +82,6 @@ async function renderHome(): Promise<void> {
   root.append(
     section("light", [
       el("p", { className: "eyebrow", textContent: "Start something new" }),
-      templateGrid,
       el("div", { className: "new-project" }, [nameInput, createBtn]),
       el("div", { className: "new-project" }, [importBtn]),
     ]),
@@ -188,18 +181,6 @@ async function githubAccountSection(): Promise<HTMLElement | undefined> {
     el("p", { textContent: `Saving to ${status.login}'s account.` }),
     swap,
   ]);
-}
-
-function templateCard(t: StarterTemplate): HTMLElement {
-  const card = el("button", { className: "card" }, [
-    el("strong", { textContent: t.title }),
-    el("span", { textContent: t.description }),
-  ]);
-  card.addEventListener("click", async () => {
-    const project = await cb.createFromTemplate(t.id);
-    await openProject(project);
-  });
-  return card;
 }
 
 /** One action, its plain-language consequence, and the click that does it. */

@@ -89,7 +89,7 @@ export function resolveProjectDir(workspaceDir: string, slug: string): string {
 }
 
 export interface CreateProjectOptions {
-  /** Optional first prompt to seed (used by Starter Templates, ticket 08). */
+  /** Optional first prompt to seed (used by Project Import, ticket 09). */
   seedPrompt?: string;
 }
 

@@ -3,7 +3,6 @@ import type { ExportListing, ExportResult } from "../core/export";
 import type { PublishResult } from "../core/github";
 import type { ImportListing } from "../core/import";
 import type { Project } from "../core/projects";
-import type { StarterTemplate } from "../core/templates";
 import type { UploadTarget } from "../core/upload";
 
 /**
@@ -14,8 +13,6 @@ import type { UploadTarget } from "../core/upload";
 export interface ClaudeboxApi {
   listProjects(): Promise<Project[]>;
   createProject(name: string): Promise<Project>;
-  listTemplates(): Promise<StarterTemplate[]>;
-  createFromTemplate(templateId: string, name?: string): Promise<Project>;
   /**
    * Bring the Box up, ensure the Project's session via the funnel, and open it
    * in a Chrome app-mode window. Also serves "Reopen terminal" (re-attaches the
@@ -131,8 +128,6 @@ export interface SavedFolder {
 export const IPC = {
   listProjects: "projects:list",
   createProject: "projects:create",
-  listTemplates: "templates:list",
-  createFromTemplate: "templates:create",
   openSession: "session:open",
   upload: "upload:pick",
   openPreview: "preview:open",
