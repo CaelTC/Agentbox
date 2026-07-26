@@ -27,6 +27,23 @@ export function ensureSessionExecArgs(slug: string, container: string = BOX_CONT
 }
 
 /**
+ * `docker exec` argv that kills a Project's tmux session.
+ *
+ * Delete needs this, and needs it FIRST. tmux is the source of truth for a
+ * session and it outlives its directory: remove `/workspace/<slug>` under a live
+ * session and the funnel's `tmux new-session -A -s <slug>` will happily re-attach
+ * the next Project that sanitizes to the same slug to the dead one, cwd pointed
+ * at an inode that no longer exists. Killing the session is what makes the slug
+ * genuinely free again.
+ *
+ * Runs as the Box's ordinary user, not root: the tmux server belongs to the
+ * sandbox user, and root would talk to a different (empty) socket.
+ */
+export function killSessionExecArgs(slug: string, container: string = BOX_CONTAINER): string[] {
+  return ["exec", container, "tmux", "kill-session", "-t", assertValidSlug(slug)];
+}
+
+/**
  * Where Chrome installs on Windows, in probe order (issue #10). These three
  * cover every winget/installer default, so no registry parsing — and "is it on
  * disk" is knowable BEFORE launching, which is what lets the Windows fallback be

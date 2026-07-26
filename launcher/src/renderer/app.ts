@@ -239,10 +239,30 @@ async function openProject(project: Project): Promise<void> {
     startPublish(project),
   );
 
+  // Delete sits OUTSIDE the action grid, not as a fifth card in it. The four
+  // above are all things you can undo by doing them again; this one is the only
+  // control in Claudebox that destroys work, and putting it in the same row of
+  // identical cards would make it a misclick away from the one beside it.
+  const destroy = el("button", { className: "btn--link destroy", textContent: "Delete this project" });
+  destroy.addEventListener("click", async () => {
+    try {
+      renderDeleteSheet(project, await cb.planDelete(project.slug));
+    } catch (err) {
+      flash(`Couldn't open ${project.name} to delete it: ${(err as Error).message}`);
+    }
+  });
+
   root.append(
     section("light", [
       el("p", { className: "eyebrow", textContent: "This project" }),
       el("div", { className: "grid grid--actions" }, [upload, save, show, preview, github]),
+      el("div", { className: "danger" }, [
+        el("p", {
+          textContent:
+            "Finished with this project? Deleting it removes it and everything in it from the sandbox, for good.",
+        }),
+        destroy,
+      ]),
     ]),
   );
   root.append(footer());
@@ -350,6 +370,108 @@ function renderGithubConnect(project: Project): void {
       flash(`Couldn't connect GitHub: ${(err as Error).message}`);
     }
   })();
+}
+
+/**
+ * The Delete Project confirmation sheet. Deleting is permanent and the Box holds
+ * the only copy (core/delete.ts), so this sheet does three things before it will
+ * enable its button: it says exactly how much is about to go, it says what
+ * SURVIVES on the user's own computer — the strongest reassurance available, and
+ * the thing that tells someone they should hit Cancel and save first — and it
+ * makes them type the Project's name, so this can never be a slipped click.
+ */
+function renderDeleteSheet(project: Project, listing: DeleteListing): void {
+  const dialog = el("div", { className: "sheet" }) as HTMLDivElement;
+  const panel = el("div", { className: "panel" });
+
+  panel.append(el("h2", { textContent: "Delete this project" }));
+  panel.append(el("p", { className: "sub", textContent: listing.name }));
+
+  panel.append(
+    el("p", {
+      className: "total",
+      textContent:
+        listing.fileCount === undefined || listing.totalBytes === undefined
+          ? "Everything in this project will be deleted. (Its size couldn't be measured.)"
+          : `${listing.fileCount} file(s), ${size(listing.totalBytes)} — all of it deleted.`,
+    }),
+  );
+
+  panel.append(
+    el("p", {
+      textContent:
+        "This can't be undone. There's no trash in the sandbox, and the copy in here is the only one.",
+    }),
+  );
+
+  // The one piece of good news, and load-bearing: someone who reads "nothing has
+  // been saved" should cancel and use "Save to my computer" first.
+  panel.append(
+    el("p", {
+      className: "sub",
+      textContent: listing.lastSaved
+        ? `Files you already saved to your computer stay where they are, in ${listing.exportDir} (last saved ${when(listing.lastSaved)}).`
+        : "Nothing from this project has been saved to your computer yet — once it's deleted, it's gone.",
+    }),
+  );
+
+  const confirmName = el("input", {
+    type: "text",
+    placeholder: listing.name,
+    // A password manager or an autofilled name would defeat the whole point.
+    autocomplete: "off",
+    spellcheck: false,
+  }) as HTMLInputElement;
+
+  panel.append(
+    el("label", { className: "confirm" }, [
+      el("span", { textContent: `Type ${listing.name} below to confirm.` }),
+      confirmName,
+    ]),
+  );
+
+  const remove = el("button", { className: "btn", textContent: "Delete forever" }) as HTMLButtonElement;
+  const cancel = el("button", { className: "btn--link", textContent: "Cancel" });
+
+  // The renderer's copy of the rule is for enabling the button only; the trusted
+  // layer re-checks the typed name before anything is removed.
+  const matches = () =>
+    confirmName.value.trim().toLowerCase().replace(/\s+/g, " ") ===
+    listing.name.trim().toLowerCase().replace(/\s+/g, " ");
+  const refresh = () => {
+    remove.disabled = !matches();
+  };
+  confirmName.addEventListener("input", refresh);
+  refresh();
+
+  cancel.addEventListener("click", () => dialog.remove()); // cancelling deletes nothing
+
+  remove.addEventListener("click", async () => {
+    remove.disabled = true;
+    remove.textContent = "Deleting…";
+    try {
+      const res = await cb.deleteProject(project.slug, confirmName.value);
+      dialog.remove();
+      // Back to the home screen: the Project this panel is controlling is gone.
+      await renderHome();
+      // The session's Chrome window is a separate window this app can't close,
+      // and it is still sitting there — so say so rather than leave the user
+      // looking at a dead terminal for a Project the Launcher says is deleted.
+      flash(
+        res.sessionKilled
+          ? `Deleted ${res.name}. Its Claude window is finished — you can close it.`
+          : `Deleted ${res.name}.`,
+      );
+    } catch (err) {
+      dialog.remove();
+      flash(`Couldn't delete ${listing.name}: ${(err as Error).message}`);
+    }
+  });
+
+  panel.append(el("div", { className: "actions" }, [cancel, remove]));
+  dialog.append(panel);
+  document.body.append(dialog);
+  confirmName.focus();
 }
 
 /**

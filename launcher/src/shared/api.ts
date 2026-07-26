@@ -1,3 +1,4 @@
+import type { DeleteListing, DeleteResult } from "../core/delete";
 import type { ExportListing, ExportResult } from "../core/export";
 import type { PublishResult } from "../core/github";
 import type { ImportListing } from "../core/import";
@@ -68,6 +69,19 @@ export interface ClaudeboxApi {
   saveToGithub(slug: string): Promise<PublishResult>;
 
   /**
+   * Measure what deleting this Project would destroy, for the one confirmation
+   * sheet — file count, size, and whether any of it was ever saved out.
+   */
+  planDelete(slug: string): Promise<DeleteListing>;
+  /**
+   * Delete the Project and everything in it, permanently. `typed` is the name
+   * the Sandbox User typed into the sheet; the trusted layer re-checks it
+   * against the Project's real name before removing anything, exactly as
+   * `saveToComputer` re-validates its selection.
+   */
+  deleteProject(slug: string, typed: string): Promise<DeleteResult>;
+
+  /**
    * Resolves once the Engine + Box are up so the home screen can safely query
    * Projects. Rejects (with a message to show) if bootstrap failed.
    */
@@ -121,6 +135,8 @@ export const IPC = {
   awaitGithubLogin: "github:login-await",
   disconnectGithub: "github:disconnect",
   saveToGithub: "github:save",
+  planDelete: "delete:plan",
+  deleteProject: "delete:project",
   bootstrap: "app:bootstrap",
 } as const;
 

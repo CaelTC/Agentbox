@@ -26,6 +26,8 @@ const api: ClaudeboxApi = {
   awaitGithubLogin: () => ipcRenderer.invoke(IPC.awaitGithubLogin),
   disconnectGithub: () => ipcRenderer.invoke(IPC.disconnectGithub),
   saveToGithub: (slug) => ipcRenderer.invoke(IPC.saveToGithub, slug),
+  planDelete: (slug) => ipcRenderer.invoke(IPC.planDelete, slug),
+  deleteProject: (slug, typed) => ipcRenderer.invoke(IPC.deleteProject, slug, typed),
   onBootstrap: (listener) =>
     ipcRenderer.on(IPC.bootstrap, (_e, result) => listener(result)),
 };
