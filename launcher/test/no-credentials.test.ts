@@ -1,6 +1,9 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { boxRunArgs } from "../src/core/box";
+import { GIT_SCRATCH_VOLUME, WORKSPACE_VOLUME } from "../src/core/config";
+import { pushRunArgs } from "../src/core/github";
 
 /**
  * ADR 0002 / ticket 09: the Box definition and Launcher ship NO credentials —
@@ -54,6 +57,19 @@ describe("no credentials are checked into the repo (ADR 0002)", () => {
       }
     }
     expect(offenders, `Credential-shaped material found:\n${offenders.join("\n")}`).toEqual([]);
+  });
+
+  // ADR 0006 amended this: ONE credential now exists, on the host, held by the
+  // Launcher. What must still hold is that nothing hands it to the Box.
+  it("the long-lived Box carries no token and cannot see the publish scratch volume", () => {
+    const args = boxRunArgs().join(" ");
+    expect(args).not.toContain("CLAUDEBOX_GIT_TOKEN");
+    expect(args).not.toContain(GIT_SCRATCH_VOLUME);
+  });
+
+  it("the credentialed publish container never mounts the Workspace", () => {
+    const args = pushRunArgs("alice", "my-site", "my-site", "main", "CLAUDEBOX_GIT_TOKEN").join(" ");
+    expect(args).not.toContain(WORKSPACE_VOLUME);
   });
 
   it("the Install Script never configures a git credential or SSH key", () => {

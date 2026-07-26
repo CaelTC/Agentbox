@@ -2,9 +2,24 @@ import { BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { statSync } from "node:fs";
 import { confirmsProjectName, type DeleteListing } from "../core/delete";
 import { IPC, type SavedFolder } from "../shared/api";
+import {
+  awaitGithubLogin,
+  disconnectGithub,
+  githubStatus,
+  saveToGithub,
+  startGithubLogin,
+} from "./github";
 import { exportRoot, hostBoxDefinitionDir } from "./paths";
 import { detectPreviewUrl } from "./preview";
-import { ensureBoxReady, openProjectSession } from "./session";
+import { refreshOnLaunch } from "./refresh-runner";
+import { updateMessage } from "../core/refresh";
+import {
+  ensureBoxReady,
+  ensureEngine,
+  openProjectSession,
+  removeBoxContainer,
+  updateClaudeCode,
+} from "./session";
 import {
   boxCreateProject,
   boxDeleteProject,
@@ -94,6 +109,58 @@ export function registerIpc(window: BrowserWindow): void {
   ipcMain.handle(IPC.importFolder, async (_e, folder: string) => {
     await ensureBoxReady(hostBoxDefinitionDir());
     return boxImportFolder(folder);
+  });
+
+  // Save to GitHub (ADR 0006). The three sign-in handlers are pure host work —
+  // no Box involved, and no token crosses back to the renderer.
+  ipcMain.handle(IPC.githubStatus, () => githubStatus());
+  ipcMain.handle(IPC.startGithubLogin, () => startGithubLogin());
+  ipcMain.handle(IPC.awaitGithubLogin, () => awaitGithubLogin());
+  ipcMain.handle(IPC.disconnectGithub, () => (disconnectGithub(), githubStatus()));
+
+  // Publishing runs two ephemeral containers off the Box image, so the image has
+  // to exist — the same reason Export brings the Box up first.
+  ipcMain.handle(IPC.saveToGithub, async (_e, slug: string) => {
+    await ensureBoxReady(hostBoxDefinitionDir());
+    return saveToGithub(slug);
+  });
+
+  // Update Claudebox (ADR 0002): Refresh on Launch, on a button. Same pull of the
+  // public definition, same integrity gate, same conditional build — what this
+  // adds is the recreate, because a rebuilt image does nothing while the old
+  // container is still the one running (the same two lines bootstrap does).
+  //
+  // That recreate ends every open Claude session, so it is confirmed first. The
+  // pull hasn't happened yet at that point, so the question is honestly
+  // conditional: there may turn out to be nothing new, and then nothing restarts.
+  // Undefined on cancel — the renderer says nothing rather than reporting a
+  // check that never ran (as `planImport` does for a cancelled picker).
+  ipcMain.handle(IPC.updateBox, async (): Promise<string | undefined> => {
+    const { response } = await dialog.showMessageBox(window, {
+      type: "question",
+      buttons: ["Update Claudebox", "Cancel"],
+      defaultId: 0,
+      cancelId: 1,
+      message: "Update Claudebox?",
+      detail:
+        "If there's a new version, the sandbox restarts and any open Claude session closes. " +
+        "Your projects are saved.",
+    });
+    if (response !== 0) return undefined;
+
+    await ensureEngine(); // the build needs the Engine, exactly as at launch
+    const result = await refreshOnLaunch();
+    if (result.action !== "rebuilt") return updateMessage(result);
+
+    await removeBoxContainer();
+    await ensureBoxReady(hostBoxDefinitionDir());
+    // A recreate drops back to the Claude Code baked into the image, which the
+    // Dockerfile's cached npm layer can leave months old — so without this an
+    // "update" could hand back an older Claude than the one just running.
+    if (!(await updateClaudeCode())) {
+      console.warn("Claude Code update skipped; keeping the version baked into the Box image.");
+    }
+    return updateMessage(result);
   });
 
   // Delete Project. The Box must be up to measure the Project, and the sheet

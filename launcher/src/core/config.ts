@@ -69,6 +69,30 @@ export const HOME_VOLUME = "claudebox-home";
 /** Where the home volume mounts — the sandbox user's home inside the Box. */
 export const HOME_DIR = "/home/sandbox";
 
+/**
+ * Scratch volume bridging the two halves of "Save to GitHub" (ADR 0006). The
+ * Workspace-side container writes a git bundle here; the credentialed container
+ * reads it. The long-lived Box NEVER mounts this, and the credentialed container
+ * never mounts the Workspace — that separation is the whole defence, and
+ * `assertNoWorkspaceMount` enforces it.
+ */
+export const GIT_SCRATCH_VOLUME = "claudebox-git";
+
+/** Where the scratch volume mounts inside both ephemeral publish containers. */
+export const GIT_SCRATCH_DIR = "/scratch";
+
+/**
+ * The Claudebox OAuth App's client id (ADR 0006). Public by design — a client id
+ * is not a credential, and the device flow explicitly sends no client secret, so
+ * this stays consistent with ADR 0002's "no keys anywhere".
+ *
+ * Empty means no OAuth App has been registered yet: the Launcher then says so
+ * rather than starting a device flow that can only fail. Register one with
+ * "Enable Device Flow" ticked (otherwise GitHub answers `device_flow_disabled`)
+ * and paste its client id here.
+ */
+export const GITHUB_CLIENT_ID = "Ov23limPFjpMgumhxfZI";
+
 /** Public GitHub repo the Box definition is refreshed from (ADR 0002). */
 export const DEFINITION_REPO = "https://github.com/CaelTC/Claudebox.git";
 

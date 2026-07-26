@@ -26,3 +26,12 @@ export function hostBoxDefinitionDir(): string {
 export function exportRoot(): string {
   return process.env.CLAUDEBOX_EXPORT_ROOT ?? join(homedir(), "Claudebox");
 }
+
+/**
+ * The connected GitHub Account (ADR 0006). Inside `.claudebox` rather than the
+ * visible export folder: the token in here is encrypted with the OS keystore and
+ * is nothing the Sandbox User should be handling by hand.
+ */
+export function githubTokenPath(): string {
+  return join(claudeboxHome(), "github.json");
+}

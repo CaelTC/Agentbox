@@ -10,4 +10,5 @@ type ExportCandidate = import("../core/export").ExportCandidate;
 type ExportListing = import("../core/export").ExportListing;
 type ExportResult = import("../core/export").ExportResult;
 type ImportListing = import("../core/import").ImportListing;
+type GithubStatus = import("../shared/api").GithubStatus;
 type DeleteListing = import("../core/delete").DeleteListing;

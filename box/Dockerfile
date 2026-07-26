@@ -77,6 +77,13 @@ RUN chmod +x /usr/local/bin/apply-egress.sh /usr/local/bin/verify-egress.sh \
 # Claude can write to its own Workspace.
 RUN mkdir -p /workspace && chown -R sandbox:sandbox /workspace
 
+# Save to GitHub's scratch volume (ADR 0006) mounts here, in the two ephemeral
+# publish containers only — the long-lived Box never mounts it. Same trick as
+# /workspace above: own the directory in the image, so the fresh named volume
+# inherits it and the unprivileged `sandbox` user can write the bundle. Without
+# this the volume is created root-owned and `git bundle create` gets EACCES.
+RUN mkdir -p /scratch && chown sandbox:sandbox /scratch
+
 # --- The mattpocock-skills plugin, pre-installed (ticket 03) -----------------
 # Installed AS the sandbox user so it lands in /home/sandbox/.claude, where the
 # session (which runs as sandbox) can see it. Best-effort: the exact plugin CLI

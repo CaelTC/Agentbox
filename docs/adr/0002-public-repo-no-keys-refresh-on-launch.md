@@ -2,7 +2,10 @@
 
 ## Status
 
-accepted
+accepted — amended by ADR 0006, which introduces the one credential Claudebox
+has: a GitHub token, held on the host by the Launcher, never in the Box. The
+"no keys" rule holds for the repo, the image, and the Box; it no longer holds
+for the host.
 
 ## Context
 
@@ -10,7 +13,7 @@ Claudebox is distributed by an Install Script (signed installers are not availab
 
 ## Decision
 
-Keep the Claudebox definition repo **public** and ship **no credentials anywhere** — not on the host, not in the Box. On every start the Launcher pulls the latest Box definition from the public repo and rebuilds the image only if it changed ("Refresh on Launch"). This is the sole update mechanism.
+Keep the Claudebox definition repo **public** and ship **no credentials anywhere** — not on the host, not in the Box. On every start the Launcher pulls the latest Box definition from the public repo and rebuilds the image only if it changed ("Refresh on Launch"). This is the sole update mechanism — the Launcher's "Update Claudebox" button runs this same pull, gate and build on demand rather than a second path, and additionally recreates the container so a freshly built image is the one running.
 
 ## Considered Options
 
