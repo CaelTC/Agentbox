@@ -148,7 +148,6 @@ export const IMPORT_SIZE_WARNING_BYTES = 2 * 1024 * 1024 * 1024;
 export interface ImportPlan {
   readonly fileCount: number;
   readonly totalBytes: number;
-  readonly warnBytes: number;
   readonly overWarnThreshold: boolean;
   readonly freeBytes: number;
   /** False means the Import must be refused before anything is copied. */
@@ -166,7 +165,6 @@ export function planImport(files: readonly ImportFile[], freeBytes: number): Imp
   return {
     fileCount: files.length,
     totalBytes,
-    warnBytes: IMPORT_SIZE_WARNING_BYTES,
     overWarnThreshold: totalBytes > IMPORT_SIZE_WARNING_BYTES,
     freeBytes,
     fitsFreeSpace: totalBytes <= freeBytes,
@@ -201,7 +199,6 @@ export interface ImportListing {
   readonly hasGitignore: boolean;
   readonly fileCount: number;
   readonly totalBytes: number;
-  readonly warnBytes: number;
   readonly overWarnThreshold: boolean;
   readonly freeBytes: number;
   readonly fitsFreeSpace: boolean;

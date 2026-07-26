@@ -43,6 +43,11 @@ export function loopbackPublishArgs(ports: readonly number[] = PREVIEW_PORTS): s
  * — `entrypoint.sh` duplicates this text verbatim since a bash build context
  * cannot import it directly; this function is the source of truth and the
  * test below is what keeps the two from drifting apart.
+ *
+ * Deliberately has no production caller: `entrypoint.sh` writes the doc on every
+ * Box start. This is the copy the drift test compares that script against, and
+ * the only thing forcing it to carry the real `PREVIEW_PORTS`. Do not delete it
+ * as dead code.
  */
 export function previewDoc(): string {
   const ports = PREVIEW_PORTS.join(", ");

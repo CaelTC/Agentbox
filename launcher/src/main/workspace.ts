@@ -9,6 +9,7 @@ import {
 } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { BOX_CONTAINER, BOX_USER, ENGINE_CLI, WORKSPACE_DIR } from "../core/config";
+import { size } from "../core/format";
 import {
   parseBoxFileListing,
   planExport,
@@ -392,12 +393,7 @@ export async function boxPlanImport(folder: string): Promise<ImportListing> {
     folderName: basename(resolved),
     isGitRepo: gathered.isGitRepo,
     hasGitignore: gathered.hasGitignore,
-    fileCount: plan.fileCount,
-    totalBytes: plan.totalBytes,
-    warnBytes: plan.warnBytes,
-    overWarnThreshold: plan.overWarnThreshold,
-    freeBytes: plan.freeBytes,
-    fitsFreeSpace: plan.fitsFreeSpace,
+    ...plan,
   };
 }
 
@@ -422,8 +418,8 @@ export async function boxImportFolder(folder: string): Promise<Project> {
     // Refused before a single byte crosses — "there isn't room" as a sentence,
     // not `docker cp` dying mid-stream and leaving a half-copied Project.
     throw new Error(
-      `Not enough room in the Box: this needs ${describeBytes(plan.totalBytes)}, ` +
-        `and only ${describeBytes(plan.freeBytes)} is free.`,
+      `Not enough room in the Box: this needs ${size(plan.totalBytes)}, ` +
+        `and only ${size(plan.freeBytes)} is free.`,
     );
   }
 
@@ -436,11 +432,15 @@ export async function boxImportFolder(folder: string): Promise<Project> {
 
   await run(ENGINE_CLI, ["exec", BOX_CONTAINER, "mkdir", "-p", dir]);
 
+  // `runPipe` REJECTS rather than resolves when a stage cannot be spawned at all
+  // (no `tar`, no engine binary). Folded into a failure result so one branch
+  // below owns the cleanup — a rejection escaping here would skip the `rm -rf`
+  // and leave exactly the metadata-less directory it exists to prevent.
   const copy = await runPipe(
     { command: "tar", args: importTarArgs(resolved, gathered.isGitRepo) },
     { command: ENGINE_CLI, args: ["cp", "-", `${BOX_CONTAINER}:${dir}`] },
     importTarInput(gathered.paths),
-  );
+  ).catch((err: unknown) => ({ code: -1, stdout: "", stderr: String(err) }));
   if (copy.code !== 0) {
     // A failed `docker cp` still leaves whatever it managed to write. Without
     // this the half-copied directory survives, and since project.json is only
@@ -478,8 +478,4 @@ export async function boxImportFolder(folder: string): Promise<Project> {
   );
 
   return { name, slug, dir };
-}
-
-function describeBytes(bytes: number): string {
-  return `${Math.round((bytes / 1024 ** 3) * 10) / 10} GB`;
 }

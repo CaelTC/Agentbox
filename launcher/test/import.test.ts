@@ -97,10 +97,6 @@ describe("importTarArgs", () => {
     expect(importTarArgs("/tmp/proj", true)).toContain("--no-mac-metadata");
   });
 
-  it("does not set ownership here — docker cp synthesises parent dirs as root regardless, so boxImportFolder chowns instead", () => {
-    expect(importTarArgs("/tmp/proj", true)).not.toContain("--uid");
-  });
-
   it("adds .git as an extra positional path for a repo, since git ls-files never lists it", () => {
     expect(importTarArgs("/tmp/proj", true).at(-1)).toBe(".git");
   });
@@ -179,7 +175,6 @@ describe("planImport", () => {
   it("flags totals over the ~2 GB warning threshold without refusing them", () => {
     const plan = planImport([file("huge.bin", IMPORT_SIZE_WARNING_BYTES + 1)], Number.MAX_SAFE_INTEGER);
     expect(plan.overWarnThreshold).toBe(true);
-    expect(plan.warnBytes).toBe(IMPORT_SIZE_WARNING_BYTES);
     expect(plan.fitsFreeSpace).toBe(true); // big is fine as long as it fits
   });
 

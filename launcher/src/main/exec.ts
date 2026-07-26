@@ -85,9 +85,13 @@ export function runPipe(a: PipeStage, b: PipeStage, input = ""): Promise<RunResu
     const second = spawn(b.command, b.args, { stdio: ["pipe", "pipe", "pipe"], env });
 
     first.stdout.pipe(second.stdin);
-    // `b` exiting early makes the pipe write EPIPE. Node emits that on the
-    // stream, and an 'error' with no listener takes down the whole Launcher.
+    // A write to a dead process's stdin raises EPIPE, and an 'error' with no
+    // listener takes the whole Launcher down. Both directions can hit it: `b`
+    // exiting before it has read the stream, and `a` exiting before it has read
+    // `input` (a `tar` that dies on a bad -C). Either child's non-zero exit is
+    // the real error; the stream error is noise on top of it.
     second.stdin.on("error", () => {});
+    first.stdin.on("error", () => {});
 
     let settled = false;
     const fail = (err: Error) => {
@@ -115,7 +119,16 @@ export function runPipe(a: PipeStage, b: PipeStage, input = ""): Promise<RunResu
       promiseResolve({ code: firstCode !== 0 ? firstCode : secondCode, stdout, stderr });
     };
     first.on("close", (code) => ((firstCode = code ?? -1), settle()));
-    second.on("close", (code) => ((secondCode = code ?? -1), settle()));
+    second.on("close", (code) => {
+      secondCode = code ?? -1;
+      // If `b` died before draining the stream, `a` is still writing into a
+      // buffer nobody will read, and blocks forever once it fills — this
+      // Promise would never settle, and the Import the user is watching would
+      // spin indefinitely. Closing the read end hands `a` the SIGPIPE a real
+      // shell pipeline would have. A no-op when `a` has already finished.
+      first.stdout.destroy();
+      settle();
+    });
 
     first.stdin.end(input);
   });
