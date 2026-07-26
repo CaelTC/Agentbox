@@ -46,9 +46,11 @@ async function bootstrap(window: BrowserWindow): Promise<void> {
   try {
     await ensureEngine();
     const refresh = await refreshOnLaunch(); // pull + rebuild only if changed
-    if (refresh.action === "error") {
+    if (refresh.action === "error" || refresh.action === "blocked") {
       // Non-fatal for a machine that already has an image; fatal only if there's
-      // nothing to run, which ensureBoxReady surfaces below.
+      // nothing to run, which ensureBoxReady surfaces below. A `blocked` is the
+      // integrity gate declining an untrusted definition — the one outcome that
+      // must never pass unlogged.
       console.warn(`Refresh on Launch: ${refresh.reason}`);
     } else if (refresh.action === "rebuilt") {
       // Recreate the container so the new image is actually used; the login and

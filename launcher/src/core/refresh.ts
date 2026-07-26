@@ -92,3 +92,43 @@ export function refreshDecision(inputs: RefreshInputs): RefreshOutcome {
 
   return { action: "start", reason: "Box definition unchanged; starting quickly." };
 }
+
+/**
+ * What one run of the refresh actually did. Reported to the renderer as well as
+ * to the console, because Refresh is no longer only a launch step: "Update
+ * Claudebox" runs the same thing on a button, and then someone is waiting to be
+ * told whether they got the new version.
+ */
+export interface RefreshResult {
+  /**
+   * `blocked` is the integrity gate declining to build (a repointed origin, or a
+   * HEAD that isn't the pinned commit) while a last-known-good image keeps
+   * running — a refusal, not a failure, and never silent.
+   */
+  action: "rebuilt" | "started" | "blocked" | "error";
+  reason: string;
+  /** False when the definition couldn't be pulled at all — offline, or a clone that won't fast-forward. */
+  online: boolean;
+}
+
+/**
+ * The sentence the Sandbox User sees after clicking "Update Claudebox". The
+ * `reason` strings above are written for a launch log ("starting quickly"), which
+ * is the wrong voice for someone who just asked a question and wants the answer.
+ * A refusal is the exception: it is passed through verbatim, because a gate that
+ * says only "no" teaches nobody what tripped it.
+ */
+export function updateMessage(result: RefreshResult): string {
+  switch (result.action) {
+    case "rebuilt":
+      return "Claudebox is up to date. The sandbox restarted on the new version.";
+    case "blocked":
+      return result.reason;
+    case "error":
+      return `Couldn't update Claudebox: ${result.reason}`;
+    case "started":
+      return result.online
+        ? "Claudebox is already up to date."
+        : "Couldn't fetch the latest Claudebox, so it's still on the version it had.";
+  }
+}

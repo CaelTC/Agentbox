@@ -69,6 +69,17 @@ export interface ClaudeboxApi {
   saveToGithub(slug: string): Promise<PublishResult>;
 
   /**
+   * Update Claudebox (ADR 0002): pull the public Box definition and, if it
+   * changed, rebuild the image and restart the sandbox on it. Confirmed by a
+   * native dialog in the trusted layer first — undefined if that is cancelled.
+   *
+   * Resolves with the sentence to show. The renderer is a classic script and
+   * cannot import from `core/`, so the wording is composed by the tested
+   * `updateMessage()` rather than reassembled from an enum out here.
+   */
+  updateBox(): Promise<string | undefined>;
+
+  /**
    * Measure what deleting this Project would destroy, for the one confirmation
    * sheet — file count, size, and whether any of it was ever saved out.
    */
@@ -135,6 +146,7 @@ export const IPC = {
   awaitGithubLogin: "github:login-await",
   disconnectGithub: "github:disconnect",
   saveToGithub: "github:save",
+  updateBox: "box:update",
   planDelete: "delete:plan",
   deleteProject: "delete:project",
   bootstrap: "app:bootstrap",
