@@ -12,6 +12,12 @@ unknown or crafted slug can never spawn anything.
   - Off a TTY (the Launcher's `docker exec`): just ensure the session exists,
     creating it detached if absent. Never touches a session that's already live.
 
+A template's seed prompt is CONSUMED on the open that creates the session: it is
+popped from project.json before `claude` starts. Attaching isn't the only way a
+reopen skips reseeding — once the Box (or tmux) restarts, the session is gone,
+and without consuming it every reopen would re-send the prompt and the agent
+would redo the work it already did.
+
 The seed prompt is handed to `claude` as a SINGLE argv, never interpolated into a
 shell string, so a prompt full of shell metacharacters cannot execute a command.
 Claude keeps `--dangerously-skip-permissions`: the container is the boundary
@@ -39,6 +45,23 @@ def fail(msg: str) -> None:
     raise SystemExit(1)
 
 
+def consume_seed(meta_path: str) -> str | None:
+    """Pop `seedPrompt` off the Project's metadata and return it — once, ever."""
+    with open(meta_path, encoding="utf-8") as f:
+        meta = json.load(f)
+    seed = meta.pop("seedPrompt", None)
+    if seed:
+        tmp = meta_path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(meta, f, indent=2)
+        os.replace(tmp, meta_path)  # atomic: a crash never leaves a half-written meta
+    return seed
+
+
+def session_is_live(slug: str) -> bool:
+    return subprocess.run(["tmux", "has-session", "-t", f"={slug}"], capture_output=True).returncode == 0
+
+
 def main(argv: list[str]) -> None:
     if len(argv) != 1:
         fail("usage: claudebox-session <slug>")
@@ -51,19 +74,18 @@ def main(argv: list[str]) -> None:
     if not os.path.isfile(meta_path):
         fail(f"no such Project: {slug!r}")
 
-    with open(meta_path, encoding="utf-8") as f:
-        seed = json.load(f).get("seedPrompt")
+    live = session_is_live(slug)
 
     claude = ["claude", "--dangerously-skip-permissions"]
-    if seed:
-        claude.append(seed)  # single argv — metacharacters can't execute
+    if not live:
+        seed = consume_seed(meta_path)
+        if seed:
+            claude.append(seed)  # single argv — metacharacters can't execute
 
     if sys.stdout.isatty():
         os.execvp("tmux", ["tmux", "new-session", "-A", "-s", slug, "-c", cwd, *claude])
-    else:
-        live = subprocess.run(["tmux", "has-session", "-t", slug], capture_output=True)
-        if live.returncode != 0:
-            subprocess.run(["tmux", "new-session", "-d", "-s", slug, "-c", cwd, *claude], check=True)
+    elif not live:
+        subprocess.run(["tmux", "new-session", "-d", "-s", slug, "-c", cwd, *claude], check=True)
 
 
 if __name__ == "__main__":
