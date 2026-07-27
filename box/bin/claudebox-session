@@ -26,6 +26,8 @@ import subprocess
 import sys
 
 WORKSPACE = os.environ.get("CLAUDEBOX_WORKSPACE", "/workspace")
+# A copy of the Launcher's SLUG_RE (core/projects.ts), which Python cannot
+# import; launcher/test/projects.test.ts compares the two patterns as text.
 SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 

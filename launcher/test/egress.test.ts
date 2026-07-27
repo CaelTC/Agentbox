@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   BLOCKED_CIDRS,
@@ -109,6 +111,77 @@ describe("egressPolicyRules DNS allowance (Colima)", () => {
   it("adds no DNS rules when no resolvers are given (Docker Desktop path)", () => {
     const noDns = flat(egressPolicyRules({ gatewayIp: "192.168.5.1" }));
     expect(noDns.some((l) => l.includes("--dport 53"))).toBe(false);
+  });
+});
+
+describe("the Egress Policy's two copies", () => {
+  // core/egress.ts is the tested source of truth for the rule ORDER and the
+  // blocked ranges; box/egress/apply-egress.sh renders the same policy with the
+  // real iptables binary, because a container's start-up cannot import
+  // TypeScript. This is the wall of ADR 0001 (threat B) written twice, so
+  // nothing but this test would notice the two drifting apart — and a reordering
+  // (a DROP appended after the final default-ACCEPT, the DNS allowance moved
+  // below the gateway DROP) silently opens or closes the Box without changing a
+  // single value.
+  const SCRIPT = readFileSync(
+    join(__dirname, "..", "..", "box", "egress", "apply-egress.sh"),
+    "utf8",
+  );
+
+  const GATEWAY = "192.168.5.1";
+  const RESOLVER = "192.168.5.53";
+
+  /** The script's own BLOCKED_CIDRS array, in the order it loops over them. */
+  function shellCidrs(): string[] {
+    const array = SCRIPT.match(/BLOCKED_CIDRS=\(([\s\S]*?)\)/);
+    expect(array, "apply-egress.sh no longer declares BLOCKED_CIDRS").not.toBeNull();
+    return [...array![1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+  }
+
+  /**
+   * Every `iptables` rule the script runs, in order, with its loops unrolled:
+   * one resolver, one gateway, and the script's own CIDR list. `ip6tables` lines
+   * are skipped (the v6 backstop has no IPv4 counterpart in egress.ts) and so is
+   * the flush, which appends no rule — its placement is asserted separately.
+   */
+  function shellRules(): string[] {
+    const cidrs = shellCidrs();
+    const rules: string[] = [];
+    for (const line of SCRIPT.split("\n")) {
+      const call = line.match(/^\s*iptables\s+(.+?)\s*$/);
+      if (!call) continue;
+      const args = call[1].replace(/"/g, "").replace(/\s+/g, " ");
+      if (args === "-F OUTPUT") continue;
+      if (args.includes("${cidr}")) {
+        for (const cidr of cidrs) rules.push(args.replace("${cidr}", cidr));
+      } else if (args.includes("${ns}")) {
+        rules.push(args.replace("${ns}", RESOLVER));
+      } else if (args.includes("${GATEWAY}")) {
+        rules.push(args.replace("${GATEWAY}", GATEWAY));
+      } else {
+        rules.push(args);
+      }
+    }
+    return rules;
+  }
+
+  it("apply-egress.sh runs exactly the rules egressPolicyRules() generates, in order", () => {
+    expect(shellRules()).toEqual(
+      flat(egressPolicyRules({ gatewayIp: GATEWAY, dnsServers: [RESOLVER] })),
+    );
+  });
+
+  it("blocks the same ranges, in the same order, as BLOCKED_CIDRS", () => {
+    expect(shellCidrs()).toEqual([...BLOCKED_CIDRS]);
+  });
+
+  it("is fail-closed in the shell too: the default DROP is set BEFORE the flush", () => {
+    // Only the script has a flush, so the ordered comparison above cannot see
+    // this: `-F` before `-P` would leave the chain wide open mid-apply.
+    const policy = SCRIPT.indexOf("iptables -P OUTPUT DROP");
+    const flush = SCRIPT.indexOf("iptables -F OUTPUT");
+    expect(policy).toBeGreaterThanOrEqual(0);
+    expect(flush).toBeGreaterThan(policy);
   });
 });
 

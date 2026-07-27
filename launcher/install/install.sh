@@ -9,7 +9,9 @@
 # closes threat B's credential half by construction.
 set -euo pipefail
 
-# The single source of truth for the public definition repo. HTTPS, no auth.
+# The public definition repo. HTTPS, no auth. This, the Resource Cap in
+# prepare_image() and the image tag it builds are copies of core/config.ts —
+# launcher/test/config.test.ts fails if any of them drifts.
 DEFINITION_REPO="https://github.com/CaelTC/Claudebox.git"
 CLAUDEBOX_HOME="${CLAUDEBOX_HOME:-$HOME/.claudebox}"
 APPLICATIONS_DIR="${APPLICATIONS_DIR:-/Applications}"

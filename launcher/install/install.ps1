@@ -30,8 +30,9 @@ param()
 
 $ErrorActionPreference = 'Stop'
 
-# The single source of truth for the public definition repo. HTTPS, no auth.
-# Keep in step with launcher/src/core/config.ts (DEFINITION_REPO).
+# The public definition repo. HTTPS, no auth. A copy of DEFINITION_REPO in
+# launcher/src/core/config.ts - as are $PodmanMachine, $BoxImage and the Cap
+# below. launcher/test/config.test.ts fails if any of them drifts.
 $DefinitionRepo = 'https://github.com/CaelTC/Claudebox.git'
 
 $ClaudeboxHome = if ($env:CLAUDEBOX_HOME) { $env:CLAUDEBOX_HOME }
@@ -48,8 +49,8 @@ $ProgramsDir = if ($env:CLAUDEBOX_PROGRAMS) { $env:CLAUDEBOX_PROGRAMS }
 $LauncherFolder = 'Claudebox-win32-x64'
 $LauncherExe = 'Claudebox.exe'
 
-# The Engine. Keep in step with launcher/src/core/config.ts (ENGINE_PROFILE,
-# BOX_IMAGE) and main/podman.ts (the init flags).
+# The Engine. ENGINE_PROFILE and BOX_IMAGE from launcher/src/core/config.ts; the
+# init flags mirror main/podman.ts.
 $PodmanMachine = 'claudebox'
 $BoxImage = 'claudebox:latest'
 

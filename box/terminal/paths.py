@@ -5,7 +5,9 @@ from __future__ import annotations
 import os
 import re
 
-# The Project slug shape (mirrors the Launcher's SLUG_RE). A session is now always
+# The Project slug shape. A copy of the Launcher's SLUG_RE (core/projects.ts),
+# which Python cannot import; launcher/test/projects.test.ts compares the two
+# patterns as text, so the copy cannot quietly go slack. A session is now always
 # a Project, so the console REJECTS anything that isn't a real slug rather than
 # coercing it — an unknown/crafted name must 404, never spawn a shell.
 _SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")

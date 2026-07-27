@@ -8,7 +8,10 @@
 # tightly-scoped sudo rule). Must run as root.
 #
 # This mirrors launcher/src/core/egress.ts — that module is the tested source of
-# truth for the rule ORDER and the blocked ranges; keep the two in sync.
+# truth for the rule ORDER and the blocked ranges. The two cannot drift quietly:
+# launcher/test/egress.test.ts ("the Egress Policy's two copies") unrolls the
+# loops below and compares this script's rules, in order, against the ones
+# egressPolicyRules() generates.
 set -euo pipefail
 
 BLOCKED_CIDRS=(

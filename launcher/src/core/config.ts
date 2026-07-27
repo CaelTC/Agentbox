@@ -2,6 +2,11 @@
  * Load-bearing constants for Claudebox. These encode the decisions from
  * ADR 0001 (the container is the permission boundary) and the ticket
  * acceptance criteria. They are pure data so they can be asserted in tests.
+ *
+ * This file is the declared source of truth, but three scripts that run without
+ * the Launcher must carry their own copies (`install/install.sh`,
+ * `install/install.ps1`, `scripts/claudebox.sh`). `test/config.test.ts` reads
+ * those scripts and fails on any value that drifts from what is declared here.
  */
 
 /** The tuned Engine allocation baked into the Launcher (see CONTEXT.md: Resource Cap). */
