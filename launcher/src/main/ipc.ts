@@ -8,7 +8,7 @@ import {
   saveToGithub,
   startGithubLogin,
 } from "./github";
-import { exclusive } from "./gate";
+import { boxGate } from "./box-gate";
 import { exportRoot, hostBoxDefinitionDir } from "./paths";
 import { detectPreviewUrl } from "./preview";
 import { updateClaudebox } from "./refresh-runner";
@@ -33,7 +33,7 @@ import {
  * tested without Electron. The only work left in here is the native dialogs,
  * which are the one thing the renderer genuinely cannot reach past this line.
  *
- * Two policies, and every channel picks one:
+ * Two policies, which between them cover every channel but the two named below:
  *
  *   route       — host-only work. The Box is not involved.
  *   routeViaBox — the target touches the Workspace, so the Box is brought up
@@ -55,6 +55,20 @@ import {
  */
 type Target<A extends unknown[]> = (...args: A) => unknown;
 
+/**
+ * Resolves the first time the home screen has been handed its Projects — while
+ * that listing still holds the gate.
+ *
+ * `bootstrap` waits on it before queueing `claude update`, so the render the
+ * Sandbox User is actually staring at is AHEAD of the update in the queue
+ * instead of behind it. The gate is arrival-ordered and has no priorities, so
+ * "the home screen first" has to be arranged by waiting for it; queued from
+ * bootstrap directly, the update always won that race, and up to `timeout 180`
+ * of it sat in front of every launch's first listing.
+ */
+let homeHasItsProjects: () => void = () => {};
+export const homeListedProjects = new Promise<void>((resolve) => (homeHasItsProjects = resolve));
+
 function route<A extends unknown[]>(channel: string, target: Target<A>): void {
   ipcMain.handle(channel, (_event, ...args) => target(...(args as A)));
 }
@@ -64,7 +78,7 @@ function routeViaBox<A extends unknown[]>(channel: string, target: Target<A>): v
     // The native pickers inside two of these targets run while the gate is
     // held. That costs nothing: they are window-modal, so the Sandbox User
     // cannot start a second operation while one is open anyway.
-    exclusive(async () => {
+    boxGate(async () => {
       await ensureBoxReady(hostBoxDefinitionDir());
       return target(...args);
     }),
@@ -123,7 +137,7 @@ export function registerIpc(window: BrowserWindow): void {
   // recreating that container underneath it would report "no preview" for a
   // server that is simply mid-restart. Gated, not brought up.
   route(IPC.openPreview, () =>
-    exclusive(async () => {
+    boxGate(async () => {
       const url = await detectPreviewUrl();
       if (!url) return { opened: false };
       await shell.openExternal(url);
@@ -141,12 +155,16 @@ export function registerIpc(window: BrowserWindow): void {
   // the Sandbox User may yet cancel. Once they say yes, this is the operation
   // every other one has to wait for — it is the one that removes the container.
   route(IPC.updateBox, async (): Promise<string | undefined> =>
-    (await confirmUpdate()) ? exclusive(() => updateClaudebox()) : undefined,
+    (await confirmUpdate()) ? boxGate(() => updateClaudebox()) : undefined,
   );
 
   /* Workspace channels — the Box is up before any of these run. ----------- */
 
-  routeViaBox(IPC.listProjects, () => boxListProjects());
+  routeViaBox(IPC.listProjects, async () => {
+    const projects = await boxListProjects();
+    homeHasItsProjects(); // still inside the gate — see `homeListedProjects`
+    return projects;
+  });
   routeViaBox(IPC.createProject, (name: string) => boxCreateProject(name));
   routeViaBox(IPC.openSession, (slug: string) => openProjectSession(slug));
 

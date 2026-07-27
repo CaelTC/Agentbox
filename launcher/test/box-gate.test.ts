@@ -3,12 +3,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { IPC } from "../src/shared/api";
 import type { UploadTarget } from "../src/core/upload";
 import type { Project } from "../src/core/projects";
-import { exclusive } from "../src/main/gate";
+import { boxGate } from "../src/main/box-gate";
 import { awaitGithubLogin } from "../src/main/github";
-import { registerIpc } from "../src/main/ipc";
+import { homeListedProjects, registerIpc } from "../src/main/ipc";
 import { updateClaudebox } from "../src/main/refresh-runner";
 import { ensureBoxReady } from "../src/main/session";
-import { boxCreateProject, boxUpload } from "../src/main/workspace";
+import { boxCreateProject, boxListProjects, boxUpload } from "../src/main/workspace";
 import type { BrowserWindow } from "electron";
 
 /**
@@ -80,13 +80,13 @@ function deferred<T>(): Deferred<T> {
 /** Drain every pending microtask, so "has it started yet?" is a real question. */
 const settle = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
-describe("exclusive", () => {
+describe("boxGate", () => {
   it("holds the second operation until the first has finished", async () => {
     const first = deferred<string>();
     const started: string[] = [];
 
-    const a = exclusive(() => (started.push("a"), first.promise));
-    const b = exclusive(() => (started.push("b"), Promise.resolve("b")));
+    const a = boxGate(() => (started.push("a"), first.promise));
+    const b = boxGate(() => (started.push("b"), Promise.resolve("b")));
     await settle();
 
     expect(started).toEqual(["a"]); // b has not been allowed to begin
@@ -101,7 +101,7 @@ describe("exclusive", () => {
     const gate = deferred<void>();
     const finished: string[] = [];
     const join = (name: string) =>
-      exclusive(async () => {
+      boxGate(async () => {
         await gate.promise;
         finished.push(name);
       });
@@ -117,19 +117,19 @@ describe("exclusive", () => {
   // one failed `docker cp` must not wedge every operation for the rest of the
   // session, which is a deadlock the Sandbox User could only escape by quitting.
   it("hands the gate on when an operation throws, and still rejects its own caller", async () => {
-    const failing = exclusive(() => Promise.reject(new Error("docker cp: no space left")));
+    const failing = boxGate(() => Promise.reject(new Error("docker cp: no space left")));
 
     await expect(failing).rejects.toThrow("no space left");
-    expect(await exclusive(() => "after")).toBe("after");
+    expect(await boxGate(() => "after")).toBe("after");
   });
 
   it("survives a synchronous throw the same way", async () => {
     await expect(
-      exclusive(() => {
+      boxGate(() => {
         throw new Error("nope");
       }),
     ).rejects.toThrow("nope");
-    expect(await exclusive(() => "after")).toBe("after");
+    expect(await boxGate(() => "after")).toBe("after");
   });
 });
 
@@ -234,5 +234,31 @@ describe("the router's gate", () => {
     expect(await invoke(IPC.awaitGithubLogin)).toMatchObject({ connected: true });
 
     update.resolve("Claudebox is up to date.");
+  });
+
+  /**
+   * Bootstrap waits on this signal before it queues `claude update` at the gate.
+   * The gate is arrival-ordered and has no priorities, so the only way the home
+   * screen's own first listing gets in FRONT of the update is by the update
+   * waiting for it — otherwise up to `timeout 180` of download sat between every
+   * launch and the Projects appearing.
+   */
+  it("signals only once the home screen's first listing has been served", async () => {
+    const listing = deferred<Project[]>();
+    vi.mocked(boxListProjects).mockReturnValue(listing.promise);
+
+    let signalled = false;
+    void homeListedProjects.then(() => (signalled = true));
+    await settle();
+    expect(signalled).toBe(false); // nothing has asked for Projects yet
+
+    const listed = invoke(IPC.listProjects);
+    await settle();
+    expect(signalled).toBe(false); // asked, but not yet answered
+
+    listing.resolve([]);
+    await listed;
+    await settle();
+    expect(signalled).toBe(true);
   });
 });

@@ -1,8 +1,8 @@
 import { app, BrowserWindow, dialog } from "electron";
 import { join } from "node:path";
 import { IPC, type BootstrapStatus } from "../shared/api";
-import { exclusive } from "./gate";
-import { registerIpc } from "./ipc";
+import { boxGate } from "./box-gate";
+import { homeListedProjects, registerIpc } from "./ipc";
 import { hostBoxDefinitionDir } from "./paths";
 import { refreshOnLaunch } from "./refresh-runner";
 import {
@@ -49,11 +49,20 @@ function createWindow(): BrowserWindow {
  * is in the middle of removing and recreating. Taking the gate turns that race
  * into a queue. Nothing in here goes back through the router, so there is no
  * way for the gate to wait on itself.
+ *
+ * TWO turns at the gate, not one. The Box being ready is what the home screen
+ * waits on; the Claude Code update is a separate operation, queued behind the
+ * home screen's own first listing, so the Projects appear as soon as the Box is
+ * up. Held as one, `claude update` (up to `timeout 180`) sat in front of the
+ * home screen on every single launch — and the "Updating Claude Code…" status
+ * that was supposed to explain the wait could never be seen, because the window
+ * was still empty. That status is gone rather than moved: an `ok` status is what
+ * makes the renderer draw the home screen, so the honest number of them is one.
  */
 async function bootstrap(window: BrowserWindow): Promise<void> {
   const send = (status: BootstrapStatus) => window.webContents.send(IPC.bootstrap, status);
   try {
-    await exclusive(async () => {
+    await boxGate(async () => {
       await ensureEngine();
       const refresh = await refreshOnLaunch(); // pull + rebuild only if changed
       if (refresh.action === "error" || refresh.action === "blocked") {
@@ -68,13 +77,24 @@ async function bootstrap(window: BrowserWindow): Promise<void> {
         await removeBoxContainer();
       }
       await ensureBoxReady(hostBoxDefinitionDir());
-      // Every open gets the latest Claude Code, before any session can attach.
-      send({ ok: true, message: "Updating Claude Code…" });
+    });
+    // The Box is usable from here on, so this is the Sandbox User's last word on
+    // it — and the only one: an `ok` status is what makes the renderer draw the
+    // home screen, so a second would redraw it under whatever they were doing.
+    // The update reports itself to the console instead, which is all a
+    // best-effort step that changes nothing on screen has to say.
+    send({ ok: true, message: "Claudebox is ready." });
+    // Behind the home screen's own first listing, never in front of it (see
+    // `homeListedProjects`); capped, so a window that never asks for its
+    // Projects doesn't skip the update for the whole launch. Still before any
+    // session can attach — every later click queues behind this at the gate,
+    // `openSession` included.
+    await Promise.race([homeListedProjects, new Promise((r) => setTimeout(r, 5_000).unref())]);
+    await boxGate(async () => {
       if (!(await updateClaudeCode())) {
         console.warn("Claude Code update skipped; keeping the version baked into the Box image.");
       }
     });
-    send({ ok: true, message: "Claudebox is ready." });
   } catch (error) {
     send({ ok: false, message: `Couldn't start Claudebox: ${String(error)}` });
   }
@@ -104,10 +124,19 @@ app.on("window-all-closed", () => {
  * Box to free the Resource Cap, which also ends any open Chrome session window —
  * so confirm once before quitting. Stopping is fire-and-forget (stopBoxDetached),
  * so a slow/failed `docker stop` can't trap the user; the quit proceeds regardless.
+ *
+ * The stop itself takes the gate, though: quitting mid-Import would otherwise
+ * stop the container in the middle of a `tar | docker cp`, leaving exactly the
+ * half-copied, metadata-less Project that Import's own cleanup exists to
+ * prevent. So a quit while the Box is busy defers once — the quit is re-issued
+ * as soon as the gate comes free, and `quitting` keeps that from looping.
  */
 let quitConfirmed = false;
+let boxStopped = false;
 app.on("before-quit", (event) => {
-  if (quitConfirmed) return;
+  if (boxStopped) return; // the stop has run — this is the quit going through
+  event.preventDefault();
+  if (quitConfirmed) return; // already waiting at the gate; don't ask twice
   const choice = dialog.showMessageBoxSync({
     type: "question",
     buttons: ["Quit Claudebox", "Cancel"],
@@ -116,10 +145,14 @@ app.on("before-quit", (event) => {
     message: "Quit Claudebox?",
     detail: "This closes your Claudebox and any open Claude session. Your projects are saved.",
   });
-  if (choice !== 0) {
-    event.preventDefault();
-    return;
-  }
+  if (choice !== 0) return; // cancelled — the quit is already prevented
   quitConfirmed = true;
-  stopBoxDetached();
+  // An empty turn at the gate: it resolves on the spot when nothing is in
+  // flight, so an idle quit is not delayed at all, and waits out a copy when
+  // one is. Then stop, and re-quit — this handler lets that one through.
+  void boxGate(() => {}).then(() => {
+    boxStopped = true;
+    stopBoxDetached();
+    app.quit();
+  });
 });

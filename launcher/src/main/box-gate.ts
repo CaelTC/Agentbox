@@ -20,10 +20,16 @@
  * behaviour and needs no new copy. Order is arrival order.
  *
  * NOT RE-ENTRANT, deliberately. This is a promise chain, so an operation that
- * took the gate again from inside itself would wait for itself forever. The
- * gate is taken in exactly two places — the router's registrars and
- * `bootstrap()` — and never inside a target, which is a rule you can check by
- * grepping the callers of `exclusive`.
+ * took the gate again from inside itself would wait for itself forever. It is
+ * taken in exactly four places — the router's `routeViaBox`, and by hand in
+ * `openPreview`, `updateBox` and `bootstrap()` — and never inside a target,
+ * which is a rule you can check by grepping the callers of `boxGate`.
+ *
+ * Nothing held here is unbounded: every `exec` into the Box carries a deadline
+ * (`BOX_EXEC_TIMEOUT_MS`), because a single command that never returns is not
+ * one dead operation but every Box channel dead for the life of the Launcher.
+ * The copies are the deliberate exception — a multi-GB Import is slow, and is
+ * exactly the thing nothing else may race.
  */
 
 /** The end of the queue: resolves when everything admitted so far has settled. */
@@ -33,7 +39,7 @@ let tail: Promise<unknown> = Promise.resolve();
  * Run `work` once every operation admitted before it has finished, and hold the
  * gate until it settles.
  */
-export function exclusive<T>(work: () => Promise<T> | T): Promise<T> {
+export function boxGate<T>(work: () => Promise<T> | T): Promise<T> {
   // `then(work, work)` — a predecessor that THREW still hands the gate on, and
   // the tail keeps its own failure swallowed, so one operation that fails (a
   // cancelled picker, a `docker cp` onto a full disk) cannot deadlock every
