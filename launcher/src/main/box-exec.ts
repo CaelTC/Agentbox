@@ -1,16 +1,20 @@
 import { spawn } from "node:child_process";
 import { BOX_CONTAINER, ENGINE_CLI } from "../core/config";
-import { run, spawnPath, type RunResult } from "./exec";
+import { failureMessage, run, spawnPath, type RunResult } from "./exec";
 
 /**
  * The Box-exec seam: every invocation of the Engine CLI against the RUNNING Box
  * — exec, exec-as-root, copy in, copy out, stop — goes through this one object.
  * Nothing else builds `docker exec claudebox …` argv or prefixes a path with
- * `claudebox:`. (The Box's LIFECYCLE — build, run, start, rm — is not this
- * module's: `main/session.ts` owns that, and reaches a Box that may not be up
- * yet, which is also why the session funnel still calls `mustSucceed` directly.)
+ * `claudebox:`, with ONE named exception: `boxUpdateClaudeArgs` (core/box.ts),
+ * which `main/session.ts` runs on every launch as root. It stays outside because
+ * it is best-effort — every failure is one `false` — and because it carries its
+ * own in-Box `timeout 180`, longer than this seam's deadline below. (The Box's
+ * LIFECYCLE — build, run, start, rm — is not this module's either:
+ * `main/session.ts` owns that, and reaches a Box that may not be up yet, which
+ * is why those calls use `mustSucceed` directly.)
  *
- * Three decisions live here, and only here:
+ * Four decisions live here, and only here:
  *
  * 1. FAILURE IS AN ERROR. Every operation throws on a non-zero exit. `tryExec`
  *    is the single marked exception, for the few calls where non-zero is an
@@ -22,7 +26,12 @@ import { run, spawnPath, type RunResult } from "./exec";
  * 2. QUOTING. Callers pass argv, or a script plus its values through `sh()` —
  *    never a hand-quoted `sh -c` string with a Box path spliced into it.
  *
- * 3. THE PATH FIX. Everything routes through exec.ts's `run` / `spawnPath`, so
+ * 3. A DEADLINE. Every `exec` into the Box is bounded (see BOX_EXEC_TIMEOUT_MS).
+ *    Not the copies: `docker cp` of a multi-GB Import or Export is legitimately
+ *    slow, and those genuinely can hold the Box Gate for minutes — which is
+ *    correct, since a copy is exactly the thing nothing else may race.
+ *
+ * 4. THE PATH FIX. Everything routes through exec.ts's `run` / `spawnPath`, so
  *    a Launcher opened from Finder (minimal PATH, no `/opt/homebrew/bin`) can
  *    still find the Engine — `stopDetached` and `runPipe` included, both of
  *    which spawn for themselves. `stopDetached` used to spawn the Engine
@@ -49,34 +58,52 @@ export function sh(script: string, ...values: readonly string[]): readonly strin
   return ["sh", "-c", script, "sh", ...values];
 }
 
+/**
+ * How long an `exec` into the Box may take before it is killed and reported as
+ * a failure. Generous, because it is a backstop and not a policy: nothing here
+ * is meant to take two minutes, and a `docker exec` that does is wedged. The
+ * gate is single-file, so an exec that never returns is not one dead operation
+ * — it is every Box channel dead for the life of the Launcher, including the
+ * Update Claudebox that would ship the fix.
+ */
+export const BOX_EXEC_TIMEOUT_MS = 120_000;
+
 /** Every operation the Launcher performs against the running Box. */
 export interface BoxExec {
-  /** Run argv in the Box as the sandbox user; resolve its stdout, throw on a non-zero exit. */
-  exec(argv: readonly string[]): Promise<string>;
   /**
-   * Run argv in the Box and resolve the raw result, including a non-zero exit.
-   * ONLY for calls where "it failed" is a legitimate answer — every use is
-   * commented at the call site with why ignoring the code is correct.
+   * Run argv in the Box as the sandbox user; resolve its stdout, throw on a
+   * non-zero exit. `what` is how that failure is named to the Sandbox User —
+   * pass it wherever "`docker exec claudebox df -kP …` failed" is not a sentence
+   * anyone should have to read; the argv itself is the default.
+   */
+  exec(argv: readonly string[], what?: string): Promise<string>;
+  /**
+   * Run argv in the Box and resolve the raw result, including a non-zero exit —
+   * a spawn that fails outright included, as `code: -1`. ONLY for calls where
+   * "it failed" is a legitimate answer — every use is commented at the call site
+   * with why ignoring the code is correct. A caller that means to fail, only in
+   * better words, passes `what` to `exec` instead.
    */
   tryExec(argv: readonly string[]): Promise<RunResult>;
   /**
-   * Run argv in the Box as root; throw on a non-zero exit.
+   * Run argv in the Box as root; throw on a non-zero exit, named by `what` as
+   * `exec` is.
    *
    * Root is needed because `docker cp` SYNTHESISES the parent directories of a
    * streamed archive as root (tar emits no directory entries for them), so an
    * imported Project contains directories the sandbox user cannot chown or
    * unlink. Delete and the failed-import cleanup both hit exactly that.
    */
-  execAsRoot(argv: readonly string[]): Promise<void>;
+  execAsRoot(argv: readonly string[], what?: string): Promise<void>;
   /**
    * Write `content` to `path` inside the Box; throw if it did not land. Sent as
    * base64 so arbitrary content (a Project's friendly name, a seed prompt) never
    * meets a shell.
    */
   writeFile(path: string, content: string): Promise<void>;
-  /** Copy one host path into the Box; throw on failure. */
+  /** Copy one host path into the Box; throw on failure. Unbounded (decision 3). */
   copyIn(hostPath: string, boxPath: string): Promise<void>;
-  /** Copy one Box path out to the host; throw on failure. */
+  /** Copy one Box path out to the host; throw on failure. Unbounded (decision 3). */
   copyOut(boxPath: string, hostPath: string): Promise<void>;
   /**
    * Stream `source`'s stdout into `boxDir` as a tar archive (Project Import's
@@ -96,10 +123,7 @@ function describe(argv: readonly string[]): string {
   return `\`${ENGINE_CLI} ${line.length > 120 ? `${line.slice(0, 117)}…` : line}\``;
 }
 
-function boxFailure(what: string, res: RunResult): Error {
-  const detail = res.stderr.trim() || res.stdout.trim() || "no output";
-  return new Error(`${what} failed (exit ${res.code}): ${detail}`);
-}
+const boxFailure = (what: string, res: RunResult): Error => new Error(failureMessage(what, res));
 
 const inBox = (argv: readonly string[]): string[] => ["exec", BOX_CONTAINER, ...argv];
 const inBoxAsRoot = (argv: readonly string[]): string[] => [
@@ -110,25 +134,42 @@ const inBoxAsRoot = (argv: readonly string[]): string[] => [
   ...argv,
 ];
 
-/** Run engine argv, throwing `what` on any non-zero exit. */
-async function must(argv: readonly string[], what = describe(argv)): Promise<string> {
-  const res = await run(ENGINE_CLI, argv);
+/**
+ * Run engine argv, throwing `what` on any non-zero exit. `timeoutMs` is the
+ * deadline every exec gets and the copies deliberately do not (decision 3).
+ */
+async function must(
+  argv: readonly string[],
+  what = describe(argv),
+  timeoutMs?: number,
+): Promise<string> {
+  const res = await run(ENGINE_CLI, argv, undefined, timeoutMs);
   if (res.code !== 0) throw boxFailure(what, res);
   return res.stdout;
 }
 
 export const boxExec: BoxExec = {
-  exec: (argv) => must(inBox(argv)),
+  exec: (argv, what) => must(inBox(argv), what, BOX_EXEC_TIMEOUT_MS),
 
-  tryExec: (argv) => run(ENGINE_CLI, inBox(argv)),
+  tryExec: (argv) =>
+    run(ENGINE_CLI, inBox(argv), undefined, BOX_EXEC_TIMEOUT_MS).catch((err: unknown) => ({
+      // `run` REJECTS when the Engine binary cannot be spawned at all (ENOENT on
+      // a Finder-launched PATH). Every caller here is tolerant by design and
+      // reads `.code`, so a rejection would be the one outcome none of them
+      // handle — it becomes the same "it failed" answer as a non-zero exit.
+      code: -1,
+      stdout: "",
+      stderr: String(err),
+    })),
 
-  execAsRoot: async (argv) => void (await must(inBoxAsRoot(argv))),
+  execAsRoot: async (argv, what) => void (await must(inBoxAsRoot(argv), what, BOX_EXEC_TIMEOUT_MS)),
 
   writeFile: async (path, content) => {
     const b64 = Buffer.from(content, "utf8").toString("base64");
     await must(
       inBox(sh('printf %s "$1" | base64 -d > "$2"', b64, path)),
       `Writing '${path}' inside the Box`,
+      BOX_EXEC_TIMEOUT_MS,
     );
   },
 
