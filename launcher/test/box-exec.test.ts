@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -8,6 +8,7 @@ import { boxExec, sh, type BoxExec } from "../src/main/box-exec";
 import { run, spawnPath, type RunResult } from "../src/main/exec";
 import {
   boxCreateProject,
+  boxDeleteListing,
   boxDeleteProject,
   boxExport,
   boxImportFolder,
@@ -215,6 +216,8 @@ function fakeBox(reply: (op: Op, args: readonly string[]) => string | Error = ()
 const isSlugListing = (argv: readonly string[]) => argv.join(" ").includes("basename");
 const isFileListing = (argv: readonly string[]) => argv.join(" ").includes("-printf");
 const isDf = (argv: readonly string[]) => argv[0] === "df";
+const isUsage = (argv: readonly string[]) => argv.join(" ").includes("du -sk");
+const isMeta = (argv: readonly string[]) => argv[0] === "cat";
 
 describe("boxUpload — a failed copy is not an upload", () => {
   const sources = ["/host/budget.csv", "/host/notes.txt"];
@@ -302,7 +305,7 @@ describe("boxDeleteProject", () => {
     const fake = fakeBox();
     // Every `test -e` succeeds in this fake, so the Project reads as still
     // present after the rm — which is the OTHER guarantee this operation makes.
-    await expect(boxDeleteProject("demo", fake)).rejects.toThrow(/still in the Workspace/);
+    await expect(boxDeleteProject("demo", "demo", fake)).rejects.toThrow(/still in the Workspace/);
 
     expect(fake.calls).toContain("tryExec tmux kill-session -t demo");
     expect(fake.calls).toContain("execAsRoot rm -rf /workspace/demo");
@@ -311,9 +314,83 @@ describe("boxDeleteProject", () => {
 
   it("reports the Project's name when the removal itself fails", async () => {
     const fake = fakeBox((op) => (op === "execAsRoot" ? new Error("device or resource busy") : ""));
-    await expect(boxDeleteProject("demo", fake)).rejects.toThrow(
+    await expect(boxDeleteProject("demo", "demo", fake)).rejects.toThrow(
       /Couldn't delete 'demo'.*device or resource busy/s,
     );
+  });
+
+  // The typed name is checked against the Box's own metadata, not against
+  // whatever the sheet was showing: a stale sheet naming a since-renamed Project
+  // must not be able to delete it.
+  it("removes NOTHING when the typed name isn't this Project's", async () => {
+    const fake = fakeBox((_op, argv) =>
+      isMeta(argv) ? JSON.stringify({ name: "My Site", slug: "demo" }) : "",
+    );
+
+    await expect(boxDeleteProject("demo", "My Old Site", fake)).rejects.toThrow(
+      /isn't the name of this project/,
+    );
+    expect(fake.calls.some((c) => c.includes("rm -rf"))).toBe(false);
+    expect(fake.calls.some((c) => c.includes("kill-session"))).toBe(false);
+  });
+
+  it("accepts the friendly name the way a person types it (case, stray spaces)", async () => {
+    const fake = fakeBox((_op, argv) =>
+      isMeta(argv) ? JSON.stringify({ name: "My Site", slug: "demo" }) : "",
+    );
+
+    // Gets past the check and on to the removal, which this fake then fails.
+    await expect(boxDeleteProject("demo", "  my site ", fake)).rejects.toThrow(
+      /still in the Workspace/,
+    );
+  });
+});
+
+describe("boxDeleteListing — the sheet between a click and permanent loss", () => {
+  let root: string;
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), "claudebox-delete-"));
+  });
+
+  /** A Box holding one Project, "My Site", whose size probe answers `usage`. */
+  const box = (usage: string | Error) =>
+    fakeBox((_op, argv) => {
+      if (isSlugListing(argv)) return "demo\n";
+      if (isMeta(argv)) return JSON.stringify({ name: "My Site", slug: "demo" });
+      if (isUsage(argv)) return usage;
+      return "";
+    });
+
+  it("reports the friendly name, what the Project holds, and where its Exports are", async () => {
+    const listing = await boxDeleteListing("demo", root, box("3\n8\n"));
+
+    expect(listing).toMatchObject({
+      slug: "demo",
+      name: "My Site",
+      fileCount: 3,
+      totalBytes: 8 * 1024,
+    });
+    expect(listing.exportDir).toBe(join(root, "My Site"));
+  });
+
+  // The one thing this sheet must never do is show a confident "0 files" over a
+  // Project full of work — absent is a different answer from zero.
+  it("leaves the counts ABSENT when the size probe failed", async () => {
+    const listing = await boxDeleteListing("demo", root, box(new Error("no such container")));
+
+    expect("fileCount" in listing).toBe(false);
+    expect("totalBytes" in listing).toBe(false);
+    expect(listing.name).toBe("My Site"); // still says what is about to go
+  });
+
+  it("has no lastSaved when this Project was never saved out", async () => {
+    expect((await boxDeleteListing("demo", root, box("1\n1\n"))).lastSaved).toBeUndefined();
+  });
+
+  it("reports when the Exported copies that SURVIVE this delete last landed", async () => {
+    mkdirSync(join(root, "My Site"), { recursive: true });
+
+    expect((await boxDeleteListing("demo", root, box("1\n1\n"))).lastSaved).toBeGreaterThan(0);
   });
 });
 

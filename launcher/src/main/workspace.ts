@@ -4,6 +4,7 @@ import {
   lstatSync,
   mkdirSync,
   readdirSync,
+  statSync,
   utimesSync,
   writeFileSync,
 } from "node:fs";
@@ -34,7 +35,9 @@ import {
 } from "../core/import";
 import {
   assertDeletableProjectPath,
+  confirmsProjectName,
   parseProjectUsage,
+  type DeleteListing,
   type DeleteResult,
 } from "../core/delete";
 import { killSessionArgs } from "../core/session-window";
@@ -156,8 +159,46 @@ export async function boxProjectUsage(
 }
 
 /**
+ * Everything the delete confirmation sheet says, from the four places that know
+ * it: the Project's own name, what it is holding, where its Exports landed, and
+ * when it was last saved out. Composed HERE and not in the router, because the
+ * sheet is the last thing standing between a click and permanent loss — it has
+ * to report the Exported copies that will SURVIVE as well as what will not, and
+ * that promise is only assertable if it is one function.
+ *
+ * `usage` is spread rather than defaulted: absent means the probe failed, and
+ * the sheet says "couldn't measure this" instead of "0 files" (core/delete.ts).
+ */
+export async function boxDeleteListing(
+  slug: string,
+  exportRoot: string,
+  box: BoxExec = boxExec,
+): Promise<DeleteListing> {
+  const [{ project }, usage, exportDir] = await Promise.all([
+    boxFindProject(slug, box),
+    boxProjectUsage(slug, box),
+    boxExportDir(slug, exportRoot, box),
+  ]);
+  const saved = statSync(exportDir, { throwIfNoEntry: false });
+
+  return {
+    slug,
+    name: project.name,
+    ...usage,
+    exportDir,
+    ...(saved ? { lastSaved: saved.mtimeMs } : {}),
+  };
+}
+
+/**
  * Delete Project: remove a Project and everything in it from the Workspace,
  * permanently (core/delete.ts explains why there is no trash).
+ *
+ * `typed` is the name the Sandbox User typed into the sheet. It arrives from the
+ * renderer, so it is input rather than truth: it is re-checked HERE against the
+ * Project's real name inside the Box, exactly as `boxExport` re-enumerates the
+ * Box before writing. A renderer bug — or a stale sheet naming a Project that
+ * has since been renamed — must not be able to delete the wrong thing.
  *
  * Order matters. The tmux session dies FIRST — see `killSessionArgs` — and
  * only then does the directory go, so the slug is genuinely free afterwards.
@@ -170,6 +211,7 @@ export async function boxProjectUsage(
  */
 export async function boxDeleteProject(
   slug: string,
+  typed: string,
   box: BoxExec = boxExec,
 ): Promise<DeleteResult> {
   const dir = assertDeletableProjectPath(WORKSPACE_DIR, slug);
@@ -177,6 +219,11 @@ export async function boxDeleteProject(
   const meta = await readBoxMeta(box, slug);
   if (!(await boxPathExists(box, dir))) {
     throw new Error(`No Project named '${slug}'.`);
+  }
+
+  const name = meta?.name ?? slug;
+  if (!confirmsProjectName(typed ?? "", name)) {
+    throw new Error(`That isn't the name of this project, so nothing was deleted.`);
   }
 
   // Tolerant on purpose: non-zero simply means there was no live session.
@@ -197,7 +244,7 @@ export async function boxDeleteProject(
     throw new Error(`'${slug}' is still in the Workspace after deleting it.`);
   }
 
-  return { slug, name: meta?.name ?? slug, sessionKilled: killed.code === 0 };
+  return { slug, name, sessionKilled: killed.code === 0 };
 }
 
 /**
@@ -304,7 +351,7 @@ export async function boxExportDir(
  * One Project by slug, alongside the full listing it came from — `resolveExportDir`
  * needs the siblings to disambiguate two Projects whose friendly names collide.
  */
-export async function boxFindProject(
+async function boxFindProject(
   slug: string,
   box: BoxExec = boxExec,
 ): Promise<{ project: Project; projects: Project[] }> {
