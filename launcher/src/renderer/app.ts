@@ -7,12 +7,106 @@ const cb = window.claudebox;
 
 const app = () => document.getElementById("app")!;
 
+// --- the renderer's machinery ------------------------------------------------
+// Everything between this marker and its closing twin touches nothing but
+// `document` and `setTimeout`. That is deliberate: the renderer is a classic
+// <script> and so can neither import nor export (see core/format.ts), and
+// test/renderer.test.ts extracts this region verbatim and evaluates it against a
+// fake DOM. Reaching for `cb`, a screen, or a global from in here is what would
+// break that test — the rest of the file may lean on this region, never the
+// other way round.
+
 function el(tag: string, props: Record<string, unknown> = {}, children: (Node | string)[] = []) {
   const node = document.createElement(tag);
   Object.assign(node, props);
   for (const c of children) node.append(c);
   return node;
 }
+
+function flash(message: string): void {
+  const note = el("div", { className: "flash", textContent: message });
+  document.body.append(note);
+  setTimeout(() => note.remove(), 3500);
+}
+
+/**
+ * Every modal in Claudebox is this sheet: a backdrop, one panel, a title, the
+ * caller's own contents, and a row of actions along the bottom. Four of them
+ * opened with the same seven lines and closed with the same four before this
+ * existed, and only the Delete sheet's `focus()` ever differed — so that stays
+ * the caller's business, after the sheet is up.
+ *
+ * Returns the sheet's own `close`. A panel is built before it is shown, so a
+ * button inside it can only be told how to dismiss it afterwards.
+ */
+function openSheet(title: string, contents: (Node | string)[], actions: Node[]): () => void {
+  const dialog = el("div", { className: "sheet" });
+  dialog.append(
+    el("div", { className: "panel" }, [
+      el("h2", { textContent: title }),
+      ...contents,
+      el("div", { className: "actions" }, actions),
+    ]),
+  );
+  document.body.append(dialog);
+  return () => dialog.remove();
+}
+
+/** A button that reaches into the Box, and what to do with either outcome. */
+type Operation<T> = {
+  button: HTMLButtonElement;
+  /** What the button says while it runs — "Saving…", "Deleting…". */
+  busyLabel: string;
+  run: () => Promise<T>;
+  done: (result: T) => void | Promise<void>;
+  /** "Couldn't save" — the reason is appended, so the copy reads the same everywhere. */
+  failed: string;
+  /** The sheet this button lives in, if it lives in one: closed on either outcome. */
+  close?: () => void;
+};
+
+/**
+ * The one operation the renderer will run at a time.
+ *
+ * Every operation below mutates the Box, and "Update Claudebox" recreates the
+ * container outright — so a second one started while the first is in flight can
+ * `docker rm -f` the Box out from under it, from a screen the first one never
+ * sees (Update lives on the home screen; an Export runs from inside a Project).
+ * Disabling the button that was clicked cannot see that far, which is why the
+ * busy state lives here and nowhere else.
+ */
+let operationInFlight = false;
+
+async function runOperation<T>(op: Operation<T>): Promise<void> {
+  if (operationInFlight) {
+    flash("Claudebox is already busy with something else. Let that finish first.");
+    return;
+  }
+  operationInFlight = true;
+  const label = op.button.textContent;
+  op.button.disabled = true;
+  op.button.textContent = op.busyLabel;
+  try {
+    const result = await op.run();
+    // The sheet goes before `done` runs: what follows a finished operation is
+    // usually a re-render of the screen underneath it.
+    op.close?.();
+    await op.done(result);
+  } catch (err) {
+    op.close?.();
+    flash(`${op.failed}: ${(err as Error).message}`);
+  } finally {
+    operationInFlight = false;
+    // A sheet takes its button with it; a button that stayed on screen has to be
+    // handed back, or the screen is left with one dead control on it.
+    if (!op.close) {
+      op.button.disabled = false;
+      op.button.textContent = label;
+    }
+  }
+}
+
+// --- end of the renderer's machinery -----------------------------------------
 
 /**
  * The Nootka mark, held in the one circular element in the app — the barrel form,
@@ -125,22 +219,19 @@ async function renderHome(): Promise<void> {
 function updateSection(): HTMLElement {
   const update = el("button", { className: "btn--link", textContent: "Update Claudebox" }) as HTMLButtonElement;
 
-  update.addEventListener("click", async () => {
-    update.disabled = true;
-    const label = update.textContent;
-    update.textContent = "Checking…";
-    try {
+  update.addEventListener("click", () =>
+    void runOperation({
+      button: update,
+      busyLabel: "Checking…",
+      run: () => cb.updateBox(),
       // Undefined means the confirmation was cancelled: nothing was checked, so
       // there is nothing to report.
-      const message = await cb.updateBox();
-      if (message) flash(message);
-    } catch (err) {
-      flash(`Couldn't update Claudebox: ${(err as Error).message}`);
-    } finally {
-      update.disabled = false;
-      update.textContent = label;
-    }
-  });
+      done: (message) => {
+        if (message) flash(message);
+      },
+      failed: "Couldn't update Claudebox",
+    }),
+  );
 
   return section("light", [
     el("p", { className: "eyebrow", textContent: "Claudebox itself" }),
@@ -341,41 +432,32 @@ async function publish(project: Project): Promise<void> {
  * lets Claudebox reach.
  */
 function renderGithubConnect(project: Project): void {
-  const dialog = el("div", { className: "sheet" }) as HTMLDivElement;
-  const panel = el("div", { className: "panel" });
-
-  panel.append(el("h2", { textContent: "Connect GitHub" }));
   const step = el("p", { className: "sub", textContent: "Asking GitHub for a code…" });
-  panel.append(step);
-
   const code = el("p", { className: "total" });
-  panel.append(code);
-
-  panel.append(
-    el("p", {
-      className: "sub",
-      textContent:
-        "Claudebox asks for access to your repositories so it can create a private one and save this project into it. " +
-        "The sign-in is kept by this launcher and is never given to Claude.",
-    }),
-  );
-
-  // The switching trap: the code is approved by whoever is signed in at
-  // github.com, so a second account needs a signed-out (or private) browser.
-  panel.append(
-    el("p", {
-      className: "sub",
-      textContent:
-        "GitHub connects whichever account is signed in to your browser. To use a different one, sign out of github.com first.",
-    }),
-  );
-
   const cancel = el("button", { className: "btn--link", textContent: "Cancel" });
-  cancel.addEventListener("click", () => dialog.remove());
-  panel.append(el("div", { className: "actions" }, [cancel]));
 
-  dialog.append(panel);
-  document.body.append(dialog);
+  const close = openSheet(
+    "Connect GitHub",
+    [
+      step,
+      code,
+      el("p", {
+        className: "sub",
+        textContent:
+          "Claudebox asks for access to your repositories so it can create a private one and save this project into it. " +
+          "The sign-in is kept by this launcher and is never given to Claude.",
+      }),
+      // The switching trap: the code is approved by whoever is signed in at
+      // github.com, so a second account needs a signed-out (or private) browser.
+      el("p", {
+        className: "sub",
+        textContent:
+          "GitHub connects whichever account is signed in to your browser. To use a different one, sign out of github.com first.",
+      }),
+    ],
+    [cancel],
+  );
+  cancel.addEventListener("click", close);
 
   void (async () => {
     try {
@@ -385,10 +467,10 @@ function renderGithubConnect(project: Project): void {
       // Resolves only once the user has approved on github.com, so the sheet
       // stays up — cancelling here just closes it; nothing is stored either way.
       await cb.awaitGithubLogin();
-      dialog.remove();
+      close();
       await publish(project);
     } catch (err) {
-      dialog.remove();
+      close();
       flash(`Couldn't connect GitHub: ${(err as Error).message}`);
     }
   })();
@@ -403,40 +485,6 @@ function renderGithubConnect(project: Project): void {
  * makes them type the Project's name, so this can never be a slipped click.
  */
 function renderDeleteSheet(project: Project, listing: DeleteListing): void {
-  const dialog = el("div", { className: "sheet" }) as HTMLDivElement;
-  const panel = el("div", { className: "panel" });
-
-  panel.append(el("h2", { textContent: "Delete this project" }));
-  panel.append(el("p", { className: "sub", textContent: listing.name }));
-
-  panel.append(
-    el("p", {
-      className: "total",
-      textContent:
-        listing.fileCount === undefined || listing.totalBytes === undefined
-          ? "Everything in this project will be deleted. (Its size couldn't be measured.)"
-          : `${listing.fileCount} file(s), ${size(listing.totalBytes)} — all of it deleted.`,
-    }),
-  );
-
-  panel.append(
-    el("p", {
-      textContent:
-        "This can't be undone. There's no trash in the sandbox, and the copy in here is the only one.",
-    }),
-  );
-
-  // The one piece of good news, and load-bearing: someone who reads "nothing has
-  // been saved" should cancel and use "Save to my computer" first.
-  panel.append(
-    el("p", {
-      className: "sub",
-      textContent: listing.lastSaved
-        ? `Files you already saved to your computer stay where they are, in ${listing.exportDir} (last saved ${when(listing.lastSaved)}).`
-        : "Nothing from this project has been saved to your computer yet — once it's deleted, it's gone.",
-    }),
-  );
-
   const confirmName = el("input", {
     type: "text",
     placeholder: listing.name,
@@ -445,55 +493,84 @@ function renderDeleteSheet(project: Project, listing: DeleteListing): void {
     spellcheck: false,
   }) as HTMLInputElement;
 
-  panel.append(
-    el("label", { className: "confirm" }, [
-      el("span", { textContent: `Type ${listing.name} below to confirm.` }),
-      confirmName,
-    ]),
-  );
-
   const remove = el("button", { className: "btn", textContent: "Delete forever" }) as HTMLButtonElement;
   const cancel = el("button", { className: "btn--link", textContent: "Cancel" });
 
-  // The renderer's copy of the rule is for enabling the button only; the trusted
-  // layer re-checks the typed name before anything is removed.
-  const matches = () =>
-    confirmName.value.trim().toLowerCase().replace(/\s+/g, " ") ===
-    listing.name.trim().toLowerCase().replace(/\s+/g, " ");
+  const close = openSheet(
+    "Delete this project",
+    [
+      el("p", { className: "sub", textContent: listing.name }),
+      el("p", {
+        className: "total",
+        textContent:
+          listing.fileCount === undefined || listing.totalBytes === undefined
+            ? "Everything in this project will be deleted. (Its size couldn't be measured.)"
+            : `${listing.fileCount} file(s), ${size(listing.totalBytes)} — all of it deleted.`,
+      }),
+      el("p", {
+        textContent:
+          "This can't be undone. There's no trash in the sandbox, and the copy in here is the only one.",
+      }),
+      // The one piece of good news, and load-bearing: someone who reads "nothing
+      // has been saved" should cancel and use "Save to my computer" first.
+      el("p", {
+        className: "sub",
+        textContent: listing.lastSaved
+          ? `Files you already saved to your computer stay where they are, in ${listing.exportDir} (last saved ${when(listing.lastSaved)}).`
+          : "Nothing from this project has been saved to your computer yet — once it's deleted, it's gone.",
+      }),
+      el("label", { className: "confirm" }, [
+        el("span", { textContent: `Type ${listing.name} below to confirm.` }),
+        confirmName,
+      ]),
+    ],
+    [cancel, remove],
+  );
+
   const refresh = () => {
-    remove.disabled = !matches();
+    // The renderer's copy of the rule is for enabling the button only; the
+    // trusted layer re-checks the typed name before anything is removed.
+    remove.disabled = normalize(confirmName.value) !== normalize(listing.name);
   };
   confirmName.addEventListener("input", refresh);
   refresh();
 
-  cancel.addEventListener("click", () => dialog.remove()); // cancelling deletes nothing
+  cancel.addEventListener("click", close); // cancelling deletes nothing
 
-  remove.addEventListener("click", async () => {
-    remove.disabled = true;
-    remove.textContent = "Deleting…";
-    try {
-      const res = await cb.deleteProject(project.slug, confirmName.value);
-      dialog.remove();
-      // Back to the home screen: the Project this panel is controlling is gone.
-      await renderHome();
-      // The session's Chrome window is a separate window this app can't close,
-      // and it is still sitting there — so say so rather than leave the user
-      // looking at a dead terminal for a Project the Launcher says is deleted.
-      flash(
-        res.sessionKilled
-          ? `Deleted ${res.name}. Its Claude window is finished — you can close it.`
-          : `Deleted ${res.name}.`,
-      );
-    } catch (err) {
-      dialog.remove();
-      flash(`Couldn't delete ${listing.name}: ${(err as Error).message}`);
-    }
-  });
+  remove.addEventListener("click", () =>
+    void runOperation({
+      button: remove,
+      busyLabel: "Deleting…",
+      close,
+      run: () => cb.deleteProject(project.slug, confirmName.value),
+      done: async (res) => {
+        // Back to the home screen: the Project this panel is controlling is gone.
+        await renderHome();
+        // The session's Chrome window is a separate window this app can't close,
+        // and it is still sitting there — so say so rather than leave the user
+        // looking at a dead terminal for a Project the Launcher says is deleted.
+        flash(
+          res.sessionKilled
+            ? `Deleted ${res.name}. Its Claude window is finished — you can close it.`
+            : `Deleted ${res.name}.`,
+        );
+      },
+      failed: `Couldn't delete ${listing.name}`,
+    }),
+  );
 
-  panel.append(el("div", { className: "actions" }, [cancel, remove]));
-  dialog.append(panel);
-  document.body.append(dialog);
   confirmName.focus();
+}
+
+/**
+ * `core/delete.ts`'s normalisation rule, character for character, because the
+ * renderer cannot import it (see `size` below). Only the button's enabled state
+ * hangs on this copy — but a copy that drifted would enable "Delete forever" on
+ * a name the trusted layer then refuses, so `test/renderer.test.ts` compares the
+ * two sources.
+ */
+function normalize(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
 /**
@@ -514,35 +591,34 @@ async function startImport(): Promise<void> {
 
 /**
  * The Project Import confirmation sheet (ticket 09) — folder name, exact size,
- * whether `.gitignore` filtered anything, and the consent sentence, reusing
- * the `sheet`/`panel` pattern from `renderExportPicker`. Cancel copies nothing;
+ * whether `.gitignore` filtered anything, and the consent sentence, on the one
+ * `openSheet` every modal here uses. Cancel copies nothing;
  * "Bring it in" is disabled outright when the folder doesn't fit the Box.
  */
 function renderImportSheet(listing: ImportListing): void {
-  const dialog = el("div", { className: "sheet" }) as HTMLDivElement;
-  const panel = el("div", { className: "panel" });
+  const bring = el("button", { className: "btn", textContent: "Bring it in" }) as HTMLButtonElement;
+  bring.disabled = !listing.fitsFreeSpace; // refused before anything crosses, not after
+  const cancel = el("button", { className: "btn--link", textContent: "Cancel" });
 
-  panel.append(el("h2", { textContent: "Bring in a project" }));
-  panel.append(el("p", { className: "sub", textContent: listing.folderName }));
-
-  // The warning and the mechanism key off different conditions (ticket 09):
-  // this fires on the absence of a root .gitignore, regardless of whether the
-  // folder is a git repo at all.
-  panel.append(
+  const contents: (Node | string)[] = [
+    el("p", { className: "sub", textContent: listing.folderName }),
+    // The warning and the mechanism key off different conditions (ticket 09):
+    // this fires on the absence of a root .gitignore, regardless of whether the
+    // folder is a git repo at all.
     el("p", {
       textContent: listing.hasGitignore
         ? "Filtered by this project's .gitignore — files it ignores (like node_modules) are left out."
         : "No .gitignore was found here, so everything in the folder will be copied.",
     }),
-  );
+  ];
 
   if (listing.isGitRepo) {
-    panel.append(
+    contents.push(
       el("p", { textContent: "This is a git repository — its full history (.git) comes along too." }),
     );
   }
 
-  panel.append(
+  contents.push(
     el("p", {
       className: "total",
       textContent: listing.overWarnThreshold
@@ -552,7 +628,7 @@ function renderImportSheet(listing: ImportListing): void {
   );
 
   if (!listing.fitsFreeSpace) {
-    panel.append(
+    contents.push(
       el("p", {
         className: "total over",
         textContent: `Not enough room in the Box: this needs ${size(listing.totalBytes)}, and only ${size(listing.freeBytes)} is free.`,
@@ -560,35 +636,27 @@ function renderImportSheet(listing: ImportListing): void {
     );
   }
 
-  panel.append(
+  contents.push(
     el("p", {
       className: "sub",
       textContent: "Once you click below, Claude will be able to read and change everything in this folder.",
     }),
   );
 
-  const bring = el("button", { className: "btn", textContent: "Bring it in" }) as HTMLButtonElement;
-  bring.disabled = !listing.fitsFreeSpace; // refused before anything crosses, not after
-  const cancel = el("button", { className: "btn--link", textContent: "Cancel" });
+  const close = openSheet("Bring in a project", contents, [cancel, bring]);
 
-  cancel.addEventListener("click", () => dialog.remove()); // cancelling copies nothing
+  cancel.addEventListener("click", close); // cancelling copies nothing
 
-  bring.addEventListener("click", async () => {
-    bring.disabled = true;
-    bring.textContent = "Bringing it in…";
-    try {
-      const project = await cb.importFolder(listing.folder);
-      dialog.remove();
-      await openProject(project);
-    } catch (err) {
-      dialog.remove();
-      flash(`Couldn't bring that in: ${(err as Error).message}`);
-    }
-  });
-
-  panel.append(el("div", { className: "actions" }, [cancel, bring]));
-  dialog.append(panel);
-  document.body.append(dialog);
+  bring.addEventListener("click", () =>
+    void runOperation({
+      button: bring,
+      busyLabel: "Bringing it in…",
+      close,
+      run: () => cb.importFolder(listing.folder),
+      done: (project) => openProject(project),
+      failed: "Couldn't bring that in",
+    }),
+  );
 }
 
 /**
@@ -598,17 +666,6 @@ function renderImportSheet(listing: ImportListing): void {
  * the trusted layer, so this list is a convenience, never the security boundary.
  */
 function renderExportPicker(project: Project, listing: ExportListing): void {
-  const dialog = el("div", { className: "sheet" }) as HTMLDivElement;
-  const panel = el("div", { className: "panel" });
-
-  panel.append(el("h2", { textContent: "Save to my computer" }));
-  panel.append(
-    el("p", {
-      className: "sub",
-      textContent: `Choose what to save into ${listing.dir}.`,
-    }),
-  );
-
   const boxes: HTMLInputElement[] = [];
   const list = el("ul", { className: "files" });
 
@@ -635,15 +692,21 @@ function renderExportPicker(project: Project, listing: ExportListing): void {
     list.append(el("li", {}, [label]));
   }
 
-  if (listing.files.length === 0) {
-    panel.append(el("p", { className: "empty", textContent: "This Project has no files yet." }));
-  } else {
-    panel.append(list);
-  }
-
   const total = el("p", { className: "total" });
   const saveBtn = el("button", { className: "btn", textContent: "Save" }) as HTMLButtonElement;
   const cancel = el("button", { className: "btn--link", textContent: "Cancel" });
+
+  const close = openSheet(
+    "Save to my computer",
+    [
+      el("p", { className: "sub", textContent: `Choose what to save into ${listing.dir}.` }),
+      listing.files.length === 0
+        ? el("p", { className: "empty", textContent: "This Project has no files yet." })
+        : list,
+      total,
+    ],
+    [cancel, saveBtn],
+  );
 
   const selection = () => boxes.filter((b) => b.checked);
   const refresh = () => {
@@ -659,30 +722,23 @@ function renderExportPicker(project: Project, listing: ExportListing): void {
   for (const b of boxes) b.addEventListener("change", refresh);
   refresh();
 
-  cancel.addEventListener("click", () => dialog.remove()); // cancelling writes nothing
+  cancel.addEventListener("click", close); // cancelling writes nothing
 
-  saveBtn.addEventListener("click", async () => {
-    const pick = selection().map((b) => b.dataset.path!);
-    saveBtn.disabled = true;
-    saveBtn.textContent = "Saving…";
-    try {
-      const res = await cb.saveToComputer(project.slug, pick);
-      dialog.remove();
-      flash(
-        res.overCap
-          ? `Too big to save: ${size(res.totalBytes)}, and the limit is ${size(res.capBytes)}. Nothing was saved.`
-          : saved(res),
-      );
-    } catch (err) {
-      dialog.remove();
-      flash(`Couldn't save: ${(err as Error).message}`);
-    }
-  });
-
-  panel.append(total);
-  panel.append(el("div", { className: "actions" }, [cancel, saveBtn]));
-  dialog.append(panel);
-  document.body.append(dialog);
+  saveBtn.addEventListener("click", () =>
+    void runOperation({
+      button: saveBtn,
+      busyLabel: "Saving…",
+      close,
+      run: () => cb.saveToComputer(project.slug, selection().map((b) => b.dataset.path!)),
+      done: (res) =>
+        flash(
+          res.overCap
+            ? `Too big to save: ${size(res.totalBytes)}, and the limit is ${size(res.capBytes)}. Nothing was saved.`
+            : saved(res),
+        ),
+      failed: "Couldn't save",
+    }),
+  );
 }
 
 /**
@@ -697,7 +753,14 @@ function saved(res: ExportResult): string {
   return `${done} ${res.unmarked} couldn't be marked as coming from Claudebox — open those with the same care as an email attachment.`;
 }
 
-/** Sizes for a Sandbox User: no bytes, no decimals below a gigabyte. */
+/**
+ * Sizes for a Sandbox User: no bytes, no decimals below a gigabyte.
+ *
+ * `core/format.ts` holds the same function for the main process and explains why
+ * this copy exists rather than an import. `test/renderer.test.ts` compares the
+ * two sources, so the sheet and the dialog behind it can't start rounding
+ * differently.
+ */
 function size(bytes: number): string {
   const gb = bytes / 1024 ** 3;
   if (gb >= 1) return `${Math.round(gb * 10) / 10} GB`;
@@ -713,12 +776,6 @@ function when(epochMs?: number): string {
   if (minutes < 1) return "just now";
   if (minutes < 60) return `${minutes} minute(s) ago`;
   return new Date(epochMs).toLocaleString();
-}
-
-function flash(message: string): void {
-  const note = el("div", { className: "flash", textContent: message });
-  document.body.append(note);
-  setTimeout(() => note.remove(), 3500);
 }
 
 function renderStarting(): void {
