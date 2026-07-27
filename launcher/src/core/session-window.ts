@@ -1,16 +1,21 @@
-import { existsSync } from "node:fs";
+import type { BrowserWindowConstructorOptions } from "electron";
 import { assertValidSlug } from "./projects";
 import { TERMINAL_PORT } from "./preview";
 
 /**
  * Opening a Project session (ticket 04). A session is launched through the ONE
- * Box-side funnel (`claudebox-session`, ticket 02) and viewed in a chromeless
- * Chrome app-mode window on the loopback-forwarded console port — so a
+ * Box-side funnel (`claudebox-session`, ticket 02) and viewed in a window the
+ * Launcher itself owns, on the loopback-forwarded console port — so a
  * non-technical user can't edit the URL or lose the tab, and the session is
- * reachable only from the Mac's browser, never the LAN (ADR 0001).
+ * reachable only from this computer, never the LAN (ADR 0001).
  *
- * These are the pure argv/URL decisions; the effects (spawning `docker`/`open`,
- * the Chrome→default-browser fallback) live in main/session.ts.
+ * Owning the window (rather than handing the URL to Chrome) is what makes "is it
+ * already open?" answerable: every Chrome app window looked identical and
+ * answered to no one, so a second Open session simply stacked another copy of
+ * the same tmux session on top of the first.
+ *
+ * These are the pure URL/argv/option decisions; the effects (spawning `docker`,
+ * creating the window, keeping the per-Project registry) live in main/session.ts.
  */
 
 /** The console URL for a Project's live session. */
@@ -51,39 +56,46 @@ export function killSessionArgs(slug: string): string[] {
 }
 
 /**
- * Where Chrome installs on Windows, in probe order (issue #10). These three
- * cover every winget/installer default, so no registry parsing — and "is it on
- * disk" is knowable BEFORE launching, which is what lets the Windows fallback be
- * decided without waiting on the process.
+ * Is this URL the Box's own console? The session window renders a page served
+ * from INSIDE the Box, so where that page may navigate the window is a boundary
+ * decision, not a cosmetic one: the console's own pages (Files, the other
+ * sessions on the rail) are all it gets. Compared as a parsed origin, so a
+ * lookalike host like `http://localhost:7681.example.com/` can't pass as a
+ * prefix of ours.
  */
-export function windowsChromePaths(env: NodeJS.ProcessEnv = process.env): string[] {
-  return [env["ProgramFiles"], env["ProgramFiles(x86)"], env["LOCALAPPDATA"]]
-    .filter((root): root is string => Boolean(root))
-    .map((root) => `${root}\\Google\\Chrome\\Application\\chrome.exe`);
-}
-
-/** The command and argv that show a session in a Chrome app-mode window. */
-export interface ChromeLaunch {
-  readonly command: string;
-  readonly args: readonly string[];
+export function isConsoleUrl(url: string, port: number = TERMINAL_PORT): boolean {
+  try {
+    return new URL(url).origin === `http://localhost:${port}`;
+  } catch {
+    return false; // not a URL at all — certainly not the console
+  }
 }
 
 /**
- * How to open the session window on this platform: the Mac hands the URL to
- * `open`, Windows spawns the probed `chrome.exe` itself. `undefined` means no
- * Chrome was found, and the caller falls back to the default browser — the same
- * fallback the Mac already has.
+ * The session window itself. Chromeless in the sense that matters — no URL bar,
+ * no tabs — while keeping the native frame, because the frame's close button is
+ * how a Sandbox User puts the session away.
+ *
+ * The web preferences are the boundary, not decoration: this page comes from the
+ * Box, so it loads with no preload (the IPC bridge belongs to the home window
+ * alone), no Node, and a sandboxed renderer. The Box gets a plain web page and
+ * nothing else.
  */
-export function chromeAppLaunch(
-  url: string,
-  platform: NodeJS.Platform = process.platform,
-  env: NodeJS.ProcessEnv = process.env,
-  exists: (path: string) => boolean = existsSync,
-): ChromeLaunch | undefined {
-  if (platform !== "win32") {
-    // `--app=` is what makes the window chromeless: no URL bar, no tabs.
-    return { command: "open", args: ["-na", "Google Chrome", "--args", `--app=${url}`] };
-  }
-  const chrome = windowsChromePaths(env).find(exists);
-  return chrome === undefined ? undefined : { command: chrome, args: [`--app=${url}`] };
+export function sessionWindowOptions(slug: string): BrowserWindowConstructorOptions {
+  return {
+    width: 1100,
+    height: 760,
+    // Replaced by the page's own <title> ("<slug> · Claudebox") once it loads;
+    // this is what the window is called for the moment before that.
+    title: `${assertValidSlug(slug)} · Claudebox`,
+    // The console's own background (Coastal Water), so opening doesn't flash white.
+    backgroundColor: "#073D44",
+    autoHideMenuBar: true, // no menu bar to wander into on Windows
+    webPreferences: {
+      contextIsolation: true,
+      sandbox: true,
+      nodeIntegration: false,
+      webviewTag: false,
+    },
+  };
 }

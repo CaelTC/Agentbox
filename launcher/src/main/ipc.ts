@@ -89,10 +89,22 @@ function routeViaBox<A extends unknown[]>(channel: string, target: Target<A>): v
   route(channel, (...args: A) => viaBox(() => target(...args)));
 }
 
-export function registerIpc(window: BrowserWindow): void {
+/**
+ * `homeWindow` is a lookup rather than a window because these handlers outlive
+ * any one window: registration is global to ipcMain, and the home window can be
+ * closed and reopened (dock click) underneath them. It is only ever the parent
+ * for the native dialogs, so a moment with no home window just means an
+ * unparented sheet, never a lost request.
+ */
+export function registerIpc(homeWindow: () => BrowserWindow | undefined): void {
   /* The native affordances, which need the window. Everything else is a name. */
+  const pickFrom = (options: Electron.OpenDialogOptions) => {
+    const parent = homeWindow();
+    return parent ? dialog.showOpenDialog(parent, options) : dialog.showOpenDialog(options);
+  };
+
   const pickFiles = async (): Promise<string[]> => {
-    const picked = await dialog.showOpenDialog(window, {
+    const picked = await pickFrom({
       title: "Upload files into this Project",
       properties: ["openFile", "multiSelections"],
     });
@@ -100,7 +112,7 @@ export function registerIpc(window: BrowserWindow): void {
   };
 
   const pickFolder = async (): Promise<string | undefined> => {
-    const picked = await dialog.showOpenDialog(window, {
+    const picked = await pickFrom({
       title: "Open a folder from your computer",
       properties: ["openDirectory"],
     });
@@ -111,7 +123,7 @@ export function registerIpc(window: BrowserWindow): void {
   // pull hasn't happened yet at that point, so the question is honestly
   // conditional: there may turn out to be nothing new, and then nothing restarts.
   const confirmUpdate = async (): Promise<boolean> => {
-    const { response } = await dialog.showMessageBox(window, {
+    const options: Electron.MessageBoxOptions = {
       type: "question",
       buttons: ["Update Claudebox", "Cancel"],
       defaultId: 0,
@@ -120,7 +132,11 @@ export function registerIpc(window: BrowserWindow): void {
       detail:
         "If there's a new version, the sandbox restarts and any open Claude session closes. " +
         "Your projects are saved.",
-    });
+    };
+    const parent = homeWindow();
+    const { response } = await (parent
+      ? dialog.showMessageBox(parent, options)
+      : dialog.showMessageBox(options));
     return response === 0;
   };
 

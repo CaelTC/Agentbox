@@ -69,7 +69,7 @@ A one-way, user-initiated removal of a Project and everything in it from the Wor
 _Avoid_: archive, close, remove from list (nothing is kept and nothing is merely hidden — the files are gone), the mirror of Import (Import brings a copy in and leaves the original alone; Delete destroys the only copy)
 
 **Install Script**:
-The one-time setup step, run by whoever provisions the machine (not the Sandbox User). Installs the Engine, Google Chrome (for the Project session window), the Launcher, and the initial Box image. Replaces a signed installer, which is not available. The Windows script needs Administrator (WSL2 and the Podman machine both do); the macOS one does not.
+The one-time setup step, run by whoever provisions the machine (not the Sandbox User). Installs the Engine, the Launcher, and the initial Box image — no browser, because the Launcher draws the Project session window itself. Replaces a signed installer, which is not available. The Windows script needs Administrator (WSL2 and the Podman machine both do); the macOS one does not.
 
 **Engine**:
 The headless, license-free container runtime that runs the Box on the host in place of Docker Desktop — Colima on macOS, a Podman machine (WSL2, rootful) on Windows. Two runtimes, one property: neither is headed and neither carries a commercial licence (ADR 0004). The Launcher holds an Engine, not a runtime — `isRunning()` and `start()` are all it ever asks, and each runtime's quirks live in its own adapter, so every step outside those two adapters is the same on both platforms.

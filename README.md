@@ -37,15 +37,16 @@ the LAN.
   │  · quit ⇒ docker stop    │   <slug>    web console  (server.py / Starlette, :7681)
   └───────────┬─────────────┘               GET  /sessions/<slug>          terminal page
               │                             WS   /sessions/<slug>/terminal  ─┐
-              │ open -na "Google Chrome"    GET  /sessions/<slug>/files      │ read-only
-              │   --app=http://localhost:7681/sessions/<slug>                │
+              │ BrowserWindow.loadURL(      GET  /sessions/<slug>/files      │ read-only
+              │   http://localhost:7681/sessions/<slug> )                    │
               ▼                                                              ▼
   ┌─────────────────────────┐  WS, :7681   claudebox-session <slug>   ── THE funnel ──
-  │ Chrome app-mode window  │◀═ loopback ═▶  · validate slug shape
-  │  (chromeless: no URL    │    only        · require .claudebox/project.json
-  │   bar, no tabs)         │                · tmux new-session -A -s <slug> \
-  └─────────────────────────┘                    claude --dangerously-skip-permissions \
-                                                  [seedPrompt]        ← passed as one argv
+  │ Session window          │◀═ loopback ═▶  · validate slug shape
+  │  (Launcher-owned: no    │    only        · require .claudebox/project.json
+  │   URL bar, one per      │                · tmux new-session -A -s <slug> \
+  │   Project — reopening   │                    claude --dangerously-skip-permissions \
+  │   raises it)            │                    [seedPrompt]        ← passed as one argv
+  └─────────────────────────┘
                                                         │
                                              tmux ──────┴───────────────────────
                                                "portfolio"      → claude
@@ -78,15 +79,20 @@ container, not a per-action prompt, is the wall (ADR 0001).
    then runs `docker exec <box> claudebox-session <slug>` — off a TTY the funnel just
    **ensures** the tmux session exists (creating it detached, seeding the first
    prompt on a fresh session only).
-3. The Launcher opens `http://localhost:7681/sessions/<slug>` in a **chromeless
-   Chrome app-mode window**, and its own window becomes a per-Project control
-   panel. If Chrome is missing it falls back to the default browser.
-4. That page opens a WebSocket to the web console, which runs
+3. Its own window becomes a per-Project control panel. Nothing else happens
+   until the user clicks **Open session** — landing on the panel is also how
+   they reach Upload, Save and Preview, so the session is opened when it is
+   asked for, not every time the Project is.
+4. **Open session** shows `http://localhost:7681/sessions/<slug>` in a window
+   the Launcher owns: no URL bar, no tabs, and one per Project — clicking it
+   again raises the window that is already open instead of stacking a second
+   view of the same session on top of it.
+5. That page opens a WebSocket to the web console, which runs
    `claudebox-session <slug>` **on a pty** — this time the funnel **attaches**
    to the (already-created) session. Keystrokes and output stream over the
    socket; the session lives in tmux, so closing the window leaves it running.
-5. "Reopen terminal" is just step 3 again — the funnel re-attaches the live
-   session without reseeding.
+6. Clicking **Open session** after closing that window is step 4 again — the
+   funnel re-attaches the live session without reseeding.
 
 A session is a tmux session, and tmux is the source of truth — there is no
 separate session state to keep in sync. Persistence is two named volumes: the
@@ -122,9 +128,9 @@ docs/adr/    Architecture Decision Records.
 ## Installing
 
 The Install Script runs **once, on the machine being provisioned, by whoever
-provisions it** — never by the Sandbox User. It installs the Engine, Google
-Chrome (for the Project session window), the initial Box image and the Launcher,
-and it configures **no credential anywhere**: the definition repo is public, so
+provisions it** — never by the Sandbox User. It installs the Engine, the initial
+Box image and the Launcher — no browser, since the Launcher draws the session
+window itself — and it configures **no credential anywhere**: the repo is public, so
 there is no secret to leak (ADR 0002).
 
 ### macOS
@@ -155,7 +161,7 @@ It performs nine steps, all of them safely re-runnable:
 2. Ensure WSL2. **On a machine that has never had WSL2, this enables it and then
    stops with "restart Windows and run this script again".** That restart is
    unavoidable; after it, re-running the script carries on from where it left off.
-3. `winget install` podman, git and Chrome (skipping any already present).
+3. `winget install` podman and git (skipping any already present).
 4. Write `%USERPROFILE%\.wslconfig` with the Resource Cap's CPU/memory. Two
    honest limits here: `.wslconfig` applies to *every* WSL distro on the machine,
    and it has no disk ceiling — so on Windows the Resource Cap does not yet bound

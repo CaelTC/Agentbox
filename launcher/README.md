@@ -20,14 +20,16 @@ src/
     upload.ts      Upload target resolution (collisions, path-safety).
     preview.ts     Loopback publish args, preview URL, served-port detection.
     refresh.ts     Refresh-on-Launch decision (hash + rebuild-if-changed).
-    session-window.ts  Session URL + funnel `docker exec` + Chrome app-mode argv.
+    session-window.ts  Session URL + funnel argv + session-window options.
   main/        Electron main process — the EFFECTS around the pure core. Holds
                the Engine seam (engine.ts + its colima.ts / podman.ts adapters)
                and the Box-exec seam (box-exec.ts), brokers the Box-side
-               Workspace, and opens a Project's session (funnel + Chrome
-               app-mode window).
+               Workspace, and opens a Project's session (funnel + the
+               Launcher-owned session window, one per Project — reopening
+               raises it rather than stacking).
   renderer/    The home screen + per-Project control panel. The Claude session
-               itself opens in a separate Chrome app-mode window, not in here.
+               itself opens in a separate window, not in here — and only when
+               the user clicks Open session.
   shared/      The typed IPC contract (ClaudeboxApi) between main and renderer.
   preload.ts   contextBridge exposing only ClaudeboxApi to the renderer.
   types/       Ambient Electron declaration (see "The Electron shim" below).
@@ -65,9 +67,13 @@ npm test          # vitest run
 
 The built macOS app depends on **electron** (the app shell), which is **not
 needed for typechecking or tests** and is therefore not a runtime dependency in
-this repo. The Claude session opens in **Google Chrome** (app-mode window),
-installed by the Install Script; if Chrome is absent the Launcher falls back to
-the default browser. There is no embedded terminal — the session is viewed
+this repo. The Claude session opens in a **BrowserWindow the Launcher owns**, so
+no browser is a dependency of it at all — the Install Script installs none, and
+Preview goes to whatever the host already treats as default. That window loads
+the Box's page with no preload, no Node and a sandboxed renderer, and is held to
+the console's own origin — the Box is the untrusted side of the boundary even
+when the Launcher is the one drawing it. There is no embedded
+terminal — the session is viewed
 through the Box's loopback-forwarded web console, so no `node-pty`/`xterm`.
 
 ### The Electron shim

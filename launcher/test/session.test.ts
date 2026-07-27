@@ -1,18 +1,16 @@
-import { EventEmitter } from "node:events";
-import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
-import { shell } from "electron";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ENGINE_CLI } from "../src/core/config";
 import { mustSucceed, run } from "../src/main/exec";
 import { openProjectSession, updateClaudeCode } from "../src/main/session";
 
 /**
- * The Windows session-window branch (issue #10). `openProjectSession` takes an
- * injected `platform` precisely so this is assertable from a Mac: the Windows
- * path spawns chrome.exe DETACHED and unawaited, because chrome.exe does not
- * return until the user closes the window. Awaiting it would look fine in
- * manual testing and only misbehave at close time — so it is pinned here.
+ * One window per Project, and only one. The session window is the Launcher's own
+ * (it used to be a Chrome app window, which answered to no one), and this is
+ * what that buys: a second "Open session" for a live Project raises the window
+ * that exists instead of stacking another view of the same tmux session on it.
+ *
+ * Pinned here because the failure is invisible in a quick manual test — two
+ * identical windows showing the same session look exactly like one working one.
  */
 
 // `failureMessage` and `spawnPath` stay REAL: the funnel now goes through the
@@ -25,27 +23,60 @@ vi.mock("../src/main/exec", async (importOriginal) => ({
 
 vi.mock("node:child_process", () => ({ spawn: vi.fn() }));
 
-// Only existsSync is stubbed: core/projects.ts imports the rest of node:fs.
-vi.mock("node:fs", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("node:fs")>()),
-  existsSync: vi.fn(() => false),
-}));
+/** A stand-in for Electron's BrowserWindow, recording what was done to it. */
+const { FakeWindow } = vi.hoisted(() => {
+  class FakeWindow {
+    static created: FakeWindow[] = [];
+    readonly loadURL = vi.fn(async () => undefined);
+    readonly focus = vi.fn();
+    readonly show = vi.fn();
+    readonly restore = vi.fn();
+    readonly webContents = {
+      setWindowOpenHandler: vi.fn(),
+      on: vi.fn(),
+    };
+    private readonly listeners = new Map<string, () => void>();
+    destroyed = false;
+    minimized = false;
+
+    constructor(readonly options: Record<string, unknown>) {
+      FakeWindow.created.push(this);
+    }
+    isDestroyed(): boolean {
+      return this.destroyed;
+    }
+    isMinimized(): boolean {
+      return this.minimized;
+    }
+    on(event: string, listener: () => void): this {
+      this.listeners.set(event, listener);
+      return this;
+    }
+    /** What the user closing the window does: destroyed, then 'closed' fires. */
+    close(): void {
+      this.destroyed = true;
+      this.listeners.get("closed")?.();
+    }
+  }
+  return { FakeWindow };
+});
 
 // `electron` resolves to the binary's path outside an Electron process.
-vi.mock("electron", () => ({ shell: { openExternal: vi.fn(async () => undefined) } }));
+vi.mock("electron", () => ({
+  BrowserWindow: FakeWindow,
+  shell: { openExternal: vi.fn(async () => undefined) },
+}));
 
 /** Every spawn made through exec.ts, in order, as `command arg arg…`. */
 const calls: string[] = [];
 const ok = { code: 0, stdout: "", stderr: "" };
 
-const CHROME = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
 const URL = "http://localhost:7681/sessions/demo";
-
-/** A spawned chrome.exe that has NOT exited — the state a real session window sits in. */
-class FakeChild extends EventEmitter {
-  readonly unref = vi.fn();
-}
-let child: FakeChild;
+const windows = () => FakeWindow.created;
+const only = () => {
+  expect(windows()).toHaveLength(1);
+  return windows()[0]!;
+};
 
 beforeEach(() => {
   calls.length = 0;
@@ -53,106 +84,110 @@ beforeEach(() => {
     calls.push([c, ...a].join(" "));
   });
   vi.mocked(run).mockImplementation(async (c, a) => (calls.push([c, ...a].join(" ")), ok));
-  vi.mocked(shell.openExternal).mockClear();
-  vi.mocked(shell.openExternal).mockResolvedValue(undefined);
 
-  child = new FakeChild();
-  vi.mocked(spawn).mockReset();
-  vi.mocked(spawn).mockReturnValue(child as never);
-
-  vi.mocked(existsSync).mockReturnValue(false);
-  vi.stubEnv("ProgramFiles", "C:\\Program Files");
+  // The registry in session.ts is module state that outlives one test: close
+  // every window this test file opened so the next test starts with none open.
+  for (const w of windows()) if (!w.isDestroyed()) w.close();
+  FakeWindow.created = [];
 });
 
-afterEach(() => {
-  vi.unstubAllEnvs();
-});
-
-/** Resolve to "pending" if `p` has not settled in a tick or two. */
-async function settledOrPending(p: Promise<void>): Promise<string> {
-  return Promise.race([
-    p.then(() => "settled"),
-    new Promise<string>((r) => setTimeout(() => r("pending"), 50)),
-  ]);
-}
-
-describe("openProjectSession on Windows, Chrome present", () => {
-  beforeEach(() => {
-    vi.mocked(existsSync).mockReturnValue(true); // the probe finds chrome.exe
-  });
-
+describe("openProjectSession", () => {
   it("ensures the session through the funnel before showing anything", async () => {
-    await openProjectSession("demo", "win32");
+    await openProjectSession("demo");
     expect(calls).toEqual([`${ENGINE_CLI} exec claudebox claudebox-session demo`]);
   });
 
-  it("spawns the probed chrome.exe detached, silent and unref'd", async () => {
-    await openProjectSession("demo", "win32");
-
-    expect(spawn).toHaveBeenCalledWith(CHROME, [`--app=${URL}`], {
-      detached: true,
-      stdio: "ignore",
-    });
-    expect(child.unref).toHaveBeenCalled();
-  });
-
-  it("returns without waiting for the session window to close", async () => {
-    // `child` never emits close/exit — chrome.exe stays up for the whole session.
-    expect(await settledOrPending(openProjectSession("demo", "win32"))).toBe("settled");
-
-    // Chrome itself never went through exec.ts's run() — only the funnel, via
-    // the Box-exec seam. Rewriting this branch as `await run(launch.command,
-    // launch.args)` would block until the user closes the window and fire the
-    // fallback at close time, not failure time.
-    expect(calls).toEqual([`${ENGINE_CLI} exec claudebox claudebox-session demo`]);
-    expect(shell.openExternal).not.toHaveBeenCalled();
-  });
-
-  it("falls back to the default browser if the spawn fails after the probe", async () => {
-    await openProjectSession("demo", "win32");
-
-    // Chrome deleted between the probe and the spawn. Node reports this as an
-    // asynchronous 'error' event — an EventEmitter with no 'error' listener
-    // rethrows, which in the Launcher means taking the main process down.
-    expect(() => child.emit("error", new Error("spawn ENOENT"))).not.toThrow();
-    expect(shell.openExternal).toHaveBeenCalledWith(URL);
+  it("opens one window on the Project's console URL", async () => {
+    await openProjectSession("demo");
+    expect(only().loadURL).toHaveBeenCalledWith(URL);
   });
 });
 
-describe("openProjectSession on Windows, Chrome absent", () => {
-  it("falls back to the default browser and spawns nothing", async () => {
-    vi.mocked(existsSync).mockReturnValue(false); // no chrome.exe in any of the 3 paths
+describe("openProjectSession, called again for a Project already open", () => {
+  it("raises the window that exists and opens no second one", async () => {
+    await openProjectSession("demo");
+    const first = only();
 
-    await openProjectSession("demo", "win32");
+    await openProjectSession("demo");
 
-    expect(shell.openExternal).toHaveBeenCalledWith(URL);
-    expect(spawn).not.toHaveBeenCalled();
+    expect(windows()).toHaveLength(1); // NOT a second view of the same session
+    expect(first.focus).toHaveBeenCalled();
+    expect(first.show).toHaveBeenCalled();
+    expect(first.loadURL).toHaveBeenCalledTimes(1); // and not reloaded under the user
   });
-});
 
-describe("openProjectSession on the Mac — unchanged (issue #10)", () => {
-  it("awaits `open` in Chrome app mode and never spawns chrome itself", async () => {
-    await openProjectSession("demo", "darwin");
+  it("restores it first when it is minimized", async () => {
+    await openProjectSession("demo");
+    const window = only();
+    window.minimized = true;
 
+    await openProjectSession("demo");
+
+    // focus() does nothing to a minimized window on Windows — without this,
+    // clicking Open session for a minimized session appears to do nothing at all.
+    expect(window.restore).toHaveBeenCalled();
+  });
+
+  it("still runs the funnel, so a session whose tmux side died is rebuilt", async () => {
+    await openProjectSession("demo");
+    await openProjectSession("demo");
     expect(calls).toEqual([
       `${ENGINE_CLI} exec claudebox claudebox-session demo`,
-      `open -na Google Chrome --args --app=${URL}`,
+      `${ENGINE_CLI} exec claudebox claudebox-session demo`,
     ]);
-    expect(spawn).not.toHaveBeenCalled();
-    expect(shell.openExternal).not.toHaveBeenCalled();
+  });
+});
+
+describe("openProjectSession across Projects and closes", () => {
+  it("gives each Project its own window", async () => {
+    await openProjectSession("demo");
+    await openProjectSession("other");
+
+    expect(windows()).toHaveLength(2);
+    expect(windows()[1]!.loadURL).toHaveBeenCalledWith("http://localhost:7681/sessions/other");
   });
 
-  it("falls back to the default browser when `open` exits non-zero", async () => {
-    // Only `open` fails: the funnel runs through the Box-exec seam now, and a
-    // funnel that failed would (correctly) stop this before any window opened.
-    vi.mocked(run).mockImplementation(async (c, a) => {
-      calls.push([c, ...a].join(" "));
-      return c === "open" ? { code: 1, stdout: "", stderr: "no Chrome" } : ok;
+  it("opens a fresh window after the user closed the old one", async () => {
+    await openProjectSession("demo");
+    only().close(); // the registry must forget a window that no longer exists
+
+    await openProjectSession("demo");
+
+    expect(windows()).toHaveLength(2);
+    expect(windows()[1]!.loadURL).toHaveBeenCalledWith(URL);
+  });
+});
+
+describe("the session window is held to the Box's console", () => {
+  /** The `will-navigate` guard session.ts installed, as a predicate. */
+  async function navigationAllowed(target: string): Promise<boolean> {
+    await openProjectSession("demo");
+    const [event, listener] = only().webContents.on.mock.calls[0]!;
+    expect(event).toBe("will-navigate");
+
+    let prevented = false;
+    (listener as (e: { preventDefault(): void }, url: string) => void)(
+      { preventDefault: () => (prevented = true) },
+      target,
+    );
+    return !prevented;
+  }
+
+  it("lets the console move between its own pages", async () => {
+    expect(await navigationAllowed(`${URL}/files`)).toBe(true);
+  });
+
+  it("refuses to be navigated off the console by the page inside it", async () => {
+    // The page is served from the Box — the untrusted side of the boundary.
+    expect(await navigationAllowed("http://example.com/")).toBe(false);
+  });
+
+  it("denies popups outright", async () => {
+    await openProjectSession("demo");
+    const [handler] = only().webContents.setWindowOpenHandler.mock.calls[0]!;
+    expect((handler as (d: { url: string }) => unknown)({ url: "http://example.com/" })).toEqual({
+      action: "deny",
     });
-
-    await openProjectSession("demo", "darwin");
-
-    expect(shell.openExternal).toHaveBeenCalledWith(URL);
   });
 });
 
@@ -165,10 +200,10 @@ describe("openProjectSession when the funnel fails", () => {
   it("names the operation rather than the docker argv, and opens no window", async () => {
     vi.mocked(run).mockResolvedValue({ code: 1, stdout: "", stderr: "no such container" });
 
-    await expect(openProjectSession("demo", "darwin")).rejects.toThrow(
+    await expect(openProjectSession("demo")).rejects.toThrow(
       /Opening the 'demo' session failed.*no such container/s,
     );
-    expect(shell.openExternal).not.toHaveBeenCalled();
+    expect(windows()).toHaveLength(0);
   });
 });
 

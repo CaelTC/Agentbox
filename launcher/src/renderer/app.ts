@@ -428,9 +428,14 @@ function actionCard(
 }
 
 /**
- * The per-Project control panel (ticket 04). The Claude session itself opens in
- * a separate Chrome app-mode window (via openSession); this window becomes the
- * controls for the active Project — no terminal is embedded here.
+ * The per-Project control panel (ticket 04). The Claude session opens in its own
+ * window (via openSession); this window becomes the controls for the active
+ * Project — no terminal is embedded here.
+ *
+ * Opening a Project does NOT open the session: landing here is how a user gets
+ * to Upload, Save and Preview too, and having a terminal appear over the panel
+ * every time they came back for one of those was noise. The session opens when
+ * it is asked for, and asking twice raises the window rather than adding one.
  */
 async function openProject(project: Project): Promise<void> {
   const root = app();
@@ -439,28 +444,33 @@ async function openProject(project: Project): Promise<void> {
   const back = el("button", { className: "btn--link", textContent: "← All projects" });
   back.addEventListener("click", () => void renderHome());
 
-  // Re-open the Chrome window on the same live session (still alive in tmux).
-  // Opening this screen does the same thing through the same button, so the one
-  // control that can bring the session back is also the one that says whether
-  // it came up — and says so from the moment the screen appears.
-  const reopen = el("button", { className: "btn", textContent: "Reopen session" }) as HTMLButtonElement;
-  const session = () =>
-    runOperation({
-      button: reopen,
-      busyLabel: "Opening…",
-      run: () => cb.openSession(project.slug),
-      done: () => undefined,
-      failed: "Couldn't open the Claude session",
-    });
-  reopen.addEventListener("click", () => void session());
+  // Opens the session window, or brings the open one to the front — the tmux
+  // session behind it is the same either way. It is an operation like every
+  // other Box-touching control: bringing the Box up can take a while, so the
+  // button that asked for it is also what says whether it came up.
+  const openSession = el("button", {
+    className: "btn",
+    textContent: "Open session",
+  }) as HTMLButtonElement;
+  openSession.addEventListener(
+    "click",
+    () =>
+      void runOperation({
+        button: openSession,
+        busyLabel: "Opening…",
+        run: () => cb.openSession(project.slug),
+        done: () => undefined,
+        failed: "Couldn't open the Claude session",
+      }),
+  );
 
   root.append(
     hero(
       [
         el("p", { className: "eyebrow", textContent: "Open project" }),
         el("h1", { className: "hero__title", textContent: project.name }),
-        el("p", { className: "lead", textContent: "Claude is waiting in its own window. This one holds the controls." }),
-        el("div", { className: "hero__actions" }, [reopen, back]),
+        el("p", { className: "lead", textContent: "Open the session when you want Claude. This window holds the controls." }),
+        el("div", { className: "hero__actions" }, [openSession, back]),
       ],
       "hero--project",
     ),
@@ -554,8 +564,6 @@ async function openProject(project: Project): Promise<void> {
     ]),
   );
   root.append(footer());
-
-  await session();
 }
 
 /**

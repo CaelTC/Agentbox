@@ -1,17 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
-  chromeAppLaunch,
   ensureSessionArgs,
+  isConsoleUrl,
   killSessionArgs,
   sessionUrl,
-  windowsChromePaths,
+  sessionWindowOptions,
 } from "../src/core/session-window";
-
-const windowsEnv = {
-  ProgramFiles: "C:\\Program Files",
-  "ProgramFiles(x86)": "C:\\Program Files (x86)",
-  LOCALAPPDATA: "C:\\Users\\sandbox\\AppData\\Local",
-};
 
 describe("sessionUrl", () => {
   it("points at the loopback-forwarded console port for the Project", () => {
@@ -62,54 +56,49 @@ describe("killSessionArgs", () => {
   });
 });
 
-describe("windowsChromePaths", () => {
-  it("probes the three standard install locations, in order", () => {
-    expect(windowsChromePaths(windowsEnv)).toEqual([
-      "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-      "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
-      "C:\\Users\\sandbox\\AppData\\Local\\Google\\Chrome\\Application\\chrome.exe",
-    ]);
+describe("isConsoleUrl", () => {
+  it("accepts the console's own pages — the session, its Files view, other sessions", () => {
+    expect(isConsoleUrl("http://localhost:7681/sessions/demo")).toBe(true);
+    expect(isConsoleUrl("http://localhost:7681/sessions/demo/files")).toBe(true);
+    expect(isConsoleUrl("http://localhost:7681/sessions/other")).toBe(true);
   });
 
-  it("skips roots the environment doesn't define (no `undefined\\Google\\…` path)", () => {
-    expect(windowsChromePaths({ LOCALAPPDATA: "C:\\local" })).toEqual([
-      "C:\\local\\Google\\Chrome\\Application\\chrome.exe",
-    ]);
+  it("rejects a lookalike host that merely starts with ours", () => {
+    // The reason this is a parsed origin and not a string prefix: a page served
+    // from the Box could otherwise walk the window off onto its own host.
+    expect(isConsoleUrl("http://localhost:7681.example.com/sessions/demo")).toBe(false);
+  });
+
+  it("rejects another port, another host, and another scheme", () => {
+    expect(isConsoleUrl("http://localhost:5173/sessions/demo")).toBe(false);
+    expect(isConsoleUrl("http://example.com/sessions/demo")).toBe(false);
+    expect(isConsoleUrl("file:///etc/passwd")).toBe(false);
+    expect(isConsoleUrl("javascript:alert(1)")).toBe(false);
+  });
+
+  it("rejects anything that isn't a URL at all, without throwing", () => {
+    expect(isConsoleUrl("")).toBe(false);
+    expect(isConsoleUrl("not a url")).toBe(false);
   });
 });
 
-describe("chromeAppLaunch", () => {
-  const url = "http://localhost:7681/sessions/x";
-
-  it("on the Mac still goes through `open`, in a chromeless app-mode window", () => {
-    expect(chromeAppLaunch(url, "darwin")).toEqual({
-      command: "open",
-      args: ["-na", "Google Chrome", "--args", `--app=${url}`],
-    });
+describe("sessionWindowOptions", () => {
+  it("hands the Box's page a renderer with nothing in it: no preload, no Node, sandboxed", () => {
+    const { webPreferences } = sessionWindowOptions("demo");
+    // The IPC bridge belongs to the home window alone — this page comes from the
+    // untrusted side of the boundary (ADR 0001).
+    expect(webPreferences?.preload).toBeUndefined();
+    expect(webPreferences?.nodeIntegration).toBe(false);
+    expect(webPreferences?.contextIsolation).toBe(true);
+    expect(webPreferences?.sandbox).toBe(true);
+    expect(webPreferences?.webviewTag).toBe(false);
   });
 
-  it("on the Mac never probes for chrome.exe", () => {
-    const exists = () => {
-      throw new Error("the Mac must not probe the filesystem");
-    };
-    expect(chromeAppLaunch(url, "darwin", windowsEnv, exists)?.command).toBe("open");
+  it("names the window after the Project for the moment before the page loads", () => {
+    expect(sessionWindowOptions("demo").title).toBe("demo · Claudebox");
   });
 
-  it("on Windows spawns the first chrome.exe found, in app mode", () => {
-    const launch = chromeAppLaunch(url, "win32", windowsEnv, (p) => p.startsWith("C:\\Users"));
-    expect(launch).toEqual({
-      command: "C:\\Users\\sandbox\\AppData\\Local\\Google\\Chrome\\Application\\chrome.exe",
-      args: [`--app=${url}`],
-    });
-  });
-
-  it("on Windows prefers ProgramFiles when several copies exist", () => {
-    expect(chromeAppLaunch(url, "win32", windowsEnv, () => true)?.command).toBe(
-      "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-    );
-  });
-
-  it("is undefined when Chrome is absent, so the caller falls back to the default browser", () => {
-    expect(chromeAppLaunch(url, "win32", windowsEnv, () => false)).toBeUndefined();
+  it("refuses an unsafe slug rather than titling a window with it", () => {
+    expect(() => sessionWindowOptions("../etc")).toThrow(/unsafe/i);
   });
 });

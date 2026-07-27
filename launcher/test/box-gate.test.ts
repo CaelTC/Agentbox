@@ -153,7 +153,7 @@ describe("the router's gate", () => {
       filePaths: ["/Users/sandbox/notes.csv"],
     });
     vi.mocked(dialog.showMessageBox).mockResolvedValue({ response: 0, checkboxChecked: false });
-    registerIpc(window);
+    registerIpc(() => window);
   });
 
   it("makes Update Claudebox wait for an Upload that is already in flight", async () => {

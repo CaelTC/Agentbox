@@ -1,8 +1,12 @@
-import { spawn } from "node:child_process";
-import { shell } from "electron";
+import { BrowserWindow } from "electron";
 import { BOX_CONTAINER, BOX_IMAGE, ENGINE_CLI } from "../core/config";
 import { boxRunArgs, boxUpdateClaudeArgs } from "../core/box";
-import { chromeAppLaunch, ensureSessionArgs, sessionUrl } from "../core/session-window";
+import {
+  ensureSessionArgs,
+  isConsoleUrl,
+  sessionUrl,
+  sessionWindowOptions,
+} from "../core/session-window";
 import { boxExec, type BoxExec } from "./box-exec";
 import { engine } from "./engine";
 import { inspectBoxState } from "./environment";
@@ -65,7 +69,7 @@ async function runStep(step: StartupStep, boxDefinitionDir: string): Promise<voi
       await mustSucceed(ENGINE_CLI, ["start", BOX_CONTAINER]);
       return;
     case "attach":
-      return; // the session is launched by the funnel, opened in Chrome (openProjectSession)
+      return; // the session is launched by the funnel, shown by openProjectSession
   }
 }
 
@@ -92,45 +96,62 @@ export async function updateClaudeCode(): Promise<boolean> {
 }
 
 /**
+ * The session window this Launcher has open for each Project, by slug. One tmux
+ * session per Project means one window per Project: this registry is what lets
+ * a second "Open session" raise the window that already exists instead of
+ * stacking another view of the same session on top of it.
+ */
+const sessionWindows = new Map<string, BrowserWindow>();
+
+/**
  * Open a Project's Claude session (ticket 04). Ensures the session exists through
  * the single Box-side funnel (which reads the Project's cwd + seed prompt from
- * the volume, ticket 02), then shows it in a chromeless Chrome app-mode window.
- * If Chrome is missing, fall back to the default browser so opening never fails.
- * "Reopen terminal" is just this again — the funnel re-attaches the live session.
+ * the volume, ticket 02), then shows it in a window the Launcher owns.
+ *
+ * Called again for a Project that is already open, this raises that window and
+ * opens nothing — the funnel is still run first, so a session whose tmux side
+ * died is rebuilt before the existing window is brought back to it.
  */
-export async function openProjectSession(
-  slug: string,
-  platform: NodeJS.Platform = process.platform,
-  box: BoxExec = boxExec,
-): Promise<void> {
+export async function openProjectSession(slug: string, box: BoxExec = boxExec): Promise<void> {
   // Through the Box-exec seam like every other command against a running Box:
   // the router brings the Box up before this channel's target runs, so there is
   // nothing here that has to reach past it.
   await box.exec(ensureSessionArgs(slug), `Opening the '${slug}' session`);
-  const url = sessionUrl(slug);
-  const launch = chromeAppLaunch(url, platform);
-  if (!launch) {
-    await shell.openExternal(url);
+
+  const open = sessionWindows.get(slug);
+  if (open && !open.isDestroyed()) {
+    // focus() alone does nothing to a minimized window on Windows, and only
+    // sometimes on the Mac — restore first so "bring it to the front" is honest.
+    if (open.isMinimized()) open.restore();
+    open.show();
+    open.focus();
     return;
   }
 
-  // Windows spawns chrome.exe itself, detached and unawaited: chrome.exe does not
-  // return until the user closes the session window (issue #10). `open` on the Mac
-  // returns immediately and reports a real failure, so it keeps its await below.
-  if (platform === "win32") {
-    const child = spawn(launch.command, [...launch.args], { detached: true, stdio: "ignore" });
-    // Chrome went away between the probe and the spawn — same fallback. Node
-    // reports a failed spawn asynchronously, never as a throw, and an unhandled
-    // 'error' would take the Launcher's main process down with it.
-    child.on("error", () => void shell.openExternal(url).catch(() => {}));
-    child.unref();
-    return;
-  }
+  const window = new BrowserWindow(sessionWindowOptions(slug));
+  sessionWindows.set(slug, window);
+  // Only forget this window if it is still the one registered: a stale 'closed'
+  // arriving after the Project was reopened must not evict the live window.
+  window.on("closed", () => {
+    if (sessionWindows.get(slug) === window) sessionWindows.delete(slug);
+  });
+  confineToConsole(window);
+  await window.loadURL(sessionUrl(slug));
+}
 
-  const opened = await run(launch.command, launch.args);
-  if (opened.code !== 0) {
-    await shell.openExternal(url);
-  }
+/**
+ * Hold the session window to the Box's console. The page inside it is served
+ * from the Box, which is the untrusted side of the boundary (ADR 0001) — so it
+ * may move around the console's own pages (Files, the session rail) and nowhere
+ * else, and it may not open windows at all. Denying popups outright keeps the
+ * Box from ever putting a URL of its choosing in front of the user: it renders
+ * the console, it does not get to steer the Launcher.
+ */
+function confineToConsole(window: BrowserWindow): void {
+  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  window.webContents.on("will-navigate", (event, url) => {
+    if (!isConsoleUrl(url)) event.preventDefault();
+  });
 }
 
 /**
