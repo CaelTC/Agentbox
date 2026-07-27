@@ -441,7 +441,17 @@ async function openProject(project: Project): Promise<void> {
   const root = app();
   root.replaceChildren();
 
-  const back = el("button", { className: "btn--link", textContent: "← All projects" });
+  // The way out sits top-left, in the slot the "Open project" eyebrow held: that
+  // eyebrow only restated the screen you were already looking at, and the back
+  // control is the one thing on this panel that has a conventional home.
+  const back = el("button", { className: "back" }, [
+    el("span", {
+      className: "back__icon",
+      innerHTML:
+        '<svg width="16" height="12" viewBox="0 0 14 10" fill="none" aria-hidden="true"><path d="M5 1L1 5l4 4M1 5h12" stroke="currentColor" stroke-width="2" stroke-linecap="square"/></svg>',
+    }),
+    "All projects",
+  ]);
   back.addEventListener("click", () => void renderHome());
 
   // Opens the session window, or brings the open one to the front — the tmux
@@ -467,10 +477,10 @@ async function openProject(project: Project): Promise<void> {
   root.append(
     hero(
       [
-        el("p", { className: "eyebrow", textContent: "Open project" }),
+        back,
         el("h1", { className: "hero__title", textContent: project.name }),
         el("p", { className: "lead", textContent: "Open the session when you want Claude. This window holds the controls." }),
-        el("div", { className: "hero__actions" }, [openSession, back]),
+        el("div", { className: "hero__actions" }, [openSession]),
       ],
       "hero--project",
     ),
@@ -1001,6 +1011,16 @@ function renderBootstrapError(message: string): void {
     ]),
   );
 }
+
+// Escape goes back to the projects list, and does it by pressing the button that
+// is already on screen: no second copy of "what does back mean", and nothing to
+// unbind per screen — the shortcut exists exactly when the button does. Sheets
+// have no Escape of their own, so an open one swallows the key rather than
+// dropping the Sandbox User out from under it.
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || document.querySelector(".sheet")) return;
+  document.querySelector<HTMLButtonElement>(".back")?.click();
+});
 
 // Wait for the Engine + Box to be ready before the home screen queries Projects
 // (they live on a named volume reached through the running Box).

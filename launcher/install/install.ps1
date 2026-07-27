@@ -44,8 +44,8 @@ $DefinitionDir = Join-Path $ClaudeboxHome 'definition'
 $ProgramsDir = if ($env:CLAUDEBOX_PROGRAMS) { $env:CLAUDEBOX_PROGRAMS }
                else { Join-Path (Join-Path $env:LOCALAPPDATA 'Programs') 'Claudebox' }
 
-# The prebuilt Launcher, cross-packaged from a Mac (`npm run package:win`) and
-# committed into the definition repo - the mirror of install.sh's Claudebox.app.
+# What `npm run package:win` emits into launcher/release - the mirror of
+# install.sh's Claudebox.app. Built here, on this machine, by Build-Launcher.
 $LauncherFolder = 'Claudebox-win32-x64'
 $LauncherExe = 'Claudebox.exe'
 
@@ -68,8 +68,9 @@ $CapDiskGiB = 25
 # and Preview opens in whatever browser Windows already treats as default — so
 # provisioning has no browser to choose on the user's behalf.
 $WingetPackages = @(
-  @{ Id = 'RedHat.Podman'; What = 'the Engine (podman)' },
-  @{ Id = 'Git.Git';       What = 'git (to fetch the Box definition)' }
+  @{ Id = 'RedHat.Podman';    What = 'the Engine (podman)' },
+  @{ Id = 'Git.Git';          What = 'git (to fetch the Box definition)' },
+  @{ Id = 'OpenJS.NodeJS.LTS'; What = 'Node (to build the Launcher)' }
 )
 
 function Write-Log {
@@ -343,16 +344,27 @@ Nothing has been installed to the Start Menu; re-run once the cause is fixed.
   }
 }
 
-# --- 9. Install the Launcher + a Start Menu entry ----------------------------
+# --- 9. Build the Launcher from the definition we just fetched ---------------
+# The mirror of install.sh's build_launcher, and for the same reason: the exe is
+# a build product, so the clone above holds source and nothing else. Packaging
+# win32 ON Windows is the native case - no Wine, no cross-download - and a
+# locally built exe carries no Mark-of-the-Web, so it dodges the SmartScreen
+# prompt an unsigned downloaded build would trigger.
+function Build-Launcher {
+  Write-Log 'Building the Launcher (this takes a few minutes the first time)...'
+  $launcher = Join-Path $DefinitionDir 'launcher'
+  Invoke-Checked { npm --prefix $launcher ci }
+  Invoke-Checked { npm --prefix $launcher run package:win }
+}
+
+# --- 10. Install the Launcher + a Start Menu entry ---------------------------
 # A folder copy and a shortcut - the direct mirror of install_launcher(). No NSIS
-# installer, no electron-builder: no new build dependency, no change to the Mac
-# packaging path, and a script-copied exe carries no Mark-of-the-Web, so it dodges
-# the SmartScreen prompt an unsigned downloaded installer would trigger.
+# installer, no electron-builder: no new build dependency and no change to the
+# Mac packaging path.
 function Install-Launcher {
-  $source = Join-Path (Join-Path $DefinitionDir 'launcher') $LauncherFolder
+  $source = Join-Path (Join-Path (Join-Path $DefinitionDir 'launcher') 'release') $LauncherFolder
   if (-not (Test-Path $source)) {
-    Write-Log "NOTE: no prebuilt $LauncherFolder found; build it with 'npm run package:win' in launcher/."
-    return
+    throw "The Launcher did not build - $source is missing, so there is nothing to install."
   }
 
   Write-Log "Installing the Launcher into $ProgramsDir..."
@@ -386,6 +398,7 @@ function Main {
   Start-Machine
   Build-Image
   Test-Egress
+  Build-Launcher
   Install-Launcher
   Write-Log 'Done. The Sandbox User can now open Claudebox from the Start Menu.'
 }

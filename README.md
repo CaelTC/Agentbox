@@ -133,6 +133,12 @@ Box image and the Launcher — no browser, since the Launcher draws the session
 window itself — and it configures **no credential anywhere**: the repo is public, so
 there is no secret to leak (ADR 0002).
 
+The Launcher is **built on the machine being provisioned**, from the source the
+script just cloned: it installs Node, then runs `npm ci && npm run package`.
+Nothing prebuilt is downloaded, which is what keeps Gatekeeper (and SmartScreen
+on Windows) out of the way — an unsigned bundle fetched over HTTPS is
+quarantined; one built locally is not. Budget a few minutes for it.
+
 ### macOS
 
 ```bash
@@ -155,7 +161,7 @@ Start Menu entry land in that user's profile.
 powershell -ExecutionPolicy Bypass -File launcher\install\install.ps1
 ```
 
-It performs nine steps, all of them safely re-runnable:
+It performs ten steps, all of them safely re-runnable:
 
 1. Require Administrator.
 2. Ensure WSL2. **On a machine that has never had WSL2, this enables it and then
@@ -173,12 +179,15 @@ It performs nine steps, all of them safely re-runnable:
 8. Run `box/egress/verify-egress.sh` inside a throwaway Box. **If the Egress
    Policy does not hold, the install stops here** — a Box that cannot keep
    itself off the laptop and the LAN must never accept a Sandbox User.
-9. Copy the Launcher to `%LOCALAPPDATA%\Programs\Claudebox` and create a Start
-   Menu shortcut.
+9. `npm ci && npm run package:win` in the cloned `launcher/` — the Launcher is
+   built here, on this machine, from the source just fetched.
+10. Copy the built folder to `%LOCALAPPDATA%\Programs\Claudebox` and create a
+    Start Menu shortcut.
 
-Step 9 needs a prebuilt Launcher folder (`launcher/Claudebox-win32-x64`),
-cross-packaged from a Mac with `npm run package:win` — see `launcher/README.md`.
-Without it the script says so and finishes; everything else is already in place.
+Steps 9–10 are why Node is one of the winget packages. Nothing prebuilt is
+downloaded: a locally built exe carries no Mark-of-the-Web, so it dodges the
+SmartScreen prompt an unsigned *downloaded* build would trigger — the same
+reason the Mac builds its own `.app` rather than fetching one.
 
 ## Working on it
 

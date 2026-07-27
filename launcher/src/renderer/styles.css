@@ -241,6 +241,33 @@ button {
 }
 .btn--link:hover { opacity: 0.75; }
 
+/* The way back out of a Project. It stands in the eyebrow's slot and borrows its
+   type, so the top-left of the panel reads as one line either way. */
+.back {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--nootka-steam);
+  font-size: var(--text-meta);
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+}
+.back__icon {
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: var(--radius-md);
+  background: rgba(205, 216, 218, 0.12);
+}
+.back:hover { color: var(--color-text-inverse); }
+.back:hover .back__icon { background: var(--color-accent); color: var(--color-on-accent); }
+
 button:disabled { opacity: 0.5; cursor: not-allowed; }
 
 :where(a, button, input, select, textarea, [tabindex]):focus-visible {

@@ -76,45 +76,40 @@ when the Launcher is the one drawing it. There is no embedded
 terminal — the session is viewed
 through the Box's loopback-forwarded web console, so no `node-pty`/`xterm`.
 
-### The Electron shim
-
-`src/types/electron.d.ts` declares the exact slice of the Electron API the main
-process uses. It exists so this repo type-checks in a headless Linux CI box
-without pulling the ~100 MB Electron binary. **When packaging for macOS**, run
-`npm install electron` and delete the shim — Electron ships its own types, and
-keeping both would double-declare the `electron` module.
-
-## Packaging (macOS)
-
-1. `npm install electron && rm src/types/electron.d.ts`
-2. `npm run build` (emits `dist/`).
-3. Bundle with your Electron packager of choice into `Claudebox.app`
-   (`npm run package` wraps electron-packager).
-
-No code signing is required to run it locally (ADR 0002).
-
-## Packaging for Windows — from the same Mac
+## Packaging
 
 ```bash
-npm run package:win        # → release/Claudebox-win32-x64/Claudebox.exe
+npm run package        # → release/Claudebox-darwin-<arch>/Claudebox.app
+npm run package:win    # → release/Claudebox-win32-x64/Claudebox.exe
 ```
 
-electron-packager cross-builds to win32 by downloading the win32 Electron
-binary, so **one build host packages both platforms** — a provisioning script
-should not need a Node toolchain and a multi-minute `npm install` on every
-machine it touches.
+No code signing is required to run either locally (ADR 0002) — and *locally* is
+load-bearing. **The Install Scripts run these themselves**, on the machine being
+provisioned: `install.sh` calls `npm run package` and `install.ps1` calls `npm
+run package:win`, each after `npm ci` in the freshly cloned `launcher/`. Nothing
+prebuilt is committed or downloaded, so there is no build artefact in this repo
+to keep in step with the source.
 
-Two deliberate omissions: no `--icon` and no `--win32metadata`. Both are written
-into the exe by `rcedit`, which needs Wine on a Mac. The cost is the default
-Electron icon, accepted for now rather than adding a build dependency.
+The build has to happen on the target machine rather than once on a build host,
+because an unsigned bundle that arrives over HTTPS is quarantined: macOS marks
+it `com.apple.quarantine` and refuses to open it; Windows gives it the
+Mark-of-the-Web and SmartScreen prompts. A bundle built and copied by a script
+on the machine itself carries neither. Signing would be the other way out, and
+ADR 0002 rules it out.
 
-`install.ps1` installs this folder by copying it (plus a Start Menu `.lnk` via
-`WScript.Shell`) — the direct mirror of `install_launcher()` on the Mac, not an
-NSIS/electron-builder installer. A script-copied exe also carries no
-Mark-of-the-Web, so it dodges the SmartScreen prompt an unsigned *downloaded*
-installer would trigger. Commit the built folder into the definition repo as
-`launcher/Claudebox-win32-x64` for `install.ps1` to find, as with
-`Claudebox.app` on the Mac.
+`npm run package` takes the host arch, so a provisioner's Intel Mac gets an x64
+`.app` — hence the `*` in install.sh's copy. `package:win` pins x64 whether it
+runs on Windows (native) or cross-builds from a Mac; electron-packager downloads
+the win32 Electron binary for the latter.
+
+Two deliberate omissions on Windows: no `--icon` and no `--win32metadata`. Both
+are written into the exe by `rcedit`, which needs Wine when cross-building from
+a Mac. The cost is the default Electron icon, accepted for now rather than
+adding a build dependency that only one of the two build paths needs.
+
+`install.ps1` installs the built folder by copying it (plus a Start Menu `.lnk`
+via `WScript.Shell`) — the direct mirror of `install_launcher()` on the Mac, not
+an NSIS/electron-builder installer.
 
 `npm run assets` is plain Node (`fs.cpSync`) rather than `cp -R`, so `npm run
 build` works from either OS.

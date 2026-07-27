@@ -15,6 +15,7 @@ set -euo pipefail
 DEFINITION_REPO="https://github.com/CaelTC/Claudebox.git"
 CLAUDEBOX_HOME="${CLAUDEBOX_HOME:-$HOME/.claudebox}"
 APPLICATIONS_DIR="${APPLICATIONS_DIR:-/Applications}"
+LAUNCHER_SRC="$CLAUDEBOX_HOME/definition/launcher"
 
 log() { printf '\033[36m[install]\033[0m %s\n' "$*"; }
 
@@ -62,16 +63,38 @@ prepare_image() {
   docker build -t claudebox:latest "$CLAUDEBOX_HOME/definition/box"
 }
 
-# --- 4. Install the Launcher into /Applications ------------------------------
-install_launcher() {
-  log "Installing the Launcher into ${APPLICATIONS_DIR}…"
-  # The Launcher is an unsigned .app built from launcher/. The provisioner copies
-  # the built app bundle here; running it locally needs no signing.
-  if [[ -d "$CLAUDEBOX_HOME/definition/launcher/Claudebox.app" ]]; then
-    cp -R "$CLAUDEBOX_HOME/definition/launcher/Claudebox.app" "$APPLICATIONS_DIR/"
-  else
-    log "NOTE: no prebuilt Claudebox.app found; build it with 'npm run build' in launcher/."
+# --- 4. Build the Launcher from the definition we just fetched ---------------
+# The .app is a build product, so it is not in the repo and cannot be: the clone
+# above is source. Building it here rather than downloading a bundle is also what
+# keeps Gatekeeper out of the way — a locally built app carries no
+# com.apple.quarantine, which an unsigned app fetched over HTTPS would (ADR 0002
+# rules out signing, so the quarantine flag is the whole difference between "it
+# opens" and "macOS refuses to open it").
+build_launcher() {
+  if ! command -v npm >/dev/null 2>&1; then
+    log "Installing Node (needed to build the Launcher)…"
+    brew install node
   fi
+  log "Building the Launcher (this takes a few minutes the first time)…"
+  npm --prefix "$LAUNCHER_SRC" ci
+  npm --prefix "$LAUNCHER_SRC" run package
+}
+
+# --- 5. Install the Launcher into /Applications ------------------------------
+install_launcher() {
+  # electron-packager names the folder after the host arch, so match rather than
+  # guess: one provisioner's Mac is arm64, the next one's is x64.
+  local built=("$LAUNCHER_SRC"/release/Claudebox-darwin-*/Claudebox.app)
+  if [[ ! -d "${built[0]}" ]]; then
+    echo "The Launcher did not build — nothing to install." >&2
+    exit 1
+  fi
+
+  log "Installing the Launcher into ${APPLICATIONS_DIR}…"
+  # Replaced, not merged: `cp -R` over a live bundle leaves the previous version's
+  # files behind inside it, and a half-old .app is worse than no .app.
+  rm -rf "${APPLICATIONS_DIR:?}/Claudebox.app"
+  cp -R "${built[0]}" "$APPLICATIONS_DIR/"
 }
 
 main() {
@@ -80,6 +103,7 @@ main() {
   install_engine
   fetch_definition
   prepare_image
+  build_launcher
   install_launcher
   log "Done. The Sandbox User can now open Claudebox from Applications."
 }
