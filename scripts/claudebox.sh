@@ -8,7 +8,9 @@
 # for day-to-day use; this script proves the spine end to end.
 #
 # The TypeScript core in launcher/src/core is the source of truth for these
-# values; keep the two in sync.
+# values. launcher/test/config.test.ts compares the `docker run` and
+# `colima start` commands below against boxRunArgs() and colimaStartArgs(), so
+# a value that drifts from the core fails a test rather than a launch.
 set -euo pipefail
 
 PROFILE="claudebox"
@@ -38,7 +40,7 @@ require colima
 require docker
 
 # 1. Engine: start Colima at the Resource Cap if it isn't already up.
-if colima status --profile "$PROFILE" 2>&1 | grep -qi "colima is running"; then
+if colima status --profile "$PROFILE" 2>&1 | grep -qi "is running"; then
   log "Colima already running."
 else
   log "Starting Colima (${CPU} CPU / ${MEMORY} GiB / ${DISK} GiB)…"

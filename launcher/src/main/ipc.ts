@@ -1,6 +1,5 @@
 import { BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { statSync } from "node:fs";
-import { confirmsProjectName, type DeleteListing } from "../core/delete";
 import { IPC, type SavedFolder } from "../shared/api";
 import {
   awaitGithubLogin,
@@ -9,133 +8,108 @@ import {
   saveToGithub,
   startGithubLogin,
 } from "./github";
+import { boxGate } from "./box-gate";
 import { exportRoot, hostBoxDefinitionDir } from "./paths";
 import { detectPreviewUrl } from "./preview";
-import { refreshOnLaunch } from "./refresh-runner";
-import { updateMessage } from "../core/refresh";
-import {
-  ensureBoxReady,
-  ensureEngine,
-  openProjectSession,
-  removeBoxContainer,
-  updateClaudeCode,
-} from "./session";
+import { updateClaudebox } from "./refresh-runner";
+import { ensureBoxReady, openProjectSession } from "./session";
 import {
   boxCreateProject,
+  boxDeleteListing,
   boxDeleteProject,
   boxExport,
   boxExportDir,
   boxExportListing,
-  boxFindProject,
   boxImportFolder,
   boxListProjects,
   boxPlanImport,
-  boxProjectUsage,
   boxUpload,
 } from "./workspace";
 
 /**
- * Wire the renderer's requests to the trusted operations. This is the ONLY
- * place the home screen's intents become real Docker/filesystem effects.
+ * The router. This is the ONLY place the home screen's intents become real
+ * Docker/filesystem effects, and it does nothing but name them: every channel
+ * declares a POLICY and a TARGET, and the target lives in a module that can be
+ * tested without Electron. The only work left in here is the native dialogs,
+ * which are the one thing the renderer genuinely cannot reach past this line.
+ *
+ * Two policies, which between them cover every channel but the ones named below:
+ *
+ *   route       — host-only work, or work that is only PARTLY the Box's.
+ *   routeViaBox — the target touches the Workspace, so the Box is brought up
+ *                 FIRST and the operation runs alone (the Box Gate). This used
+ *                 to be ten remembered `ensureBoxReady` calls with ten
+ *                 justifying comments, which is a rule you can forget: a
+ *                 handler that did fell over as a raw `docker exec` error in a
+ *                 Sandbox User's face. Declared once, it cannot be forgotten —
+ *                 and the same is now true of the exclusion, which no caller
+ *                 can remember to take either.
+ *
+ * The channels below that reach the Box WITHOUT the whole handler under the
+ * policy — Update Claudebox, which brings the Box up itself, Web Preview, which
+ * only reads a Box that is already up, and the two that open a native picker
+ * first — take the gate by hand around the part that is actually the Box's, and
+ * say why at the call. The rule they are all keeping is the same one: nothing is
+ * held across a decision a human has to make.
+ *
+ * A target's parameters are pinned by the arrow that calls it, never spread
+ * straight from the renderer's argv — an operation whose last argument is an
+ * injected `BoxExec` must not be reachable by sending a third argument.
  */
-export function registerIpc(window: BrowserWindow): void {
-  ipcMain.handle(IPC.listProjects, () => boxListProjects());
+type Target<A extends unknown[]> = (...args: A) => unknown;
 
-  ipcMain.handle(IPC.createProject, (_e, name: string) => boxCreateProject(name));
+/**
+ * Resolves the first time the home screen has been handed its Projects — while
+ * that listing still holds the gate.
+ *
+ * `bootstrap` waits on it before queueing `claude update`, so the render the
+ * Sandbox User is actually staring at is AHEAD of the update in the queue
+ * instead of behind it. The gate is arrival-ordered and has no priorities, so
+ * "the home screen first" has to be arranged by waiting for it; queued from
+ * bootstrap directly, the update always won that race, and up to `timeout 180`
+ * of it sat in front of every launch's first listing.
+ */
+let homeHasItsProjects: () => void = () => {};
+export const homeListedProjects = new Promise<void>((resolve) => (homeHasItsProjects = resolve));
 
-  ipcMain.handle(IPC.openSession, async (_e, slug: string) => {
+function route<A extends unknown[]>(channel: string, target: Target<A>): void {
+  ipcMain.handle(channel, (_event, ...args) => target(...(args as A)));
+}
+
+/** The policy itself: the Box up, alone, for exactly the length of `work`. */
+function viaBox<T>(work: () => Promise<T> | T): Promise<T> {
+  return boxGate(async () => {
     await ensureBoxReady(hostBoxDefinitionDir());
-    await openProjectSession(slug);
+    return work();
   });
+}
 
-  ipcMain.handle(IPC.upload, async (_e, slug: string) => {
+function routeViaBox<A extends unknown[]>(channel: string, target: Target<A>): void {
+  route(channel, (...args: A) => viaBox(() => target(...args)));
+}
+
+export function registerIpc(window: BrowserWindow): void {
+  /* The native affordances, which need the window. Everything else is a name. */
+  const pickFiles = async (): Promise<string[]> => {
     const picked = await dialog.showOpenDialog(window, {
       title: "Upload files into this Project",
       properties: ["openFile", "multiSelections"],
     });
-    if (picked.canceled || picked.filePaths.length === 0) return [];
-    return boxUpload(picked.filePaths, slug);
-  });
+    return picked.canceled ? [] : picked.filePaths;
+  };
 
-  ipcMain.handle(IPC.openPreview, async () => {
-    const url = await detectPreviewUrl();
-    if (!url) return { opened: false };
-    await shell.openExternal(url);
-    return { opened: true, url };
-  });
-
-  // Export. The Box must be up to be read from, so bring it up first rather than
-  // failing at the `docker exec` with something a Sandbox User can't act on.
-  ipcMain.handle(IPC.listExportFiles, async (_e, slug: string) => {
-    await ensureBoxReady(hostBoxDefinitionDir());
-    return boxExportListing(slug, exportRoot());
-  });
-
-  // `pick` comes from the renderer, so it is input rather than truth: boxExport
-  // re-enumerates the Project inside the Box and re-runs the allowlist over every
-  // ticked path before a byte is copied.
-  ipcMain.handle(IPC.saveToComputer, async (_e, slug: string, pick: string[]) => {
-    await ensureBoxReady(hostBoxDefinitionDir());
-    return boxExport(slug, exportRoot(), pick);
-  });
-
-  // Also needs the Box: the landing folder is named after the Project's friendly
-  // name, which lives in metadata inside it.
-  ipcMain.handle(IPC.showSavedFiles, async (_e, slug: string): Promise<SavedFolder> => {
-    await ensureBoxReady(hostBoxDefinitionDir());
-    const dir = await boxExportDir(slug, exportRoot());
-    const stat = statSync(dir, { throwIfNoEntry: false });
-    if (!stat) return { dir, opened: false }; // never saved — nothing to show yet
-    await shell.openPath(dir);
-    // ponytail: "last saved" is the folder's mtime, which Finder also bumps when
-    // it drops a .DS_Store in. Write a stamp file if the drift ever matters.
-    return { dir, opened: true, lastSaved: stat.mtimeMs };
-  });
-
-  // Project Import (ticket 09). The Box must be up for the free-space check
-  // (`df`) that both the sheet and the actual copy rely on.
-  ipcMain.handle(IPC.planImport, async () => {
+  const pickFolder = async (): Promise<string | undefined> => {
     const picked = await dialog.showOpenDialog(window, {
       title: "Open a folder from your computer",
       properties: ["openDirectory"],
     });
-    if (picked.canceled || picked.filePaths.length === 0) return undefined;
-    await ensureBoxReady(hostBoxDefinitionDir());
-    return boxPlanImport(picked.filePaths[0]!);
-  });
+    return picked.canceled ? undefined : picked.filePaths[0];
+  };
 
-  // The folder path comes from the sheet the plan above produced, but the
-  // copy re-measures it rather than trusting those numbers back.
-  ipcMain.handle(IPC.importFolder, async (_e, folder: string) => {
-    await ensureBoxReady(hostBoxDefinitionDir());
-    return boxImportFolder(folder);
-  });
-
-  // Save to GitHub (ADR 0006). The three sign-in handlers are pure host work —
-  // no Box involved, and no token crosses back to the renderer.
-  ipcMain.handle(IPC.githubStatus, () => githubStatus());
-  ipcMain.handle(IPC.startGithubLogin, () => startGithubLogin());
-  ipcMain.handle(IPC.awaitGithubLogin, () => awaitGithubLogin());
-  ipcMain.handle(IPC.disconnectGithub, () => (disconnectGithub(), githubStatus()));
-
-  // Publishing runs two ephemeral containers off the Box image, so the image has
-  // to exist — the same reason Export brings the Box up first.
-  ipcMain.handle(IPC.saveToGithub, async (_e, slug: string) => {
-    await ensureBoxReady(hostBoxDefinitionDir());
-    return saveToGithub(slug);
-  });
-
-  // Update Claudebox (ADR 0002): Refresh on Launch, on a button. Same pull of the
-  // public definition, same integrity gate, same conditional build — what this
-  // adds is the recreate, because a rebuilt image does nothing while the old
-  // container is still the one running (the same two lines bootstrap does).
-  //
-  // That recreate ends every open Claude session, so it is confirmed first. The
+  // The recreate ends every open Claude session, so it is confirmed first. The
   // pull hasn't happened yet at that point, so the question is honestly
   // conditional: there may turn out to be nothing new, and then nothing restarts.
-  // Undefined on cancel — the renderer says nothing rather than reporting a
-  // check that never ran (as `planImport` does for a cancelled picker).
-  ipcMain.handle(IPC.updateBox, async (): Promise<string | undefined> => {
+  const confirmUpdate = async (): Promise<boolean> => {
     const { response } = await dialog.showMessageBox(window, {
       type: "question",
       buttons: ["Update Claudebox", "Cancel"],
@@ -146,55 +120,104 @@ export function registerIpc(window: BrowserWindow): void {
         "If there's a new version, the sandbox restarts and any open Claude session closes. " +
         "Your projects are saved.",
     });
-    if (response !== 0) return undefined;
+    return response === 0;
+  };
 
-    await ensureEngine(); // the build needs the Engine, exactly as at launch
-    const result = await refreshOnLaunch();
-    if (result.action !== "rebuilt") return updateMessage(result);
+  /* Host-only channels. -------------------------------------------------- */
 
-    await removeBoxContainer();
-    await ensureBoxReady(hostBoxDefinitionDir());
-    // A recreate drops back to the Claude Code baked into the image, which the
-    // Dockerfile's cached npm layer can leave months old — so without this an
-    // "update" could hand back an older Claude than the one just running.
-    if (!(await updateClaudeCode())) {
-      console.warn("Claude Code update skipped; keeping the version baked into the Box image.");
-    }
-    return updateMessage(result);
+  // Save to GitHub (ADR 0006): the sign-in half is pure host work — no Box
+  // involved, and no token crosses back to the renderer. Ungated for the same
+  // reason: `awaitGithubLogin` polls GitHub for as long as the device code
+  // lives, and a gate held for those minutes would freeze the whole Launcher
+  // behind a sign-in the Sandbox User may have wandered off from.
+  route(IPC.githubStatus, () => githubStatus());
+  route(IPC.startGithubLogin, () => startGithubLogin());
+  route(IPC.awaitGithubLogin, () => awaitGithubLogin());
+  route(IPC.disconnectGithub, () => (disconnectGithub(), githubStatus()));
+
+  // Reads the listening ports of a Box that is already up, so it declares no
+  // Box policy — but it does reach inside the running container, and an Update
+  // recreating that container underneath it would report "no preview" for a
+  // server that is simply mid-restart. Gated, not brought up.
+  route(IPC.openPreview, () =>
+    boxGate(async () => {
+      const url = await detectPreviewUrl();
+      if (!url) return { opened: false };
+      await shell.openExternal(url);
+      return { opened: true, url };
+    }),
+  );
+
+  // Update Claudebox brings the Box up itself, mid-sequence and after the
+  // rebuild — so it declares no policy here. Undefined on cancel: the renderer
+  // says nothing rather than reporting a check that never ran.
+  //
+  // The confirmation is deliberately OUTSIDE the gate and the recreate inside
+  // it: a modal question is not an operation, and holding the Box hostage while
+  // it sits open would stall an Upload that was already running for a dialog
+  // the Sandbox User may yet cancel. Once they say yes, this is the operation
+  // every other one has to wait for — it is the one that removes the container.
+  route(IPC.updateBox, async (): Promise<string | undefined> =>
+    (await confirmUpdate()) ? boxGate(() => updateClaudebox()) : undefined,
+  );
+
+  /* Workspace channels — the Box is up before any of these run. ----------- */
+
+  routeViaBox(IPC.listProjects, async () => {
+    const projects = await boxListProjects();
+    homeHasItsProjects(); // still inside the gate — see `homeListedProjects`
+    return projects;
+  });
+  routeViaBox(IPC.createProject, (name: string) => boxCreateProject(name));
+  routeViaBox(IPC.openSession, (slug: string) => openProjectSession(slug));
+
+  // The picker FIRST, then the gate — the same split `updateBox` makes around
+  // its confirmation, and for the same two reasons. A file picker is a human
+  // decision with no deadline, and the gate is single-file: held across it, one
+  // Sandbox User who wandered off mid-browse would freeze every Box channel in
+  // the Launcher. And on the other side of it, a Box that is stopped would have
+  // to be brought up — minutes of nothing — before the picker they clicked for
+  // even appeared. Nothing crosses until files are chosen, so nothing needs the
+  // Box until then either.
+  route(IPC.upload, async (slug: string) => {
+    const files = await pickFiles();
+    return files.length === 0 ? [] : viaBox(() => boxUpload(files, slug));
   });
 
-  // Delete Project. The Box must be up to measure the Project, and the sheet
-  // this feeds is the last thing standing between a click and permanent loss —
-  // so it reports the Exported copies that will SURVIVE as well as what won't.
-  ipcMain.handle(IPC.planDelete, async (_e, slug: string): Promise<DeleteListing> => {
-    await ensureBoxReady(hostBoxDefinitionDir());
-    const { project } = await boxFindProject(slug);
-    const [usage, exportDir] = await Promise.all([
-      boxProjectUsage(slug),
-      boxExportDir(slug, exportRoot()),
-    ]);
-    const saved = statSync(exportDir, { throwIfNoEntry: false });
+  routeViaBox(IPC.listExportFiles, (slug: string) => boxExportListing(slug, exportRoot()));
 
-    return {
-      slug,
-      name: project.name,
-      ...usage, // absent when the probe failed — the sheet says so rather than showing "0 files"
-      exportDir,
-      ...(saved ? { lastSaved: saved.mtimeMs } : {}),
-    };
+  // `pick` comes from the renderer, so it is input rather than truth: boxExport
+  // re-enumerates the Project inside the Box and re-runs the allowlist over every
+  // ticked path before a byte is copied.
+  routeViaBox(IPC.saveToComputer, (slug: string, pick: string[]) =>
+    boxExport(slug, exportRoot(), pick),
+  );
+
+  // Needs the Box for the landing folder's name, which lives in metadata inside it.
+  routeViaBox(IPC.showSavedFiles, async (slug: string): Promise<SavedFolder> => {
+    const dir = await boxExportDir(slug, exportRoot());
+    const stat = statSync(dir, { throwIfNoEntry: false });
+    if (!stat) return { dir, opened: false }; // never saved — nothing to show yet
+    await shell.openPath(dir);
+    // ponytail: "last saved" is the folder's mtime, which Finder also bumps when
+    // it drops a .DS_Store in. Write a stamp file if the drift ever matters.
+    return { dir, opened: true, lastSaved: stat.mtimeMs };
   });
 
-  // The typed name arrives from the renderer, so it is input rather than truth:
-  // it is re-checked here against the Project's real name inside the Box before
-  // anything is removed, exactly as `saveToComputer` re-validates its selection.
-  // A renderer bug (or a stale sheet naming a Project that has since been
-  // renamed) must not be able to delete the wrong thing.
-  ipcMain.handle(IPC.deleteProject, async (_e, slug: string, typed: string) => {
-    await ensureBoxReady(hostBoxDefinitionDir());
-    const { project } = await boxFindProject(slug);
-    if (!confirmsProjectName(typed ?? "", project.name)) {
-      throw new Error(`That isn't the name of this project, so nothing was deleted.`);
-    }
-    return boxDeleteProject(slug);
+  // Picker outside the gate, measurement inside it — see `IPC.upload` above.
+  route(IPC.planImport, async () => {
+    const folder = await pickFolder();
+    return folder === undefined ? undefined : viaBox(() => boxPlanImport(folder));
   });
+
+  // The folder path comes from the sheet the plan above produced, but the
+  // copy re-measures it rather than trusting those numbers back.
+  routeViaBox(IPC.importFolder, (folder: string) => boxImportFolder(folder));
+
+  // Publishing runs two ephemeral containers off the Box image, so the image has
+  // to exist — the same reason Export brings the Box up first.
+  routeViaBox(IPC.saveToGithub, (slug: string) => saveToGithub(slug));
+
+  routeViaBox(IPC.planDelete, (slug: string) => boxDeleteListing(slug, exportRoot()));
+  routeViaBox(IPC.deleteProject, (slug: string, typed: string) => boxDeleteProject(slug, typed));
 }

@@ -4,7 +4,10 @@
  *
  * This module generates the ordered firewall rule-set as pure data so the
  * policy can be asserted in tests. `box/egress/apply-egress.sh` renders these
- * same rules with the real `iptables` binary inside the Box.
+ * same rules with the real `iptables` binary inside the Box — it must, since the
+ * Box's start-up cannot import TypeScript. The two are held together by the
+ * drift test in `test/egress.test.ts`, which compares that script's rules
+ * against these ones IN ORDER (order is the policy, see below).
  */
 
 /**

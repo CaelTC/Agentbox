@@ -5,7 +5,7 @@ import { shell } from "electron";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ENGINE_CLI } from "../src/core/config";
 import { mustSucceed, run } from "../src/main/exec";
-import { openProjectSession } from "../src/main/session";
+import { openProjectSession, updateClaudeCode } from "../src/main/session";
 
 /**
  * The Windows session-window branch (issue #10). `openProjectSession` takes an
@@ -15,9 +15,11 @@ import { openProjectSession } from "../src/main/session";
  * manual testing and only misbehave at close time — so it is pinned here.
  */
 
-vi.mock("../src/main/exec", () => ({
+// `failureMessage` and `spawnPath` stay REAL: the funnel now goes through the
+// Box-exec seam, which builds its errors and its PATH out of them.
+vi.mock("../src/main/exec", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/main/exec")>()),
   run: vi.fn(),
-  runOk: vi.fn(),
   mustSucceed: vi.fn(),
 }));
 
@@ -98,10 +100,11 @@ describe("openProjectSession on Windows, Chrome present", () => {
     // `child` never emits close/exit — chrome.exe stays up for the whole session.
     expect(await settledOrPending(openProjectSession("demo", "win32"))).toBe("settled");
 
-    // Nothing went through exec.ts's run(): rewriting this branch as
-    // `await run(launch.command, launch.args)` would block until the user
-    // closes the window and fire the fallback at close time, not failure time.
-    expect(run).not.toHaveBeenCalled();
+    // Chrome itself never went through exec.ts's run() — only the funnel, via
+    // the Box-exec seam. Rewriting this branch as `await run(launch.command,
+    // launch.args)` would block until the user closes the window and fire the
+    // fallback at close time, not failure time.
+    expect(calls).toEqual([`${ENGINE_CLI} exec claudebox claudebox-session demo`]);
     expect(shell.openExternal).not.toHaveBeenCalled();
   });
 
@@ -140,10 +143,53 @@ describe("openProjectSession on the Mac — unchanged (issue #10)", () => {
   });
 
   it("falls back to the default browser when `open` exits non-zero", async () => {
-    vi.mocked(run).mockResolvedValue({ code: 1, stdout: "", stderr: "no Chrome" });
+    // Only `open` fails: the funnel runs through the Box-exec seam now, and a
+    // funnel that failed would (correctly) stop this before any window opened.
+    vi.mocked(run).mockImplementation(async (c, a) => {
+      calls.push([c, ...a].join(" "));
+      return c === "open" ? { code: 1, stdout: "", stderr: "no Chrome" } : ok;
+    });
 
     await openProjectSession("demo", "darwin");
 
     expect(shell.openExternal).toHaveBeenCalledWith(URL);
+  });
+});
+
+/**
+ * The funnel crosses the Box-exec seam like everything else that reaches a
+ * running Box — so a Box that cannot start the session says so, in the Box's
+ * terms, instead of handing the Sandbox User a raw `docker exec` line.
+ */
+describe("openProjectSession when the funnel fails", () => {
+  it("names the operation rather than the docker argv, and opens no window", async () => {
+    vi.mocked(run).mockResolvedValue({ code: 1, stdout: "", stderr: "no such container" });
+
+    await expect(openProjectSession("demo", "darwin")).rejects.toThrow(
+      /Opening the 'demo' session failed.*no such container/s,
+    );
+    expect(shell.openExternal).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The best-effort contract, spelled out at the call site now that `runOk` is
+ * gone. `bootstrap` awaits this INSIDE the try that reports "Couldn't start
+ * Claudebox", so anything that escapes here turns a skippable Claude Code
+ * update into a failed launch.
+ */
+describe("updateClaudeCode is best effort", () => {
+  it("is false, not a throw, when the Engine cannot even be spawned", async () => {
+    vi.mocked(run).mockRejectedValue(new Error("spawn docker ENOENT"));
+    await expect(updateClaudeCode()).resolves.toBe(false);
+  });
+
+  it("is false when the update ran and failed (offline registry)", async () => {
+    vi.mocked(run).mockResolvedValue({ code: 1, stdout: "", stderr: "ETIMEDOUT" });
+    await expect(updateClaudeCode()).resolves.toBe(false);
+  });
+
+  it("is true on a clean update", async () => {
+    await expect(updateClaudeCode()).resolves.toBe(true);
   });
 });

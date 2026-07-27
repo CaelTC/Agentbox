@@ -30,8 +30,9 @@ param()
 
 $ErrorActionPreference = 'Stop'
 
-# The single source of truth for the public definition repo. HTTPS, no auth.
-# Keep in step with launcher/src/core/config.ts (DEFINITION_REPO).
+# The public definition repo. HTTPS, no auth. A copy of DEFINITION_REPO in
+# launcher/src/core/config.ts - as are $PodmanMachine, $BoxImage and the Cap
+# below. launcher/test/config.test.ts fails if any of them drifts.
 $DefinitionRepo = 'https://github.com/CaelTC/Claudebox.git'
 
 $ClaudeboxHome = if ($env:CLAUDEBOX_HOME) { $env:CLAUDEBOX_HOME }
@@ -48,8 +49,8 @@ $ProgramsDir = if ($env:CLAUDEBOX_PROGRAMS) { $env:CLAUDEBOX_PROGRAMS }
 $LauncherFolder = 'Claudebox-win32-x64'
 $LauncherExe = 'Claudebox.exe'
 
-# The Engine. Keep in step with launcher/src/core/config.ts (ENGINE_PROFILE,
-# BOX_IMAGE) and core/podman.ts (the init flags).
+# The Engine. ENGINE_PROFILE and BOX_IMAGE from launcher/src/core/config.ts; the
+# init flags mirror main/podman.ts.
 $PodmanMachine = 'claudebox'
 $BoxImage = 'claudebox:latest'
 
@@ -206,7 +207,7 @@ Installer" - install that from the Microsoft Store and run this script again.
 # every WSL distro on the machine, not per-machine, and there is NO disk ceiling:
 # podman's WSL provider grows a dynamic VHDX. So CONTEXT.md's "the Box can
 # never grow past a known ceiling on the host" is not yet true here (the same
-# limit is recorded in launcher/src/core/podman.ts, and in ADR 0004, issue 3/3).
+# limit is recorded in launcher/src/main/podman.ts, and in ADR 0004, issue 3/3).
 function Write-WslConfig {
   $path = Join-Path $env:USERPROFILE '.wslconfig'
   $marker = '# Written by Claudebox install.ps1 - the Resource Cap (CONTEXT.md).'
@@ -261,11 +262,11 @@ function Get-Definition {
 # create-or-start in one command where podman splits init from start. Rootless
 # podman is exactly where the namespaced net.ipv6 sysctls get rejected and where
 # pasta/slirp4netns move the gateway and resolver that apply-egress.sh discovers
-# (see core/podman.ts), so rootful is not optional here.
+# (see main/podman.ts), so rootful is not optional here.
 function Start-Machine {
   if ((Invoke-Probe { podman machine inspect $PodmanMachine }) -ne 0) {
     Write-Log "Creating the podman machine '$PodmanMachine' at the Resource Cap..."
-    # podman machine's --memory is MiB where colima's is GiB (core/podman.ts).
+    # podman machine's --memory is MiB where colima's is GiB (main/podman.ts).
     $memoryMiB = $CapMemoryGiB * 1024
     Invoke-Checked {
       podman machine init `
@@ -293,7 +294,7 @@ function Start-Machine {
 }
 
 # `--format` leaves podman to parse its own JSON and print the state alone, as
-# core/podman.ts's podmanMachineInspectArgs does. A missing machine exits
+# main/podman.ts's podmanMachineInspectArgs does. A missing machine exits
 # non-zero, which must read as "not running" rather than fail the install - and
 # it reaches that non-zero only because the preference is relaxed around the
 # call: a missing machine writes to stderr, and this redirects stderr, which is

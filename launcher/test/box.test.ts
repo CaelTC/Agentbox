@@ -1,22 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   assertNoHostMounts,
-  boxBuildArgs,
   boxRunArgs,
   boxUpdateClaudeArgs,
   isHostMount,
 } from "../src/core/box";
-
-describe("boxBuildArgs", () => {
-  it("builds the Box image from a context directory", () => {
-    expect(boxBuildArgs({ contextDir: "/opt/claudebox/box", image: "claudebox:latest" })).toEqual([
-      "build",
-      "-t",
-      "claudebox:latest",
-      "/opt/claudebox/box",
-    ]);
-  });
-});
 
 describe("boxRunArgs", () => {
   const args = boxRunArgs();

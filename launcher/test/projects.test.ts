@@ -1,19 +1,6 @@
-import { existsSync, mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { beforeEach, describe, expect, it } from "vitest";
-import {
-  assertValidSlug,
-  createProject,
-  listProjects,
-  resolveProjectDir,
-  sanitizeProjectName,
-} from "../src/core/projects";
-
-let ws: string;
-beforeEach(() => {
-  ws = mkdtempSync(join(tmpdir(), "claudebox-ws-"));
-});
+import { describe, expect, it } from "vitest";
+import { SLUG_RE, assertValidSlug, sanitizeProjectName } from "../src/core/projects";
+import { repoFile } from "./repo-file";
 
 describe("sanitizeProjectName", () => {
   it("slugifies a friendly name", () => {
@@ -45,56 +32,55 @@ describe("assertValidSlug (Box-side shell-injection guard)", () => {
   });
 });
 
-describe("createProject", () => {
-  it("creates the Project as its own folder in the Workspace", () => {
-    const p = createProject(ws, "Guessing Game");
-    expect(p.slug).toBe("guessing-game");
-    expect(p.dir).toBe(join(ws, "guessing-game"));
-    expect(existsSync(p.dir)).toBe(true);
+describe("the slug shape's three copies", () => {
+  // The slug is the name that gets interpolated into Box-side shell commands and
+  // resolved into Workspace paths, so the Box has to enforce the same shape the
+  // Launcher does — in Python, where it cannot import SLUG_RE. Both semantics are
+  // tested on their own side (above, and box/terminal/test_paths.py); nothing but
+  // this checks the three patterns are the SAME pattern. A slack copy in the Box
+  // accepts a name the Launcher would never produce.
+  const boxFile = (...parts: string[]) => repoFile("box", ...parts);
+
+  /**
+   * The pattern of a `SLUG_RE = re.compile(r"…")` in a Python source file. Anchored
+   * to the start of its line, so an unrelated `MY_SLUG_RE` elsewhere in the file
+   * cannot be the thing this test reads while the real one drifts.
+   */
+  function pythonSlugPattern(source: string, where: string): string {
+    const found = source.match(/^\s*_?SLUG_RE\s*=\s*re\.compile\(r"([^"]+)"\)/m);
+    expect(found, `${where} no longer compiles a SLUG_RE`).not.toBeNull();
+    return found![1];
+  }
+
+  /**
+   * HOW the copy applies its pattern, which the pattern text cannot say. Python's
+   * `$` matches just before a trailing newline as well as at the end of the
+   * string, so `SLUG_RE.match("demo\n")` succeeds where the Launcher's identical
+   * JavaScript pattern fails — the same regex, silently slacker on the Box side.
+   * `fullmatch` is what makes the two agree.
+   */
+  function pythonSlugMatcher(source: string, where: string): string {
+    const found = source.match(/^\s*(?:if not |return bool\()_?SLUG_RE\.(\w+)\(/m);
+    expect(found, `${where} no longer applies its SLUG_RE`).not.toBeNull();
+    return found![1];
+  }
+
+  it("box/bin/claudebox-session guards the slug with core/projects.ts's regex", () => {
+    const source = boxFile("bin", "claudebox-session");
+    expect(pythonSlugPattern(source, "claudebox-session")).toBe(SLUG_RE.source);
+    expect(pythonSlugMatcher(source, "claudebox-session")).toBe("fullmatch");
   });
 
-  it("preserves the display name", () => {
-    expect(createProject(ws, "Guessing Game").name).toBe("Guessing Game");
+  it("box/terminal/paths.py rejects the same slugs core/projects.ts does", () => {
+    const source = boxFile("terminal", "paths.py");
+    expect(pythonSlugPattern(source, "paths.py")).toBe(SLUG_RE.source);
+    expect(pythonSlugMatcher(source, "paths.py")).toBe("fullmatch");
   });
 
-  it("refuses to create two Projects at the same folder", () => {
-    createProject(ws, "Report");
-    expect(() => createProject(ws, "report")).toThrow(/exists/i);
-  });
-});
-
-describe("listProjects", () => {
-  it("is empty for a fresh Workspace", () => {
-    expect(listProjects(ws)).toEqual([]);
-  });
-
-  it("lists created Projects, keeping their files separate", () => {
-    createProject(ws, "Alpha");
-    createProject(ws, "Beta");
-    writeFileSync(join(ws, "alpha", "a.txt"), "a");
-    writeFileSync(join(ws, "beta", "b.txt"), "b");
-
-    const slugs = listProjects(ws).map((p) => p.slug).sort();
-    expect(slugs).toEqual(["alpha", "beta"]);
-    expect(existsSync(join(ws, "alpha", "b.txt"))).toBe(false);
-  });
-
-  it("ignores non-directories and dotfiles at the Workspace root", () => {
-    createProject(ws, "Real");
-    writeFileSync(join(ws, "loose.txt"), "x");
-    mkdirSync(join(ws, ".hidden"));
-    expect(listProjects(ws).map((p) => p.slug)).toEqual(["real"]);
-  });
-});
-
-describe("resolveProjectDir", () => {
-  it("returns the Project directory for a valid slug", () => {
-    createProject(ws, "Demo");
-    expect(resolveProjectDir(ws, "demo")).toBe(join(ws, "demo"));
-  });
-
-  it("refuses to resolve outside the Workspace (defence in depth)", () => {
-    expect(() => resolveProjectDir(ws, "../secrets")).toThrow();
-    expect(() => resolveProjectDir(ws, "/etc")).toThrow();
+  it("rejects a trailing newline on every copy — the divergence `$` hides", () => {
+    // Asserted from the JavaScript side here and from the Python side in
+    // box/terminal/test_paths.py; the `fullmatch` checks above are what carry it
+    // across to the two copies this file can only read as text.
+    expect(SLUG_RE.test("demo\n")).toBe(false);
   });
 });

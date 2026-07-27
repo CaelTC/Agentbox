@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { runPipe, spawnPath } from "../src/main/exec";
+import { run, spawnPath } from "../src/main/exec";
 
 const allExist = () => true;
 const noneExist = () => false;
@@ -25,52 +25,35 @@ describe("spawnPath", () => {
   });
 });
 
-describe("runPipe", () => {
-  // The precedence rule below is the whole reason this function was rewritten:
-  // Import shipped once reporting success on a copy that moved nothing.
-  it("reports the FIRST stage's failure even when the second exits 0", async () => {
-    const res = await runPipe(
-      { command: "sh", args: ["-c", "printf partial; exit 3"] },
-      { command: "cat", args: [] },
-    );
-    expect(res.code).toBe(3);
+/**
+ * The deadline (#26). Every command against the running Box carries one, because
+ * the Box Gate is single-file: a `docker exec` that never returns — Claude having
+ * SIGSTOPped the sandbox's tmux server is enough — is not one dead operation but
+ * every Box channel dead for the life of the Launcher, Update Claudebox included.
+ *
+ * Real processes, because what is being asserted is that a child which IGNORES
+ * the polite signal still dies and still settles.
+ */
+describe("run's deadline", () => {
+  it("kills a child that never exits — even one that ignores SIGTERM — and settles", async () => {
+    const started = Date.now();
+    const res = await run("sh", ["-c", "trap '' TERM; while :; do sleep 0.2; done"], undefined, 150);
+
+    expect(res.code).not.toBe(0);
+    expect(res.stderr).toContain("timed out after 150ms");
+    // It went the whole way to SIGKILL: the SIGTERM at 150ms was ignored.
+    expect(Date.now() - started).toBeGreaterThan(1_000);
+  }, 20_000);
+
+  it("leaves a command that finishes inside the deadline alone", async () => {
+    expect(await run("sh", ["-c", "printf hi"], undefined, 10_000)).toMatchObject({
+      code: 0,
+      stdout: "hi",
+      stderr: "",
+    });
   });
 
-  it("reports the second stage's failure when the first is clean", async () => {
-    const res = await runPipe(
-      { command: "sh", args: ["-c", "printf ok"] },
-      { command: "sh", args: ["-c", "cat >/dev/null; exit 4"] },
-    );
-    expect(res.code).toBe(4);
+  it("has no deadline at all when none is asked for (the copies)", async () => {
+    expect(await run("sh", ["-c", "printf hi"])).toMatchObject({ code: 0, stdout: "hi" });
   });
-
-  it("succeeds and returns the second stage's stdout when both are clean", async () => {
-    const res = await runPipe({ command: "cat", args: [] }, { command: "cat", args: [] }, "hello");
-    expect(res.code).toBe(0);
-    expect(res.stdout).toBe("hello");
-  });
-
-  // A second stage that exits before reading makes the pipe write EPIPE. An
-  // unlistened 'error' takes the Launcher's main process down — and merely
-  // swallowing it is not enough either: the first stage then blocks forever on
-  // a buffer nobody drains, so this test hangs rather than fails if that
-  // teardown regresses. Resolving at all IS the assertion.
-  it("survives the second stage exiting without reading its input", async () => {
-    const res = await runPipe(
-      { command: "sh", args: ["-c", "printf 'x%.0s' $(seq 1 200000)"] },
-      { command: "sh", args: ["-c", "exit 0"] },
-    );
-    expect(typeof res.code).toBe("number");
-  }, 5_000);
-
-  // The mirror case: a first stage that exits without reading its stdin. EPIPE
-  // lands on the write side instead, and is just as fatal unlistened.
-  it("survives the first stage exiting without reading its input", async () => {
-    const res = await runPipe(
-      { command: "sh", args: ["-c", "exit 5"] },
-      { command: "cat", args: [] },
-      "x".repeat(200_000),
-    );
-    expect(res.code).toBe(5);
-  }, 5_000);
 });

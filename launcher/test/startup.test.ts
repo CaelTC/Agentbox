@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { startupPlan, type BoxState } from "../src/core/startup";
 
 const state = (over: Partial<BoxState> = {}): BoxState => ({
-  colimaRunning: false,
+  engineRunning: false,
   imageBuilt: false,
   containerExists: false,
   containerRunning: false,
@@ -10,9 +10,9 @@ const state = (over: Partial<BoxState> = {}): BoxState => ({
 });
 
 describe("startupPlan", () => {
-  it("from cold: start Colima, build the image, run the Box, then attach — in order", () => {
+  it("from cold: start the Engine, build the image, run the Box, then attach — in order", () => {
     expect(startupPlan(state())).toEqual([
-      "start-colima",
+      "start-engine",
       "build-image",
       "run-box",
       "attach",
@@ -22,20 +22,20 @@ describe("startupPlan", () => {
   it("when everything is already up, just attach (fast reopen — ticket 04 AC)", () => {
     expect(
       startupPlan(
-        state({ colimaRunning: true, imageBuilt: true, containerExists: true, containerRunning: true }),
+        state({ engineRunning: true, imageBuilt: true, containerExists: true, containerRunning: true }),
       ),
     ).toEqual(["attach"]);
   });
 
-  it("skips the Colima start when Colima is already running", () => {
-    const plan = startupPlan(state({ colimaRunning: true }));
-    expect(plan).not.toContain("start-colima");
+  it("skips the Engine start when the Engine is already running", () => {
+    const plan = startupPlan(state({ engineRunning: true }));
+    expect(plan).not.toContain("start-engine");
     expect(plan[0]).toBe("build-image");
   });
 
   it("restarts an EXISTING stopped container instead of rebuilding (preserves login)", () => {
     const plan = startupPlan(
-      state({ colimaRunning: true, imageBuilt: true, containerExists: true }),
+      state({ engineRunning: true, imageBuilt: true, containerExists: true }),
     );
     expect(plan).toEqual(["start-box", "attach"]);
     expect(plan).not.toContain("run-box");
@@ -43,7 +43,7 @@ describe("startupPlan", () => {
   });
 
   it("runs a fresh Box when the image exists but no container does", () => {
-    const plan = startupPlan(state({ colimaRunning: true, imageBuilt: true }));
+    const plan = startupPlan(state({ engineRunning: true, imageBuilt: true }));
     expect(plan).toEqual(["run-box", "attach"]);
   });
 
@@ -56,7 +56,7 @@ describe("startupPlan", () => {
 
   it("if the container is running, no rebuild and no restart", () => {
     const plan = startupPlan(
-      state({ colimaRunning: true, containerExists: true, containerRunning: true }),
+      state({ engineRunning: true, containerExists: true, containerRunning: true }),
     );
     expect(plan).not.toContain("build-image");
     expect(plan).not.toContain("run-box");

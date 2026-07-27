@@ -1,8 +1,9 @@
 import { existsSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFINITION_REPO } from "../src/core/config";
+import type { RefreshResult } from "../src/core/refresh";
 import { run } from "../src/main/exec";
-import { refreshOnLaunch } from "../src/main/refresh-runner";
+import { refreshOnLaunch, updateClaudebox, type UpdateSteps } from "../src/main/refresh-runner";
 
 /**
  * The definition has to be ON the host before it can be pulled. Every install
@@ -15,7 +16,7 @@ import { refreshOnLaunch } from "../src/main/refresh-runner";
  * last-built image and says nothing. So the clone is pinned here.
  */
 
-vi.mock("../src/main/exec", () => ({ run: vi.fn(), runOk: vi.fn(), mustSucceed: vi.fn() }));
+vi.mock("../src/main/exec", () => ({ run: vi.fn(), mustSucceed: vi.fn() }));
 
 vi.mock("node:fs", async (importOriginal) => ({
   ...(await importOriginal<typeof import("node:fs")>()),
@@ -91,5 +92,77 @@ describe("fetchDefinition (via refreshOnLaunch)", () => {
 
     expect(result.online).toBe(false);
     expect(calls().some((c) => c.includes("build"))).toBe(false);
+  });
+});
+
+/**
+ * "Update Claudebox" on the home screen. This used to live inside the IPC
+ * handler, closed over the BrowserWindow, so the one thing it must get right —
+ * only a REBUILT definition may end an open Claude session — could not be
+ * asserted at all. The lifecycle is an argument now, so it can be.
+ */
+describe("updateClaudebox", () => {
+  const rebuilt: RefreshResult = { action: "rebuilt", reason: "changed upstream", online: true };
+
+  interface Recorded extends UpdateSteps {
+    readonly calls: string[];
+  }
+
+  function fakeSteps(result: RefreshResult, claudeUpdated = true): Recorded {
+    const calls: string[] = [];
+    const step = <T>(name: string, value: T) => async (): Promise<T> => {
+      calls.push(name);
+      return value;
+    };
+    return {
+      calls,
+      refresh: step("refresh", result),
+      ensureEngine: step("ensureEngine", undefined),
+      removeBoxContainer: step("removeBoxContainer", undefined),
+      ensureBoxReady: step("ensureBoxReady", undefined),
+      updateClaudeCode: step("updateClaudeCode", claudeUpdated),
+    };
+  }
+
+  it("recreates the Box on the new image and re-updates Claude, in that order", async () => {
+    const steps = fakeSteps(rebuilt);
+
+    const message = await updateClaudebox(steps);
+
+    expect(steps.calls).toEqual([
+      "ensureEngine", // the build needs the Engine, exactly as at launch
+      "refresh",
+      "removeBoxContainer", // a rebuilt image does nothing while the old one runs
+      "ensureBoxReady",
+      "updateClaudeCode", // the image's npm layer can be months stale
+    ]);
+    expect(message).toMatch(/up to date.*restarted/);
+  });
+
+  // The recreate ends every open Claude session. Being told "already up to date"
+  // and losing your work to it anyway is the failure this guards.
+  it("restarts NOTHING when there was nothing new to build", async () => {
+    const steps = fakeSteps({ action: "started", reason: "unchanged", online: true });
+
+    const message = await updateClaudebox(steps);
+
+    expect(steps.calls).toEqual(["ensureEngine", "refresh"]);
+    expect(message).toBe("Claudebox is already up to date.");
+  });
+
+  it("passes the integrity gate's own words through when it refuses to build", async () => {
+    const steps = fakeSteps({ action: "blocked", reason: "origin is not the public repo", online: true });
+
+    expect(await updateClaudebox(steps)).toBe("origin is not the public repo");
+    expect(steps.calls).not.toContain("removeBoxContainer");
+  });
+
+  // Best effort by design: the version baked into the freshly-built image still
+  // works, so a slow registry must not turn a successful update into a failure.
+  it("still reports the update when the Claude Code refresh could not run", async () => {
+    const steps = fakeSteps(rebuilt, false);
+
+    expect(await updateClaudebox(steps)).toMatch(/up to date/);
+    expect(steps.calls).toContain("updateClaudeCode");
   });
 });

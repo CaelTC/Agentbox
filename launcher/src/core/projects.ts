@@ -1,11 +1,8 @@
-import { existsSync, mkdirSync, readdirSync, writeFileSync, readFileSync } from "node:fs";
-import { join, resolve, sep } from "node:path";
-
 /**
  * Projects (ticket 05): each Project is its own folder in the Workspace and
- * persists. This module owns naming, creation, listing, and — critically —
- * keeping every Project path inside the Workspace (defence in depth on top of
- * the container boundary).
+ * persists. This module owns Project naming and metadata; the Workspace itself
+ * lives on a named volume inside the Box, so creating and listing Projects is
+ * brokered there (main/workspace.ts), not on the host filesystem.
  */
 export interface Project {
   /** The friendly name the Sandbox User typed. */
@@ -16,7 +13,7 @@ export interface Project {
   readonly dir: string;
 }
 
-/** Persisted per-Project metadata. Shared by the host-FS and Box-brokered paths. */
+/** Persisted per-Project metadata, written into the Box by main/workspace.ts. */
 export interface ProjectMeta {
   name: string;
   slug: string;
@@ -62,7 +59,12 @@ export function sanitizeProjectName(raw: string): string {
   return slug;
 }
 
-/** The exact shape sanitizeProjectName produces: lowercase a–z / 0–9 / single dashes. */
+/**
+ * The exact shape sanitizeProjectName produces: lowercase a–z / 0–9 / single
+ * dashes. The Box enforces the same shape in Python, where this cannot be
+ * imported (`box/bin/claudebox-session`, `box/terminal/paths.py`);
+ * `test/projects.test.ts` compares all three patterns as text.
+ */
 export const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 /**
@@ -78,70 +80,3 @@ export function assertValidSlug(slug: string): string {
   return slug;
 }
 
-/** Safely resolve a Project slug to a directory, refusing anything outside the Workspace. */
-export function resolveProjectDir(workspaceDir: string, slug: string): string {
-  const base = resolve(workspaceDir);
-  const dir = resolve(base, slug);
-  if (dir !== join(base, slug) || !(dir === base || dir.startsWith(base + sep))) {
-    throw new Error(`Refusing to resolve '${slug}' outside the Workspace.`);
-  }
-  return dir;
-}
-
-export interface CreateProjectOptions {
-  /** Optional first prompt to seed (used by Project Import, ticket 09). */
-  seedPrompt?: string;
-}
-
-export function createProject(
-  workspaceDir: string,
-  name: string,
-  options: CreateProjectOptions = {},
-): Project {
-  const slug = sanitizeProjectName(name);
-  const dir = resolveProjectDir(workspaceDir, slug);
-
-  if (existsSync(dir)) {
-    throw new Error(`A Project already exists at '${slug}'.`);
-  }
-  mkdirSync(dir, { recursive: true });
-
-  const metaDir = join(dir, META_DIR);
-  mkdirSync(metaDir, { recursive: true });
-  writeFileSync(
-    join(metaDir, META_FILE),
-    serializeProjectMeta({ name, slug, seedPrompt: options.seedPrompt }),
-  );
-
-  return { name, slug, dir };
-}
-
-function readMeta(dir: string): ProjectMeta | undefined {
-  const path = join(dir, META_DIR, META_FILE);
-  if (!existsSync(path)) return undefined;
-  return parseProjectMeta(readFileSync(path, "utf8"));
-}
-
-/** List Projects in the Workspace, newest naming preserved. Ignores loose files and dotfiles. */
-export function listProjects(workspaceDir: string): Project[] {
-  const base = resolve(workspaceDir);
-  if (!existsSync(base)) return [];
-
-  return readdirSync(base, { withFileTypes: true })
-    .filter((e) => e.isDirectory() && !e.name.startsWith("."))
-    .map((e) => {
-      const dir = join(base, e.name);
-      const meta = readMeta(dir);
-      return {
-        name: meta?.name ?? e.name,
-        slug: e.name,
-        dir,
-      } satisfies Project;
-    })
-    .sort((a, b) => a.slug.localeCompare(b.slug));
-}
-
-/** Read a Project's seeded first prompt, if any (ticket 08). */
-export function projectSeedPrompt(workspaceDir: string, slug: string): string | undefined {
-  return readMeta(resolveProjectDir(workspaceDir, slug))?.seedPrompt;
-}

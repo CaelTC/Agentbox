@@ -2,17 +2,18 @@ import { spawn } from "node:child_process";
 import { shell } from "electron";
 import { BOX_CONTAINER, BOX_IMAGE, ENGINE_CLI } from "../core/config";
 import { boxRunArgs, boxUpdateClaudeArgs } from "../core/box";
-import { chromeAppLaunch, ensureSessionExecArgs, sessionUrl } from "../core/session-window";
-import { startEngine } from "./engine";
+import { chromeAppLaunch, ensureSessionArgs, sessionUrl } from "../core/session-window";
+import { boxExec, type BoxExec } from "./box-exec";
+import { engine } from "./engine";
 import { inspectBoxState } from "./environment";
-import { mustSucceed, run, runOk } from "./exec";
+import { mustSucceed, run } from "./exec";
 import { startupPlan, type StartupStep } from "../core/startup";
 
 /** Start the Engine at the Resource Cap if it isn't already up (needed before any engine call). */
 export async function ensureEngine(): Promise<void> {
   const state = await inspectBoxState();
-  if (!state.colimaRunning) {
-    await startEngine();
+  if (!state.engineRunning) {
+    await engine.start();
   }
 }
 
@@ -40,8 +41,8 @@ export async function ensureBoxReady(boxDefinitionDir: string): Promise<void> {
 
 async function runStep(step: StartupStep, boxDefinitionDir: string): Promise<void> {
   switch (step) {
-    case "start-colima":
-      await startEngine();
+    case "start-engine":
+      await engine.start();
       return;
     case "build-image":
       await mustSucceed(ENGINE_CLI, ["build", "-t", BOX_IMAGE, boxDefinitionDir]);
@@ -63,9 +64,21 @@ async function runStep(step: StartupStep, boxDefinitionDir: string): Promise<voi
  * (not backgrounded) so no Project session can start mid-install. Best effort by
  * design: offline, a slow registry or a bad publish must never stop the Box from
  * opening — the version baked into the image keeps working.
+ *
+ * Hence the `catch`, spelled out here rather than hidden in a wrapper: bootstrap
+ * calls this inside the try that reports "Couldn't start Claudebox", so a
+ * rejected spawn (no engine on a Finder-launched PATH) would turn a skippable
+ * update into a fatal launch. Every way this can go wrong is one `false`.
+ *
+ * The Box-exec seam's ONE documented exception (main/box-exec.ts): it runs as
+ * root, it is best-effort, and it carries its own in-Box `timeout 180`, which is
+ * longer than the seam's deadline. The host-side deadline here is the backstop
+ * that in-Box `timeout` cannot be — it does nothing for a `docker exec` that
+ * never returns, and this one runs holding the Box Gate.
  */
 export async function updateClaudeCode(): Promise<boolean> {
-  return runOk(ENGINE_CLI, boxUpdateClaudeArgs());
+  const res = await run(ENGINE_CLI, boxUpdateClaudeArgs(), undefined, 240_000).catch(() => null);
+  return res?.code === 0;
 }
 
 /**
@@ -78,8 +91,12 @@ export async function updateClaudeCode(): Promise<boolean> {
 export async function openProjectSession(
   slug: string,
   platform: NodeJS.Platform = process.platform,
+  box: BoxExec = boxExec,
 ): Promise<void> {
-  await mustSucceed(ENGINE_CLI, ensureSessionExecArgs(slug));
+  // Through the Box-exec seam like every other command against a running Box:
+  // the router brings the Box up before this channel's target runs, so there is
+  // nothing here that has to reach past it.
+  await box.exec(ensureSessionArgs(slug), `Opening the '${slug}' session`);
   const url = sessionUrl(slug);
   const launch = chromeAppLaunch(url, platform);
   if (!launch) {
@@ -113,9 +130,9 @@ export async function openProjectSession(
  * Named volumes (Workspace, Claude login) survive the stop.
  */
 export function stopBoxDetached(): void {
-  try {
-    spawn(ENGINE_CLI, ["stop", BOX_CONTAINER], { detached: true, stdio: "ignore" }).unref();
-  } catch {
-    // Engine already gone — nothing to stop.
-  }
+  // Through the Box-exec seam, not a bare `spawn`: this used to lose the
+  // `spawnPath()` PATH fix every other Engine call gets, so from a Finder-
+  // launched Launcher it was "spawn docker ENOENT" — swallowed by a bare
+  // `catch {}`, with the Box left running and holding the Resource Cap.
+  boxExec.stopDetached();
 }

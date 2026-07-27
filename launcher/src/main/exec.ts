@@ -2,9 +2,21 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 
 /**
- * Thin promise wrapper over spawning `colima` / `docker`. The Launcher owns all
- * these invocations so the Sandbox User never sees a terminal or a Docker
- * command (ticket 04).
+ * Thin promise wrapper over spawning `colima` / `docker` / `git`. The Launcher
+ * owns all these invocations so the Sandbox User never sees a terminal or a
+ * Docker command (ticket 04).
+ *
+ * TWO contracts, and only two, because two are what more than one module shares:
+ * `run` (resolve the result, exit code included) and `mustSucceed` (throw its
+ * stderr on a non-zero exit). A caller for whom a non-zero exit is an ANSWER
+ * rather than a failure reads `.code` itself, at the call site, where the reason
+ * can be written down — that is a line, not a contract.
+ *
+ * `failureMessage` is the sentence both of those failures are reported as, and
+ * is exported because the Box-exec seam raises the same one about the Box.
+ *
+ * Anything with a single consumer lives with that consumer instead: `runPipe`
+ * moved to `main/box-exec.ts`, the only module that streams into the Box.
  */
 export interface RunResult {
   code: number;
@@ -34,15 +46,27 @@ export function spawnPath(
   return [...add, path].filter(Boolean).join(":");
 }
 
+/** How long a killed child is given to die politely before SIGKILL. */
+const KILL_GRACE_MS = 2_000;
+
 /**
  * `env` adds variables to the spawn's environment. The GitHub token travels this
  * way and never as an argument (ADR 0006): argv is world-readable in `ps`, so a
  * token on the command line is a token any process on the laptop can read.
+ *
+ * `timeoutMs` bounds how long the child may live. Without it a command that
+ * never exits never settles — and a `docker exec` into a Box whose tmux server
+ * Claude has just SIGSTOPped does exactly that, taking the Box Gate down with it
+ * for the life of the process: every Box-touching channel, Update Claudebox
+ * included, queues behind a promise that will never resolve. A timeout is
+ * SIGTERM, then SIGKILL after a grace, and resolves like any other failure —
+ * non-zero, with the deadline named in `stderr`, so callers need no new branch.
  */
 export function run(
   command: string,
   args: readonly string[],
   env?: Readonly<Record<string, string>>,
+  timeoutMs?: number,
 ): Promise<RunResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
@@ -51,94 +75,42 @@ export function run(
     });
     let stdout = "";
     let stderr = "";
+    let timedOut = false;
     child.stdout.on("data", (d) => (stdout += String(d)));
     child.stderr.on("data", (d) => (stderr += String(d)));
-    child.on("error", reject);
-    child.on("close", (code) => resolve({ code: code ?? -1, stdout, stderr }));
+
+    // SIGKILL after the grace because SIGTERM is ignorable and the whole point
+    // here is that 'close' — and so this promise — is guaranteed to arrive.
+    let kill: NodeJS.Timeout | undefined;
+    const deadline =
+      timeoutMs === undefined
+        ? undefined
+        : setTimeout(() => {
+            timedOut = true;
+            child.kill("SIGTERM");
+            kill = setTimeout(() => child.kill("SIGKILL"), KILL_GRACE_MS);
+          }, timeoutMs);
+    const done = () => (clearTimeout(deadline), clearTimeout(kill));
+
+    child.on("error", (err) => (done(), reject(err)));
+    child.on("close", (code) => {
+      done();
+      const note = timedOut ? `timed out after ${timeoutMs}ms` : "";
+      resolve({ code: timedOut ? -1 : (code ?? -1), stdout, stderr: stderr + note });
+    });
   });
+}
+
+/** The one sentence a failed command is reported as, here and at the Box-exec seam. */
+export function failureMessage(what: string, res: RunResult): string {
+  const detail = res.stderr.trim() || res.stdout.trim() || "no output";
+  return `${what} failed (exit ${res.code}): ${detail}`;
 }
 
 /** Run a command, throwing its stderr if it did not exit 0. */
 export async function mustSucceed(command: string, args: readonly string[]): Promise<void> {
   const res = await run(command, args);
   if (res.code !== 0) {
-    throw new Error(`\`${command} ${args.join(" ")}\` failed (exit ${res.code}): ${res.stderr}`);
+    throw new Error(failureMessage(`\`${command} ${args.join(" ")}\``, res));
   }
-}
-
-/** Run a command and resolve to true only on a clean (exit 0) run. */
-export async function runOk(command: string, args: readonly string[]): Promise<boolean> {
-  try {
-    return (await run(command, args)).code === 0;
-  } catch {
-    return false;
-  }
-}
-
-export interface PipeStage {
-  readonly command: string;
-  readonly args: readonly string[];
-}
-
-/**
- * Pipe `a`'s stdout into `b`'s stdin, spawned directly — no `sh -c`. Import
- * (ticket 09) is the first host-side command built from a user-chosen path
- * (the folder they picked); a shell there is a quoting hazard for nothing.
- *
- * `input` is written to `a`'s stdin and resolves with BOTH stages' stderr.
- */
-export function runPipe(a: PipeStage, b: PipeStage, input = ""): Promise<RunResult> {
-  return new Promise((promiseResolve, reject) => {
-    const env = { ...process.env, PATH: spawnPath() };
-    const first = spawn(a.command, a.args, { stdio: ["pipe", "pipe", "pipe"], env });
-    const second = spawn(b.command, b.args, { stdio: ["pipe", "pipe", "pipe"], env });
-
-    first.stdout.pipe(second.stdin);
-    // A write to a dead process's stdin raises EPIPE, and an 'error' with no
-    // listener takes the whole Launcher down. Both directions can hit it: `b`
-    // exiting before it has read the stream, and `a` exiting before it has read
-    // `input` (a `tar` that dies on a bad -C). Either child's non-zero exit is
-    // the real error; the stream error is noise on top of it.
-    second.stdin.on("error", () => {});
-    first.stdin.on("error", () => {});
-
-    let settled = false;
-    const fail = (err: Error) => {
-      if (settled) return;
-      settled = true;
-      reject(err);
-    };
-    first.on("error", fail);
-    second.on("error", fail);
-
-    let stdout = "";
-    let stderr = "";
-    second.stdout.on("data", (d) => (stdout += String(d)));
-    first.stderr.on("data", (d) => (stderr += String(d)));
-    second.stderr.on("data", (d) => (stderr += String(d)));
-
-    // BOTH exit codes matter, and `a`'s is reported first: a `tar` that dies
-    // mid-stream still leaves `docker cp` exiting 0 on the truncated archive it
-    // did receive, so checking only `b` reports a partial copy as a success.
-    let firstCode: number | null = null;
-    let secondCode: number | null = null;
-    const settle = () => {
-      if (settled || firstCode === null || secondCode === null) return;
-      settled = true;
-      promiseResolve({ code: firstCode !== 0 ? firstCode : secondCode, stdout, stderr });
-    };
-    first.on("close", (code) => ((firstCode = code ?? -1), settle()));
-    second.on("close", (code) => {
-      secondCode = code ?? -1;
-      // If `b` died before draining the stream, `a` is still writing into a
-      // buffer nobody will read, and blocks forever once it fills — this
-      // Promise would never settle, and the Import the user is watching would
-      // spin indefinitely. Closing the read end hands `a` the SIGPIPE a real
-      // shell pipeline would have. A no-op when `a` has already finished.
-      first.stdout.destroy();
-      settle();
-    });
-
-    first.stdin.end(input);
-  });
 }

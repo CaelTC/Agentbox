@@ -10,6 +10,9 @@ def demo():
     assert not is_valid_slug("My Proj")  # uppercase / spaces rejected, not coerced
     assert not is_valid_slug("-leading")
     assert not is_valid_slug("a--b")     # double dash isn't the sanitizer's output
+    # Python's `$` matches before a trailing newline too, so `re.match` would say
+    # yes to this while the Launcher's identical pattern says no.
+    assert not is_valid_slug("demo\n")
 
     root = "/workspace"
     assert safe_path(root, "") == "/workspace"

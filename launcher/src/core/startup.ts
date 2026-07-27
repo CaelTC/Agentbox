@@ -2,10 +2,10 @@
  * Startup orchestration (ticket 04). Given what's already running, decide the
  * minimal ordered set of steps to get the Sandbox User into a working session.
  * Pure so the "fast reopen returns to a working session" behaviour is testable
- * without a live Colima.
+ * without a live Engine.
  */
 export interface BoxState {
-  colimaRunning: boolean;
+  engineRunning: boolean;
   imageBuilt: boolean;
   /** A container named `claudebox` exists (running OR stopped). */
   containerExists: boolean;
@@ -13,13 +13,13 @@ export interface BoxState {
   containerRunning: boolean;
 }
 
-export type StartupStep = "start-colima" | "build-image" | "run-box" | "start-box" | "attach";
+export type StartupStep = "start-engine" | "build-image" | "run-box" | "start-box" | "attach";
 
 export function startupPlan(state: BoxState): StartupStep[] {
   const steps: StartupStep[] = [];
 
-  if (!state.colimaRunning) {
-    steps.push("start-colima");
+  if (!state.engineRunning) {
+    steps.push("start-engine");
   }
 
   if (!state.containerRunning) {

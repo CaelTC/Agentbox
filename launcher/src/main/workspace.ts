@@ -4,11 +4,12 @@ import {
   lstatSync,
   mkdirSync,
   readdirSync,
+  statSync,
   utimesSync,
   writeFileSync,
 } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
-import { BOX_CONTAINER, BOX_USER, ENGINE_CLI, WORKSPACE_DIR } from "../core/config";
+import { BOX_USER, WORKSPACE_DIR } from "../core/config";
 import { size } from "../core/format";
 import {
   parseBoxFileListing,
@@ -34,10 +35,12 @@ import {
 } from "../core/import";
 import {
   assertDeletableProjectPath,
+  confirmsProjectName,
   parseProjectUsage,
+  type DeleteListing,
   type DeleteResult,
 } from "../core/delete";
-import { killSessionExecArgs } from "../core/session-window";
+import { killSessionArgs } from "../core/session-window";
 import type { Project, ProjectMeta } from "../core/projects";
 import {
   META_DIR,
@@ -48,15 +51,23 @@ import {
   serializeProjectMeta,
 } from "../core/projects";
 import { resolveUploadTargets, type UploadTarget } from "../core/upload";
-import { run, runPipe } from "./exec";
+import { boxExec, sh, type BoxExec } from "./box-exec";
+import { run } from "./exec";
 
 /**
  * Box-side Workspace operations. Because the Workspace is a NAMED VOLUME and not
  * a host mount (ADR 0001, threat A), the Launcher cannot write Project folders
- * on the host — it brokers them into the Box via `docker exec` / `docker cp`.
+ * on the host — it brokers them into the Box through the Box-exec seam
+ * (`./box-exec`), which owns every `docker exec` / `docker cp` here: its argv,
+ * its shell quoting, and the rule that a non-zero exit is an error.
  *
  * The DECISIONS (safe slug, collision-free destinations) come from the pure,
  * tested core helpers; only the EFFECTS live here.
+ *
+ * Every entry point takes the Box as its last argument, defaulted to the real
+ * one, so these operations are assertable against a fake Box — the same
+ * injection style as `spawnPath(path, exists)` and `markExportedUntrusted`.
+ * `run` survives only for HOST commands (`git`, `xattr`), never for the Box.
  */
 
 // assertValidSlug before building any path that reaches a Box-side shell.
@@ -64,38 +75,42 @@ const metaPath = (slug: string) => `${WORKSPACE_DIR}/${assertValidSlug(slug)}/${
 const projectPath = (slug: string) => `${WORKSPACE_DIR}/${assertValidSlug(slug)}`;
 
 /** List Projects by inspecting /workspace inside the Box. */
-export async function boxListProjects(): Promise<Project[]> {
-  const listing = await run(ENGINE_CLI, [
-    "exec",
-    BOX_CONTAINER,
-    "sh",
-    "-c",
+export async function boxListProjects(box: BoxExec = boxExec): Promise<Project[]> {
+  // Throws rather than reporting an empty Workspace: "you have no Projects" is
+  // the worst possible lie to tell a Sandbox User whose Projects are all there.
+  const listing = await box.exec(
     // one slug per line, directories only, skip dotfiles. `[ -d ]` skips the
     // literal `/workspace/*/` POSIX sh leaves when the Workspace is empty.
-    `for d in ${WORKSPACE_DIR}/*/; do [ -d "$d" ] || continue; b=$(basename "$d"); case "$b" in .*) ;; *) echo "$b";; esac; done 2>/dev/null`,
-  ]);
+    sh(
+      'for d in "$1"/*/; do [ -d "$d" ] || continue; b=$(basename "$d"); case "$b" in .*) ;; *) echo "$b";; esac; done',
+      WORKSPACE_DIR,
+    ),
+  );
 
-  const slugs = listing.stdout
+  const slugs = listing
     .split("\n")
     .map((s) => s.trim())
     .filter(Boolean);
 
   const projects: Project[] = [];
   for (const slug of slugs) {
-    const meta = await readBoxMeta(slug);
+    const meta = await readBoxMeta(box, slug);
     projects.push({ name: meta?.name ?? slug, slug, dir: projectPath(slug) });
   }
   return projects.sort((a, b) => a.slug.localeCompare(b.slug));
 }
 
-async function readBoxMeta(slug: string): Promise<ProjectMeta | undefined> {
-  const res = await run(ENGINE_CLI, ["exec", BOX_CONTAINER, "cat", metaPath(slug)]);
+async function readBoxMeta(box: BoxExec, slug: string): Promise<ProjectMeta | undefined> {
+  // Tolerant on purpose: a Project directory with no project.json is a Project
+  // named by its slug, not an error — `boxListProjects` falls back to the slug.
+  const res = await box.tryExec(["cat", metaPath(slug)]);
   if (res.code !== 0) return undefined;
   return parseProjectMeta(res.stdout);
 }
 
-async function boxPathExists(path: string): Promise<boolean> {
-  const res = await run(ENGINE_CLI, ["exec", BOX_CONTAINER, "test", "-e", path]);
+async function boxPathExists(box: BoxExec, path: string): Promise<boolean> {
+  // Tolerant on purpose: non-zero IS the answer "it isn't there".
+  const res = await box.tryExec(["test", "-e", path]);
   return res.code === 0;
 }
 
@@ -103,28 +118,19 @@ async function boxPathExists(path: string): Promise<boolean> {
 export async function boxCreateProject(
   name: string,
   seedPrompt?: string,
+  box: BoxExec = boxExec,
 ): Promise<Project> {
   const slug = sanitizeProjectName(name);
-  if (await boxPathExists(projectPath(slug))) {
+  if (await boxPathExists(box, projectPath(slug))) {
     throw new Error(`A Project already exists at '${slug}'.`);
   }
 
-  await run(ENGINE_CLI, ["exec", BOX_CONTAINER, "mkdir", "-p", `${projectPath(slug)}/.claudebox`]);
-  await writeBoxFile(metaPath(slug), serializeProjectMeta({ name, slug, seedPrompt }));
+  // Both throw. A dropped exit code here handed the renderer a Project it would
+  // render by its raw slug, sitting on a directory that may not exist at all.
+  await box.exec(["mkdir", "-p", `${projectPath(slug)}/${META_DIR}`]);
+  await box.writeFile(metaPath(slug), serializeProjectMeta({ name, slug, seedPrompt }));
 
   return { name, slug, dir: projectPath(slug) };
-}
-
-async function writeBoxFile(path: string, content: string): Promise<void> {
-  // Use base64 to avoid any shell-quoting hazards with arbitrary content.
-  const b64 = Buffer.from(content, "utf8").toString("base64");
-  await run(ENGINE_CLI, [
-    "exec",
-    BOX_CONTAINER,
-    "sh",
-    "-c",
-    `echo ${b64} | base64 -d > "${path}"`,
-  ]);
 }
 
 /**
@@ -134,28 +140,67 @@ async function writeBoxFile(path: string, content: string): Promise<void> {
  * "what am I about to lose", and an imported repo's `.git` is exactly the part a
  * Sandbox User would most regret.
  */
-export async function boxProjectUsage(
+async function boxProjectUsage(
   slug: string,
+  box: BoxExec = boxExec,
 ): Promise<{ fileCount: number; totalBytes: number } | undefined> {
   const dir = projectPath(slug);
   // Two lines: the file count, then the size in KiB. `du` reports allocated
   // blocks, which is the truer answer to what the Resource Cap is holding.
-  const res = await run(ENGINE_CLI, [
-    "exec",
-    BOX_CONTAINER,
-    "sh",
-    "-c",
-    `cd "${dir}" && { find . -mindepth 1 -type f | wc -l; du -sk . | cut -f1; }`,
-  ]);
+  //
+  // Tolerant on purpose: `undefined` is a documented outcome here — the delete
+  // sheet says "couldn't measure this" rather than the "0 files" that a failed
+  // probe would otherwise read as.
+  const res = await box.tryExec(
+    sh('cd "$1" && { find . -mindepth 1 -type f | wc -l; du -sk . | cut -f1; }', dir),
+  );
   if (res.code !== 0) return undefined;
   return parseProjectUsage(res.stdout);
+}
+
+/**
+ * Everything the delete confirmation sheet says, from the four places that know
+ * it: the Project's own name, what it is holding, where its Exports landed, and
+ * when it was last saved out. Composed HERE and not in the router, because the
+ * sheet is the last thing standing between a click and permanent loss — it has
+ * to report the Exported copies that will SURVIVE as well as what will not, and
+ * that promise is only assertable if it is one function.
+ *
+ * `usage` is spread rather than defaulted: absent means the probe failed, and
+ * the sheet says "couldn't measure this" instead of "0 files" (core/delete.ts).
+ */
+export async function boxDeleteListing(
+  slug: string,
+  exportRoot: string,
+  box: BoxExec = boxExec,
+): Promise<DeleteListing> {
+  const [{ project }, usage, exportDir] = await Promise.all([
+    boxFindProject(slug, box),
+    boxProjectUsage(slug, box),
+    boxExportDir(slug, exportRoot, box),
+  ]);
+  const saved = statSync(exportDir, { throwIfNoEntry: false });
+
+  return {
+    slug,
+    name: project.name,
+    ...usage,
+    exportDir,
+    ...(saved ? { lastSaved: saved.mtimeMs } : {}),
+  };
 }
 
 /**
  * Delete Project: remove a Project and everything in it from the Workspace,
  * permanently (core/delete.ts explains why there is no trash).
  *
- * Order matters. The tmux session dies FIRST — see `killSessionExecArgs` — and
+ * `typed` is the name the Sandbox User typed into the sheet. It arrives from the
+ * renderer, so it is input rather than truth: it is re-checked HERE against the
+ * Project's real name inside the Box, exactly as `boxExport` re-enumerates the
+ * Box before writing. A renderer bug — or a stale sheet naming a Project that
+ * has since been renamed — must not be able to delete the wrong thing.
+ *
+ * Order matters. The tmux session dies FIRST — see `killSessionArgs` — and
  * only then does the directory go, so the slug is genuinely free afterwards.
  *
  * The `rm -rf` runs as root for the same reason the failed-import cleanup does:
@@ -164,30 +209,38 @@ export async function boxProjectUsage(
  * delete that half-works would leave exactly the metadata-less directory that
  * shows up in the Project list as an openable Project with nothing in it.
  */
-export async function boxDeleteProject(slug: string): Promise<DeleteResult> {
+export async function boxDeleteProject(
+  slug: string,
+  typed: string,
+  box: BoxExec = boxExec,
+): Promise<DeleteResult> {
   const dir = assertDeletableProjectPath(WORKSPACE_DIR, slug);
 
-  const meta = await readBoxMeta(slug);
-  if (!(await boxPathExists(dir))) {
+  const meta = await readBoxMeta(box, slug);
+  if (!(await boxPathExists(box, dir))) {
     throw new Error(`No Project named '${slug}'.`);
   }
 
-  // Non-zero simply means there was no live session — not a failure.
-  const killed = await run(ENGINE_CLI, killSessionExecArgs(slug));
-
-  const removed = await run(ENGINE_CLI, ["exec", "-u", "root", BOX_CONTAINER, "rm", "-rf", dir]);
-  if (removed.code !== 0) {
-    throw new Error(`Couldn't delete '${slug}': ${removed.stderr}`);
+  const name = meta?.name ?? slug;
+  if (!confirmsProjectName(typed ?? "", name)) {
+    throw new Error(`That isn't the name of this project, so nothing was deleted.`);
   }
+
+  // Tolerant on purpose: non-zero simply means there was no live session.
+  // Deliberately NOT execAsRoot — the tmux server belongs to the sandbox user,
+  // and root would talk to a different, empty socket.
+  const killed = await box.tryExec(killSessionArgs(slug));
+
+  await box.execAsRoot(["rm", "-rf", dir], `Deleting '${slug}'`);
 
   // Confirmed gone rather than assumed: `rm -rf` exits 0 on plenty of paths it
   // never touched, and the one thing this operation promises is that the Project
   // is not there any more.
-  if (await boxPathExists(dir)) {
+  if (await boxPathExists(box, dir)) {
     throw new Error(`'${slug}' is still in the Workspace after deleting it.`);
   }
 
-  return { slug, name: meta?.name ?? slug, sessionKilled: killed.code === 0 };
+  return { slug, name, sessionKilled: killed.code === 0 };
 }
 
 /**
@@ -195,12 +248,19 @@ export async function boxDeleteProject(slug: string): Promise<DeleteResult> {
  * no live mount (ticket 06). Collision-free destinations come from the pure
  * resolver, using a Box-backed existence check.
  */
-export async function boxUpload(sources: string[], slug: string): Promise<UploadTarget[]> {
+export async function boxUpload(
+  sources: string[],
+  slug: string,
+  box: BoxExec = boxExec,
+): Promise<UploadTarget[]> {
   const dir = projectPath(slug);
 
   // Pre-fetch existing names once so the resolver can dedupe synchronously.
+  // Tolerant on purpose: this only feeds collision-avoidance, and an empty
+  // listing is the right starting point either way — the copies below are what
+  // actually has to succeed, and they say so.
   const existing = new Set<string>();
-  const listing = await run(ENGINE_CLI, ["exec", BOX_CONTAINER, "sh", "-c", `ls -1 "${dir}" 2>/dev/null`]);
+  const listing = await box.tryExec(["ls", "-1", dir]);
   for (const name of listing.stdout.split("\n").map((s) => s.trim()).filter(Boolean)) {
     existing.add(`${dir}/${name}`);
   }
@@ -209,8 +269,11 @@ export async function boxUpload(sources: string[], slug: string): Promise<Upload
     exists: (p) => existing.has(p),
   });
 
+  // Throws. Returning the targets from a `docker cp` whose exit code was never
+  // read is what let the renderer report "Uploaded 3 file(s)" for files that
+  // never crossed.
   for (const { source, dest } of targets) {
-    await run(ENGINE_CLI, ["cp", source, `${BOX_CONTAINER}:${dest}`]);
+    await box.copyIn(source, dest);
   }
   return targets;
 }
@@ -220,7 +283,7 @@ export async function boxUpload(sources: string[], slug: string): Promise<Upload
  * asks for this list and the Launcher classifies it — nothing served from inside
  * the Box decides what the host writes.
  */
-export async function boxListProjectFiles(slug: string): Promise<BoxFile[]> {
+async function boxListProjectFiles(slug: string, box: BoxExec = boxExec): Promise<BoxFile[]> {
   const dir = projectPath(slug);
   // %m = octal mode, %s = size, %P = path relative to the Project. Regular files
   // only, so symlinks never become a host write.
@@ -229,14 +292,29 @@ export async function boxListProjectFiles(slug: string): Promise<BoxFile[]> {
   // the classifier rejects them either way, but one `npm install` would otherwise
   // put tens of thousands of identically-greyed rows in the picker. -mindepth 1
   // keeps the prune from matching "." itself and emptying the listing.
-  const listing = await run(ENGINE_CLI, [
-    "exec",
-    BOX_CONTAINER,
-    "sh",
-    "-c",
-    `cd "${dir}" && find . -mindepth 1 \\( -name node_modules -o -name '.*' \\) -prune ` +
-      `-o -type f -printf '%m\\t%s\\t%P\\n' 2>/dev/null`,
-  ]);
+  //
+  // Tolerant on purpose, and unusually so: the ROWS are the answer here, not the
+  // exit code. `find` exits 1 for any per-file traversal error — one file a
+  // running dev server unlinked mid-walk is enough — while still printing every
+  // other file it visited, so throwing on the code failed a whole Export over a
+  // listing that was complete apart from a file the user was never going to save.
+  const listing = await box.tryExec(
+    sh(
+      `cd "$1" && find . -mindepth 1 \\( -name node_modules -o -name '.*' \\) -prune ` +
+        `-o -type f -printf '%m\\t%s\\t%P\\n' 2>/dev/null`,
+      dir,
+    ),
+  );
+
+  // Nothing printed AND a failure is the case the throw was really for (no such
+  // container, no such Project): Export and Delete both read this list, and an
+  // empty one there would offer the Sandbox User nothing to save and then report
+  // that nothing was lost. An empty Project exits 0, so it is not caught here.
+  if (listing.code !== 0 && listing.stdout.trim() === "") {
+    throw new Error(
+      `Couldn't list the files in '${slug}': ${listing.stderr.trim() || "no output"}`,
+    );
+  }
 
   return parseBoxFileListing(listing.stdout);
 }
@@ -249,10 +327,11 @@ export async function boxListProjectFiles(slug: string): Promise<BoxFile[]> {
 export async function boxExportListing(
   slug: string,
   exportRoot: string,
+  box: BoxExec = boxExec,
 ): Promise<ExportListing> {
   const [dir, files] = await Promise.all([
-    boxExportDir(slug, exportRoot),
-    boxListProjectFiles(slug),
+    boxExportDir(slug, exportRoot, box),
+    boxListProjectFiles(slug, box),
   ]);
   const plan = planExport(files);
   return { files: plan.candidates, dir, capBytes: plan.capBytes };
@@ -264,8 +343,12 @@ export async function boxExportListing(
  * on the way to a host filesystem path, and resolveExportDir sanitizes it and
  * asserts containment before it is used.
  */
-export async function boxExportDir(slug: string, exportRoot: string): Promise<string> {
-  const { project, projects } = await boxFindProject(slug);
+export async function boxExportDir(
+  slug: string,
+  exportRoot: string,
+  box: BoxExec = boxExec,
+): Promise<string> {
+  const { project, projects } = await boxFindProject(slug, box);
   return resolveExportDir(exportRoot, project, projects);
 }
 
@@ -273,11 +356,12 @@ export async function boxExportDir(slug: string, exportRoot: string): Promise<st
  * One Project by slug, alongside the full listing it came from — `resolveExportDir`
  * needs the siblings to disambiguate two Projects whose friendly names collide.
  */
-export async function boxFindProject(
+async function boxFindProject(
   slug: string,
+  box: BoxExec = boxExec,
 ): Promise<{ project: Project; projects: Project[] }> {
   assertValidSlug(slug);
-  const projects = await boxListProjects();
+  const projects = await boxListProjects(box);
   const project = projects.find((p) => p.slug === slug);
   if (!project) throw new Error(`No Project named '${slug}'.`);
   return { project, projects };
@@ -298,13 +382,14 @@ export async function boxExport(
   slug: string,
   exportRoot: string,
   pick: readonly string[],
+  box: BoxExec = boxExec,
 ): Promise<ExportResult> {
   // Required, never defaulted: a caller that forgets the selection must export
   // nothing, not everything. Ticket 08 made the picker the only way in.
   if (!Array.isArray(pick)) throw new Error("Nothing was chosen to save.");
 
-  const dir = await boxExportDir(slug, exportRoot);
-  const plan = planExport(await boxListProjectFiles(slug), pick);
+  const dir = await boxExportDir(slug, exportRoot, box);
+  const plan = planExport(await boxListProjectFiles(slug, box), pick);
 
   const result: ExportResult = {
     dir,
@@ -322,19 +407,32 @@ export async function boxExport(
 
   mkdirSync(dir, { recursive: true });
   let unmarked = 0;
-  for (const file of plan.selected) {
-    const target = resolveExportTarget(dir, file.path);
-    mkdirSync(dirname(target), { recursive: true }); // keep the Project's structure
-    await run(ENGINE_CLI, ["cp", `${BOX_CONTAINER}:${projectPath(slug)}/${file.path}`, target]);
-    // Nothing lands executable, whatever the Box said. Kept because it is still
-    // correct on macOS and costs nothing — but it is a no-op for executability
-    // on Windows, which is why the untrusted mark below exists (#12).
-    chmodSync(target, 0o644);
-    if (!(await markExportedUntrusted(target))) unmarked += 1;
+  let landed = 0;
+  try {
+    for (const file of plan.selected) {
+      const target = resolveExportTarget(dir, file.path);
+      mkdirSync(dirname(target), { recursive: true }); // keep the Project's structure
+      // Throws: `saved: N` is a promise about files that are actually on the disk.
+      await box.copyOut(`${projectPath(slug)}/${file.path}`, target);
+      // Nothing lands executable, whatever the Box said. Kept because it is still
+      // correct on macOS and costs nothing — but it is a no-op for executability
+      // on Windows, which is why the untrusted mark below exists (#12).
+      chmodSync(target, 0o644);
+      landed += 1;
+      if (!(await markExportedUntrusted(target))) unmarked += 1;
+    }
+  } finally {
+    // Stamped even when a copy failed part-way, because "last saved" is what
+    // Show saved files and the delete sheet report, and files that landed before
+    // the failure are on the Sandbox User's disk whatever this call did next.
+    // Overwriting files that were already there does not touch the folder's own
+    // mtime, so without this a second, half-failing Export would report the
+    // FIRST one's time over work that had just landed.
+    if (landed > 0) {
+      const now = new Date();
+      utimesSync(dir, now, now);
+    }
   }
-
-  const now = new Date();
-  utimesSync(dir, now, now); // stamps "last saved", which Show files reports
   return { ...result, unmarked };
 }
 
@@ -426,14 +524,15 @@ function statImportFiles(folder: string, paths: readonly string[]): ImportFile[]
   return paths.map((path) => ({ path, size: lstatSync(join(folder, path)).size }));
 }
 
-async function freeSpaceBytes(): Promise<number> {
+async function freeSpaceBytes(box: BoxExec): Promise<number> {
   // -P (POSIX) guarantees one line per filesystem; plain `df` wraps a long
   // device name onto its own line, which would feed the parser the wrong row.
-  const res = await run(ENGINE_CLI, ["exec", BOX_CONTAINER, "df", "-kP", WORKSPACE_DIR]);
-  if (res.code !== 0) {
-    throw new Error(`Could not read the Box's free space: ${res.stderr}`);
-  }
-  return parseDfAvailableBytes(res.stdout);
+  //
+  // Not tolerant: a failure here IS a failure, it just wants naming — which is
+  // what `what` is for, rather than a `tryExec` whose result is rethrown anyway.
+  return parseDfAvailableBytes(
+    await box.exec(["df", "-kP", WORKSPACE_DIR], "Reading the Box's free space"),
+  );
 }
 
 interface GatheredImport {
@@ -462,10 +561,13 @@ async function gatherImport(folder: string): Promise<GatheredImport> {
  * the Box. Nothing is copied here — `importFolder` re-measures independently
  * rather than trusting this listing's byte counts back from the renderer.
  */
-export async function boxPlanImport(folder: string): Promise<ImportListing> {
+export async function boxPlanImport(
+  folder: string,
+  box: BoxExec = boxExec,
+): Promise<ImportListing> {
   const resolved = resolve(folder);
   // Independent: the `df` round trip into the Box needs nothing from the walk.
-  const [gathered, freeBytes] = await Promise.all([gatherImport(resolved), freeSpaceBytes()]);
+  const [gathered, freeBytes] = await Promise.all([gatherImport(resolved), freeSpaceBytes(box)]);
   const plan = planImport(statImportFiles(resolved, gathered.paths), freeBytes);
 
   return {
@@ -488,10 +590,13 @@ export async function boxPlanImport(folder: string): Promise<ImportListing> {
  * `boxExport` re-enumerates the Box before writing: nothing from the renderer
  * is trusted for the write itself, only for what it showed the user.
  */
-export async function boxImportFolder(folder: string): Promise<Project> {
+export async function boxImportFolder(
+  folder: string,
+  box: BoxExec = boxExec,
+): Promise<Project> {
   const resolved = resolve(folder);
   // Independent: the `df` round trip into the Box needs nothing from the walk.
-  const [gathered, freeBytes] = await Promise.all([gatherImport(resolved), freeSpaceBytes()]);
+  const [gathered, freeBytes] = await Promise.all([gatherImport(resolved), freeSpaceBytes(box)]);
   const plan = planImport(statImportFiles(resolved, gathered.paths), freeBytes);
 
   if (!plan.fitsFreeSpace) {
@@ -503,33 +608,42 @@ export async function boxImportFolder(folder: string): Promise<Project> {
     );
   }
 
-  const existing = await boxListProjects();
+  const existing = await boxListProjects(box);
   const { name, slug } = deriveImportIdentity(
     basename(resolved),
     existing.map((p) => p.slug),
   );
   const dir = projectPath(slug);
 
-  await run(ENGINE_CLI, ["exec", BOX_CONTAINER, "mkdir", "-p", dir]);
+  await box.exec(["mkdir", "-p", dir]);
 
-  // `runPipe` REJECTS rather than resolves when a stage cannot be spawned at all
-  // (no `tar`, no engine binary). Folded into a failure result so one branch
-  // below owns the cleanup — a rejection escaping here would skip the `rm -rf`
-  // and leave exactly the metadata-less directory it exists to prevent.
-  const copy = await runPipe(
-    { command: "tar", args: importTarArgs(resolved, gathered.isGitRepo) },
-    { command: ENGINE_CLI, args: ["cp", "-", `${BOX_CONTAINER}:${dir}`] },
-    importTarInput(gathered.paths),
-  ).catch((err: unknown) => ({ code: -1, stdout: "", stderr: String(err) }));
-  if (copy.code !== 0) {
+  try {
+    // Both of `runPipe`'s failure modes are one thrown error here — `copyInStream`
+    // owns that normalisation, so this branch only has to own the cleanup.
+    await box.copyInStream(
+      { command: "tar", args: importTarArgs(resolved, gathered.isGitRepo) },
+      dir,
+      importTarInput(gathered.paths),
+    );
+  } catch (err) {
     // A failed `docker cp` still leaves whatever it managed to write. Without
     // this the half-copied directory survives, and since project.json is only
     // written below, it shows up in the Project list as an openable Project
     // that has no metadata — "nothing partial lands" has to mean this too.
     // As root: a partial copy's synthesised directories are root-owned, so the
     // sandbox user cannot remove them (see the chown below for why).
-    await run(ENGINE_CLI, ["exec", "-u", "root", BOX_CONTAINER, "rm", "-rf", dir]);
-    throw new Error(`Import failed copying '${resolved}' into the Box: ${copy.stderr}`);
+    //
+    // A cleanup that itself fails is reported ALONGSIDE the copy failure rather
+    // than replacing it (the copy is the thing that went wrong) or being
+    // swallowed (the leftover directory is what the user will see next).
+    const leftover = await box.execAsRoot(["rm", "-rf", dir]).then(
+      () => "",
+      (cleanupErr: unknown) =>
+        ` The half-copied folder could not be removed either: ${(cleanupErr as Error).message}`,
+    );
+    throw new Error(
+      `Import failed copying '${resolved}' into the Box: ${(err as Error).message}.${leftover}`,
+    );
   }
 
   // `docker cp` writes files with the archive's ownership, but SYNTHESISES the
@@ -538,21 +652,16 @@ export async function boxImportFolder(folder: string): Promise<Project> {
   // sandbox user can edit an imported file but cannot create a new one beside
   // it, and git refuses the repo for "dubious ownership". Root-owned dirs are
   // also why this runs as root.
-  await run(ENGINE_CLI, [
-    "exec",
-    "-u",
-    "root",
-    BOX_CONTAINER,
-    "chown",
-    "-R",
-    `${BOX_USER}:${BOX_USER}`,
-    dir,
-  ]);
+  //
+  // Throws: a dropped exit code here handed back a Project that Claude cannot
+  // write into and git calls "dubious ownership" — an import that reads as a
+  // success and is broken the moment it is opened.
+  await box.execAsRoot(["chown", "-R", `${BOX_USER}:${BOX_USER}`, dir]);
 
   // Written AFTER the copy, so a stray .claudebox/ carried in from the source
   // folder can't clobber this Project's real metadata (ticket 09).
-  await run(ENGINE_CLI, ["exec", BOX_CONTAINER, "mkdir", "-p", `${dir}/${META_DIR}`]);
-  await writeBoxFile(
+  await box.exec(["mkdir", "-p", `${dir}/${META_DIR}`]);
+  await box.writeFile(
     metaPath(slug),
     serializeProjectMeta({ name, slug, seedPrompt: IMPORT_SEED_PROMPT }),
   );

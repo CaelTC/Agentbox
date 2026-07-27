@@ -4,7 +4,7 @@ import {
   podmanMachineInspectArgs,
   podmanMachineSetRootfulArgs,
   podmanMachineStartArgs,
-} from "../src/core/podman";
+} from "../src/main/podman";
 
 describe("podmanMachineInitArgs", () => {
   it("creates the claudebox machine at the Resource Cap", () => {

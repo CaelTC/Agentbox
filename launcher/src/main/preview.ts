@@ -1,22 +1,19 @@
-import { BOX_CONTAINER, ENGINE_CLI } from "../core/config";
 import { detectServedPort, previewUrl } from "../core/preview";
-import { run } from "./exec";
+import { boxExec, sh, type BoxExec } from "./box-exec";
 
 /**
  * Find whatever web server Claude started inside the Box and open it in the
  * Mac's browser (ticket 07). Listening ports are read from inside the Box; the
  * pure detectServedPort() picks which one to open.
  */
-export async function detectPreviewUrl(): Promise<string | undefined> {
+export async function detectPreviewUrl(box: BoxExec = boxExec): Promise<string | undefined> {
   // List TCP listening ports inside the Box. `ss -tlnH` prints one socket per
   // line; the 4th column is Local Address:Port.
-  const res = await run(ENGINE_CLI, [
-    "exec",
-    BOX_CONTAINER,
-    "sh",
-    "-c",
-    "ss -tlnH 2>/dev/null || netstat -tlnp 2>/dev/null",
-  ]);
+  //
+  // Tolerant on purpose: the script already falls back from `ss` to `netstat`,
+  // and if neither exists the honest answer is "no preview to open" — which is
+  // what an empty listing produces, without inventing an error.
+  const res = await box.tryExec(sh("ss -tlnH 2>/dev/null || netstat -tlnp 2>/dev/null"));
 
   const ports = parseListeningPorts(res.stdout);
   const port = detectServedPort(ports);

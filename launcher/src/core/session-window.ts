@@ -1,5 +1,4 @@
 import { existsSync } from "node:fs";
-import { BOX_CONTAINER } from "./config";
 import { assertValidSlug } from "./projects";
 import { TERMINAL_PORT } from "./preview";
 
@@ -19,15 +18,22 @@ export function sessionUrl(slug: string, port: number = TERMINAL_PORT): string {
   return `http://localhost:${port}/sessions/${assertValidSlug(slug)}`;
 }
 
-/** `docker exec` argv that ensures the Project's session exists via the funnel. */
-export function ensureSessionExecArgs(slug: string, container: string = BOX_CONTAINER): string[] {
-  // No `-it`: off a TTY the funnel just ensures the session, it doesn't attach.
-  // The slug is a distinct argv (never a shell string), so it can't inject.
-  return ["exec", container, "claudebox-session", assertValidSlug(slug)];
+/**
+ * The in-Box command that ensures a Project's session exists, via the funnel.
+ * The `exec <container>` prefix belongs to the Box-exec seam (main/box-exec.ts),
+ * which runs it — exactly as for `killSessionArgs` below. Its one caller opens a
+ * session on a Box the router has already brought up, so there is no moment when
+ * it needs to reach past the seam.
+ */
+export function ensureSessionArgs(slug: string): string[] {
+  // Never interactive: off a TTY the funnel just ensures the session, it doesn't
+  // attach. The slug is a distinct argv (never a shell string), so it can't inject.
+  return ["claudebox-session", assertValidSlug(slug)];
 }
 
 /**
- * `docker exec` argv that kills a Project's tmux session.
+ * The in-Box command that kills a Project's tmux session. The `exec <container>`
+ * prefix belongs to the Box-exec seam (`main/box-exec.ts`), which runs it.
  *
  * Delete needs this, and needs it FIRST. tmux is the source of truth for a
  * session and it outlives its directory: remove `/workspace/<slug>` under a live
@@ -37,10 +43,11 @@ export function ensureSessionExecArgs(slug: string, container: string = BOX_CONT
  * genuinely free again.
  *
  * Runs as the Box's ordinary user, not root: the tmux server belongs to the
- * sandbox user, and root would talk to a different (empty) socket.
+ * sandbox user, and root would talk to a different (empty) socket — which is
+ * why `boxDeleteProject` runs this through `tryExec`, not `execAsRoot`.
  */
-export function killSessionExecArgs(slug: string, container: string = BOX_CONTAINER): string[] {
-  return ["exec", container, "tmux", "kill-session", "-t", assertValidSlug(slug)];
+export function killSessionArgs(slug: string): string[] {
+  return ["tmux", "kill-session", "-t", assertValidSlug(slug)];
 }
 
 /**

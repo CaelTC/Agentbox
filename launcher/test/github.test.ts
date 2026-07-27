@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { GIT_SCRATCH_DIR, GIT_SCRATCH_VOLUME, WORKSPACE_VOLUME } from "../src/core/config";
 import {
@@ -18,6 +16,7 @@ import {
   pushScript,
   repoNameFor,
 } from "../src/core/github";
+import { repoFile } from "./repo-file";
 
 /** ADR 0006: the GitHub token never meets the Workspace, and never meets Claude. */
 describe("the device flow", () => {
@@ -69,7 +68,7 @@ describe("the two publish containers", () => {
     // created. Without this the volume is root-owned and the unprivileged
     // `sandbox` user cannot write the bundle — which is a runtime EACCES no unit
     // test would otherwise see.
-    const dockerfile = readFileSync(join(__dirname, "..", "..", "box", "Dockerfile"), "utf8");
+    const dockerfile = repoFile("box", "Dockerfile");
     expect(dockerfile).toMatch(
       new RegExp(`chown[^\\n]*sandbox:sandbox[^\\n]*${GIT_SCRATCH_DIR}`),
     );

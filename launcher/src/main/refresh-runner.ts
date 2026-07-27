@@ -5,11 +5,13 @@ import {
   commitTrusted,
   hashDefinition,
   refreshDecision,
+  updateMessage,
   type DefinitionFile,
   type RefreshResult,
 } from "../core/refresh";
 import { run } from "./exec";
 import { claudeboxHome, hostBoxDefinitionDir, hostDefinitionDir } from "./paths";
+import { ensureBoxReady, ensureEngine, removeBoxContainer, updateClaudeCode } from "./session";
 
 /**
  * Refresh on Launch (ticket 09 / ADR 0002): on every start, pull the latest Box
@@ -18,8 +20,8 @@ import { claudeboxHome, hostBoxDefinitionDir, hostDefinitionDir } from "./paths"
  * supplies the effects (git pull, hash, docker build).
  *
  * Also runs on demand, from "Update Claudebox" on the home screen — same pull,
- * same gate, same build. What the button adds is around this call, in ipc.ts:
- * recreating the container so the new image is the one actually running.
+ * same gate, same build. What that button adds around this call is
+ * `updateClaudebox()` below, not something the IPC router assembles.
  */
 const hashFile = () => join(claudeboxHome(), "image.hash");
 
@@ -57,6 +59,57 @@ export async function refreshOnLaunch(): Promise<RefreshResult> {
     case "error":
       return { action: "error", reason: decision.reason, online };
   }
+}
+
+/**
+ * The Box lifecycle "Update Claudebox" drives, as an injectable seam. Every
+ * member is a real Engine call in production; passing a fake is what makes the
+ * SEQUENCE below assertable without an Engine, a Box, or a window.
+ */
+export interface UpdateSteps {
+  /** The same pull + integrity gate + conditional build as Refresh on Launch. */
+  refresh(): Promise<RefreshResult>;
+  ensureEngine(): Promise<void>;
+  removeBoxContainer(): Promise<void>;
+  ensureBoxReady(): Promise<void>;
+  updateClaudeCode(): Promise<boolean>;
+}
+
+const engineSteps: UpdateSteps = {
+  refresh: refreshOnLaunch,
+  ensureEngine,
+  removeBoxContainer,
+  ensureBoxReady: () => ensureBoxReady(hostBoxDefinitionDir()),
+  updateClaudeCode,
+};
+
+/**
+ * Update Claudebox (ADR 0002): Refresh on Launch, on a button. Same pull, same
+ * integrity gate, same conditional build — what this adds is the RECREATE,
+ * because a rebuilt image does nothing while the old container is still the one
+ * running (the same two lines bootstrap does).
+ *
+ * Nothing is recreated unless the refresh actually rebuilt: an "already up to
+ * date" must not end anyone's open Claude session. The caller confirms first —
+ * the recreate closes every session — and that confirmation is the router's
+ * native dialog, which is why it is not in here.
+ *
+ * Returns the sentence to show, composed by the tested `updateMessage`.
+ */
+export async function updateClaudebox(steps: UpdateSteps = engineSteps): Promise<string> {
+  await steps.ensureEngine(); // the build needs the Engine, exactly as at launch
+  const result = await steps.refresh();
+  if (result.action !== "rebuilt") return updateMessage(result);
+
+  await steps.removeBoxContainer();
+  await steps.ensureBoxReady();
+  // A recreate drops back to the Claude Code baked into the image, which the
+  // Dockerfile's cached npm layer can leave months old — so without this an
+  // "update" could hand back an older Claude than the one just running.
+  if (!(await steps.updateClaudeCode())) {
+    console.warn("Claude Code update skipped; keeping the version baked into the Box image.");
+  }
+  return updateMessage(result);
 }
 
 /**
