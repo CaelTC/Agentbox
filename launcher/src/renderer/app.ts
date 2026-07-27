@@ -745,6 +745,9 @@ function renderBootstrapError(message: string): void {
 // (they live on a named volume reached through the running Box).
 renderStarting();
 window.claudebox.onBootstrap((status) => {
-  if (status.ok) void renderHome();
+  // The Project listing now FAILS rather than reporting an empty Workspace when
+  // the Box can't be read, so the first render can reject — say so instead of
+  // leaving the Sandbox User on "Warming the room" forever.
+  if (status.ok) void renderHome().catch((err: unknown) => renderBootstrapError((err as Error).message));
   else renderBootstrapError(status.message);
 });

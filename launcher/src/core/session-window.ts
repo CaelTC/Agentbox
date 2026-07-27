@@ -19,7 +19,13 @@ export function sessionUrl(slug: string, port: number = TERMINAL_PORT): string {
   return `http://localhost:${port}/sessions/${assertValidSlug(slug)}`;
 }
 
-/** `docker exec` argv that ensures the Project's session exists via the funnel. */
+/**
+ * `docker exec` argv that ensures the Project's session exists via the funnel.
+ *
+ * Still carries its own `exec <container>` prefix, unlike `killSessionArgs`
+ * below: its one caller (`main/session.ts`) reaches the Box before the Box is
+ * known to be up, so it does not go through the Box-exec seam.
+ */
 export function ensureSessionExecArgs(slug: string, container: string = BOX_CONTAINER): string[] {
   // No `-it`: off a TTY the funnel just ensures the session, it doesn't attach.
   // The slug is a distinct argv (never a shell string), so it can't inject.
@@ -27,7 +33,8 @@ export function ensureSessionExecArgs(slug: string, container: string = BOX_CONT
 }
 
 /**
- * `docker exec` argv that kills a Project's tmux session.
+ * The in-Box command that kills a Project's tmux session. The `exec <container>`
+ * prefix belongs to the Box-exec seam (`main/box-exec.ts`), which runs it.
  *
  * Delete needs this, and needs it FIRST. tmux is the source of truth for a
  * session and it outlives its directory: remove `/workspace/<slug>` under a live
@@ -37,10 +44,11 @@ export function ensureSessionExecArgs(slug: string, container: string = BOX_CONT
  * genuinely free again.
  *
  * Runs as the Box's ordinary user, not root: the tmux server belongs to the
- * sandbox user, and root would talk to a different (empty) socket.
+ * sandbox user, and root would talk to a different (empty) socket — which is
+ * why `boxDeleteProject` runs this through `tryExec`, not `execAsRoot`.
  */
-export function killSessionExecArgs(slug: string, container: string = BOX_CONTAINER): string[] {
-  return ["exec", container, "tmux", "kill-session", "-t", assertValidSlug(slug)];
+export function killSessionArgs(slug: string): string[] {
+  return ["tmux", "kill-session", "-t", assertValidSlug(slug)];
 }
 
 /**

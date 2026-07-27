@@ -3,6 +3,7 @@ import { shell } from "electron";
 import { BOX_CONTAINER, BOX_IMAGE, ENGINE_CLI } from "../core/config";
 import { boxRunArgs, boxUpdateClaudeArgs } from "../core/box";
 import { chromeAppLaunch, ensureSessionExecArgs, sessionUrl } from "../core/session-window";
+import { boxExec } from "./box-exec";
 import { startEngine } from "./engine";
 import { inspectBoxState } from "./environment";
 import { mustSucceed, run, runOk } from "./exec";
@@ -113,9 +114,9 @@ export async function openProjectSession(
  * Named volumes (Workspace, Claude login) survive the stop.
  */
 export function stopBoxDetached(): void {
-  try {
-    spawn(ENGINE_CLI, ["stop", BOX_CONTAINER], { detached: true, stdio: "ignore" }).unref();
-  } catch {
-    // Engine already gone — nothing to stop.
-  }
+  // Through the Box-exec seam, not a bare `spawn`: this used to lose the
+  // `spawnPath()` PATH fix every other Engine call gets, so from a Finder-
+  // launched Launcher it was "spawn docker ENOENT" — swallowed by a bare
+  // `catch {}`, with the Box left running and holding the Resource Cap.
+  boxExec.stopDetached();
 }
