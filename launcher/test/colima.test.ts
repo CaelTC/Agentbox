@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { RESOURCE_CAP } from "../src/core/config";
-import { colimaStartArgs, colimaStatusArgs, isColimaRunning } from "../src/core/colima";
+import { colimaStartArgs, colimaStatusArgs, isColimaRunning } from "../src/main/colima";
 
 describe("colimaStartArgs", () => {
   it("starts the claudebox profile at the Resource Cap (~4 CPU / 6 GB / 25 GB)", () => {

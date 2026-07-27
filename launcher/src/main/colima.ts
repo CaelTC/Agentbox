@@ -1,4 +1,11 @@
-import { ENGINE_PROFILE, RESOURCE_CAP, type ResourceCap } from "./config";
+import { ENGINE_PROFILE, RESOURCE_CAP, type ResourceCap } from "../core/config";
+import type { Engine } from "./engine";
+import { mustSucceed, run } from "./exec";
+
+/**
+ * The Colima adapter: the Box's VM on the Mac. Every Colima-shaped quirk lives
+ * here, behind the Engine interface.
+ */
 
 /**
  * Build the `colima` CLI args that start the Box's VM at the Resource Cap.
@@ -35,3 +42,16 @@ export function colimaStatusArgs(profile: string = ENGINE_PROFILE): string[] {
 export function isColimaRunning(statusOutput: string): boolean {
   return /\bis running\b/i.test(statusOutput);
 }
+
+export const colima: Engine = {
+  /** Colima reports state as prose, and on stderr — hence the parse over both streams. */
+  async isRunning(): Promise<boolean> {
+    const status = await run("colima", colimaStatusArgs());
+    return isColimaRunning(status.stdout + status.stderr);
+  },
+
+  /** `colima start` is create-or-start in one command, so there is nothing else to do. */
+  async start(): Promise<void> {
+    await mustSucceed("colima", colimaStartArgs());
+  },
+};

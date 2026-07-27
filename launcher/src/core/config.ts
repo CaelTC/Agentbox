@@ -4,7 +4,7 @@
  * acceptance criteria. They are pure data so they can be asserted in tests.
  */
 
-/** The tuned Colima allocation baked into the Launcher (see CONTEXT.md: Resource Cap). */
+/** The tuned Engine allocation baked into the Launcher (see CONTEXT.md: Resource Cap). */
 export interface ResourceCap {
   /** CPU cores. */
   readonly cpu: number;

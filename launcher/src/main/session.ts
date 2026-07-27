@@ -4,7 +4,7 @@ import { BOX_CONTAINER, BOX_IMAGE, ENGINE_CLI } from "../core/config";
 import { boxRunArgs, boxUpdateClaudeArgs } from "../core/box";
 import { chromeAppLaunch, ensureSessionExecArgs, sessionUrl } from "../core/session-window";
 import { boxExec } from "./box-exec";
-import { startEngine } from "./engine";
+import { engine } from "./engine";
 import { inspectBoxState } from "./environment";
 import { mustSucceed, run, runOk } from "./exec";
 import { startupPlan, type StartupStep } from "../core/startup";
@@ -12,8 +12,8 @@ import { startupPlan, type StartupStep } from "../core/startup";
 /** Start the Engine at the Resource Cap if it isn't already up (needed before any engine call). */
 export async function ensureEngine(): Promise<void> {
   const state = await inspectBoxState();
-  if (!state.colimaRunning) {
-    await startEngine();
+  if (!state.engineRunning) {
+    await engine.start();
   }
 }
 
@@ -41,8 +41,8 @@ export async function ensureBoxReady(boxDefinitionDir: string): Promise<void> {
 
 async function runStep(step: StartupStep, boxDefinitionDir: string): Promise<void> {
   switch (step) {
-    case "start-colima":
-      await startEngine();
+    case "start-engine":
+      await engine.start();
       return;
     case "build-image":
       await mustSucceed(ENGINE_CLI, ["build", "-t", BOX_IMAGE, boxDefinitionDir]);

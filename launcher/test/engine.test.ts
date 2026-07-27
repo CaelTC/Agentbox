@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { engineCli } from "../src/core/config";
 import { mustSucceed, run, runOk } from "../src/main/exec";
-import { isEngineRunning, startEngine } from "../src/main/engine";
+import { engineFor } from "../src/main/engine";
 
 vi.mock("../src/main/exec", () => ({
   run: vi.fn(),
@@ -32,14 +32,14 @@ describe("engineCli", () => {
   });
 });
 
-describe("startEngine", () => {
+describe("Engine.start", () => {
   it("on the Mac runs exactly one `colima start` at the Resource Cap — unchanged", async () => {
-    await startEngine("darwin");
+    await engineFor("darwin").start();
     expect(calls).toEqual(["colima start --profile claudebox --cpu 4 --memory 6 --disk 25"]);
   });
 
   it("never mentions podman on the Mac", async () => {
-    await startEngine("darwin");
+    await engineFor("darwin").start();
     expect(calls.join(" ")).not.toContain("podman");
   });
 
@@ -47,7 +47,7 @@ describe("startEngine", () => {
     // `machine inspect` exits non-zero when there is no such machine.
     vi.mocked(runOk).mockImplementation(async (c, a) => (record(c, a), false));
 
-    await startEngine("win32");
+    await engineFor("win32").start();
 
     expect(calls).toEqual([
       "podman machine inspect --format {{.State}} claudebox",
@@ -58,7 +58,7 @@ describe("startEngine", () => {
   });
 
   it("on Windows starts an existing machine without re-initing it", async () => {
-    await startEngine("win32"); // runOk defaults to true = machine present
+    await engineFor("win32").start(); // runOk defaults to true = machine present
 
     expect(calls).toEqual([
       "podman machine inspect --format {{.State}} claudebox",
@@ -72,25 +72,25 @@ describe("startEngine", () => {
     // did not. The machine exists from then on, so if rootful lived in the init
     // branch it would never be attempted again and the Box would run rootless
     // forever — where boxRunArgs' NET_ADMIN and net.ipv6 sysctls are refused.
-    await startEngine("win32");
+    await engineFor("win32").start();
     expect(calls).toContain("podman machine set --rootful claudebox");
   });
 
   it("self-heals: a machine deleted behind the Launcher's back is re-created on the next start", async () => {
     vi.mocked(runOk).mockImplementation(async (c, a) => (record(c, a), false));
-    await startEngine("win32");
+    await engineFor("win32").start();
     expect(calls).toContain("podman machine init --cpus 4 --memory 6144 --disk-size 25 claudebox");
   });
 });
 
-describe("isEngineRunning", () => {
+describe("Engine.isRunning", () => {
   it("on the Mac reads `colima status`, which prints on stderr", async () => {
     vi.mocked(run).mockImplementation(async (c, a) => {
       record(c, a);
       return { code: 0, stdout: "", stderr: 'msg="colima [profile=claudebox] is running"' };
     });
 
-    expect(await isEngineRunning("darwin")).toBe(true);
+    expect(await engineFor("darwin").isRunning()).toBe(true);
     expect(calls).toEqual(["colima status --profile claudebox"]);
   });
 
@@ -99,7 +99,7 @@ describe("isEngineRunning", () => {
       record(c, a);
       return { code: 0, stdout: "", stderr: "colima is not running" };
     });
-    expect(await isEngineRunning("darwin")).toBe(false);
+    expect(await engineFor("darwin").isRunning()).toBe(false);
   });
 
   it("on Windows reads `podman machine inspect`'s State", async () => {
@@ -108,7 +108,7 @@ describe("isEngineRunning", () => {
       return { code: 0, stdout: "running\n", stderr: "" };
     });
 
-    expect(await isEngineRunning("win32")).toBe(true);
+    expect(await engineFor("win32").isRunning()).toBe(true);
     expect(calls).toEqual(["podman machine inspect --format {{.State}} claudebox"]);
   });
 
@@ -117,7 +117,7 @@ describe("isEngineRunning", () => {
       record(c, a);
       return { code: 0, stdout: "stopped\n", stderr: "" };
     });
-    expect(await isEngineRunning("win32")).toBe(false);
+    expect(await engineFor("win32").isRunning()).toBe(false);
   });
 
   it("on Windows is false when there is no machine (non-zero exit)", async () => {
@@ -125,6 +125,6 @@ describe("isEngineRunning", () => {
       record(c, a);
       return { code: 125, stdout: "", stderr: "Error: claudebox: VM does not exist" };
     });
-    expect(await isEngineRunning("win32")).toBe(false);
+    expect(await engineFor("win32").isRunning()).toBe(false);
   });
 });
