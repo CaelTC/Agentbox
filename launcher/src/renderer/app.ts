@@ -74,6 +74,11 @@ type Operation<T> = {
  * sees (Update lives on the home screen; an Export runs from inside a Project).
  * Disabling the button that was clicked cannot see that far, which is why the
  * busy state lives here and nowhere else.
+ *
+ * What this is NOT is the safety: main enforces the Box Gate over every channel
+ * that reaches the Box, including the ones no button here owns. This is the
+ * SAYING — a screen that tells the Sandbox User why nothing is happening,
+ * rather than one that quietly queues a second click behind a rebuild.
  */
 let operationInFlight = false;
 

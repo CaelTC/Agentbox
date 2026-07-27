@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog } from "electron";
 import { join } from "node:path";
 import { IPC, type BootstrapStatus } from "../shared/api";
+import { exclusive } from "./gate";
 import { registerIpc } from "./ipc";
 import { hostBoxDefinitionDir } from "./paths";
 import { refreshOnLaunch } from "./refresh-runner";
@@ -40,29 +41,39 @@ function createWindow(): BrowserWindow {
  * Order matters: the Engine must be up before Refresh-on-Launch can build,
  * and the Box must be running before Projects (which live on the named volume)
  * can be listed or created. Status is reported to the renderer, not swallowed.
+ *
+ * Held under the Box Gate, because Refresh on Launch is an Update Claudebox that
+ * nobody pressed: the home screen is already loaded and clickable while this
+ * runs (that is what `did-finish-load` means), and its first `listProjects` —
+ * or an impatient "Update Claudebox" — would otherwise reach a container this
+ * is in the middle of removing and recreating. Taking the gate turns that race
+ * into a queue. Nothing in here goes back through the router, so there is no
+ * way for the gate to wait on itself.
  */
 async function bootstrap(window: BrowserWindow): Promise<void> {
   const send = (status: BootstrapStatus) => window.webContents.send(IPC.bootstrap, status);
   try {
-    await ensureEngine();
-    const refresh = await refreshOnLaunch(); // pull + rebuild only if changed
-    if (refresh.action === "error" || refresh.action === "blocked") {
-      // Non-fatal for a machine that already has an image; fatal only if there's
-      // nothing to run, which ensureBoxReady surfaces below. A `blocked` is the
-      // integrity gate declining an untrusted definition — the one outcome that
-      // must never pass unlogged.
-      console.warn(`Refresh on Launch: ${refresh.reason}`);
-    } else if (refresh.action === "rebuilt") {
-      // Recreate the container so the new image is actually used; the login and
-      // Workspace survive on their named volumes.
-      await removeBoxContainer();
-    }
-    await ensureBoxReady(hostBoxDefinitionDir());
-    // Every open gets the latest Claude Code, before any session can attach.
-    send({ ok: true, message: "Updating Claude Code…" });
-    if (!(await updateClaudeCode())) {
-      console.warn("Claude Code update skipped; keeping the version baked into the Box image.");
-    }
+    await exclusive(async () => {
+      await ensureEngine();
+      const refresh = await refreshOnLaunch(); // pull + rebuild only if changed
+      if (refresh.action === "error" || refresh.action === "blocked") {
+        // Non-fatal for a machine that already has an image; fatal only if there's
+        // nothing to run, which ensureBoxReady surfaces below. A `blocked` is the
+        // integrity gate declining an untrusted definition — the one outcome that
+        // must never pass unlogged.
+        console.warn(`Refresh on Launch: ${refresh.reason}`);
+      } else if (refresh.action === "rebuilt") {
+        // Recreate the container so the new image is actually used; the login and
+        // Workspace survive on their named volumes.
+        await removeBoxContainer();
+      }
+      await ensureBoxReady(hostBoxDefinitionDir());
+      // Every open gets the latest Claude Code, before any session can attach.
+      send({ ok: true, message: "Updating Claude Code…" });
+      if (!(await updateClaudeCode())) {
+        console.warn("Claude Code update skipped; keeping the version baked into the Box image.");
+      }
+    });
     send({ ok: true, message: "Claudebox is ready." });
   } catch (error) {
     send({ ok: false, message: `Couldn't start Claudebox: ${String(error)}` });

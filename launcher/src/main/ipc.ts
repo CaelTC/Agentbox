@@ -8,6 +8,7 @@ import {
   saveToGithub,
   startGithubLogin,
 } from "./github";
+import { exclusive } from "./gate";
 import { exportRoot, hostBoxDefinitionDir } from "./paths";
 import { detectPreviewUrl } from "./preview";
 import { updateClaudebox } from "./refresh-runner";
@@ -36,10 +37,17 @@ import {
  *
  *   route       — host-only work. The Box is not involved.
  *   routeViaBox — the target touches the Workspace, so the Box is brought up
- *                 FIRST. This used to be ten remembered `ensureBoxReady` calls
- *                 with ten justifying comments, which is a rule you can forget:
- *                 a handler that did fell over as a raw `docker exec` error in
- *                 a Sandbox User's face. Declared once, it cannot be forgotten.
+ *                 FIRST and the operation runs alone (the Box Gate). This used
+ *                 to be ten remembered `ensureBoxReady` calls with ten
+ *                 justifying comments, which is a rule you can forget: a
+ *                 handler that did fell over as a raw `docker exec` error in a
+ *                 Sandbox User's face. Declared once, it cannot be forgotten —
+ *                 and the same is now true of the exclusion, which no caller
+ *                 can remember to take either.
+ *
+ * The two channels below that reach the Box WITHOUT this policy — Update
+ * Claudebox, which brings the Box up itself, and Web Preview, which only reads
+ * a Box that is already up — take the gate by hand, and say why at the call.
  *
  * A target's parameters are pinned by the arrow that calls it, never spread
  * straight from the renderer's argv — an operation whose last argument is an
@@ -52,10 +60,15 @@ function route<A extends unknown[]>(channel: string, target: Target<A>): void {
 }
 
 function routeViaBox<A extends unknown[]>(channel: string, target: Target<A>): void {
-  route(channel, async (...args: A) => {
-    await ensureBoxReady(hostBoxDefinitionDir());
-    return target(...args);
-  });
+  route(channel, (...args: A) =>
+    // The native pickers inside two of these targets run while the gate is
+    // held. That costs nothing: they are window-modal, so the Sandbox User
+    // cannot start a second operation while one is open anyway.
+    exclusive(async () => {
+      await ensureBoxReady(hostBoxDefinitionDir());
+      return target(...args);
+    }),
+  );
 }
 
 export function registerIpc(window: BrowserWindow): void {
@@ -96,24 +109,39 @@ export function registerIpc(window: BrowserWindow): void {
   /* Host-only channels. -------------------------------------------------- */
 
   // Save to GitHub (ADR 0006): the sign-in half is pure host work — no Box
-  // involved, and no token crosses back to the renderer.
+  // involved, and no token crosses back to the renderer. Ungated for the same
+  // reason: `awaitGithubLogin` polls GitHub for as long as the device code
+  // lives, and a gate held for those minutes would freeze the whole Launcher
+  // behind a sign-in the Sandbox User may have wandered off from.
   route(IPC.githubStatus, () => githubStatus());
   route(IPC.startGithubLogin, () => startGithubLogin());
   route(IPC.awaitGithubLogin, () => awaitGithubLogin());
   route(IPC.disconnectGithub, () => (disconnectGithub(), githubStatus()));
 
-  route(IPC.openPreview, async () => {
-    const url = await detectPreviewUrl();
-    if (!url) return { opened: false };
-    await shell.openExternal(url);
-    return { opened: true, url };
-  });
+  // Reads the listening ports of a Box that is already up, so it declares no
+  // Box policy — but it does reach inside the running container, and an Update
+  // recreating that container underneath it would report "no preview" for a
+  // server that is simply mid-restart. Gated, not brought up.
+  route(IPC.openPreview, () =>
+    exclusive(async () => {
+      const url = await detectPreviewUrl();
+      if (!url) return { opened: false };
+      await shell.openExternal(url);
+      return { opened: true, url };
+    }),
+  );
 
   // Update Claudebox brings the Box up itself, mid-sequence and after the
   // rebuild — so it declares no policy here. Undefined on cancel: the renderer
   // says nothing rather than reporting a check that never ran.
+  //
+  // The confirmation is deliberately OUTSIDE the gate and the recreate inside
+  // it: a modal question is not an operation, and holding the Box hostage while
+  // it sits open would stall an Upload that was already running for a dialog
+  // the Sandbox User may yet cancel. Once they say yes, this is the operation
+  // every other one has to wait for — it is the one that removes the container.
   route(IPC.updateBox, async (): Promise<string | undefined> =>
-    (await confirmUpdate()) ? updateClaudebox() : undefined,
+    (await confirmUpdate()) ? exclusive(() => updateClaudebox()) : undefined,
   );
 
   /* Workspace channels — the Box is up before any of these run. ----------- */
