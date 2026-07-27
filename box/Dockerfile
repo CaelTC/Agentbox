@@ -91,14 +91,22 @@ RUN mkdir -p /scratch && chown sandbox:sandbox /scratch
 
 # --- The mattpocock-skills plugin, pre-installed (ticket 03) -----------------
 # Installed AS the sandbox user so it lands in /home/sandbox/.claude, where the
-# session (which runs as sandbox) can see it. Best-effort: the exact plugin CLI
-# depends on the Claude Code build, so a failure warns rather than breaking the
-# build — see box/README.md. NOTE: this runs before any VOLUME on /home/sandbox
-# so the baked plugin is copied into the home volume on first run.
+# session (which runs as sandbox) can see it. NOTE: this runs before any VOLUME
+# on /home/sandbox so the baked plugin is copied into the home volume on first
+# run — and entrypoint.sh tops it up for home volumes that predate the bake.
+#
+# Three details this invocation cannot get wrong (each one silently produced an
+# empty /plugin list before):
+#   * the repository is mattpocock/skills — there is no mattpocock-skills repo;
+#   * the `owner/repo` shorthand clones over SSH, and the Box has no GitHub key,
+#     so the HTTPS URL is the only form that authenticates here;
+#   * the marketplace declares itself as `mattpocock`, so the plugin's id is
+#     mattpocock-skills@mattpocock.
+# No `|| true` — Batteries that fail to install must break the build, not the
+# Sandbox User's first session.
 USER sandbox
-RUN claude plugin marketplace add mattpocock/mattpocock-skills \
-  && claude plugin install mattpocock-skills@mattpocock-skills --yes \
-  || echo "WARN: plugin pre-install step needs the running Claude Code plugin CLI; see box/README.md"
+RUN claude plugin marketplace add https://github.com/mattpocock/skills.git \
+  && claude plugin install mattpocock-skills@mattpocock --scope user
 
 # The Workspace lives on a named volume mounted here (ADR 0001). /home/sandbox is
 # ALSO mounted as a named volume at run time (to persist the Claude login) but is
