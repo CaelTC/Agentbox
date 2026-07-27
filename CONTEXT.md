@@ -37,6 +37,9 @@ A named unit of work inside the Workspace that the Sandbox User creates, resumes
 **Launcher**:
 The double-clickable app — macOS and Windows — that is the Sandbox User's entire interface to Claudebox. Trusted, host-side code (not Claude) that hides Docker: it starts the Box, shows the Project home screen, drops the user into Claude Code, and brokers file Uploads.
 
+**Box-exec**:
+The Launcher's one door into the running Box. Upload, Export, Project Import, Delete Project, and every read and write of a Project in the Workspace cross the boundary through it — nothing else in the Launcher builds a command against a Box that is up. Failure is an error there rather than a value a caller may quietly drop, which is why the Sandbox User is never told "Uploaded 3 file(s)" about a copy that failed. The door is to the *running* Box only: bringing it up, rebuilding it and stopping it do not go through it, and Save to GitHub deliberately never reaches inside a running Box at all (ADR 0006).
+
 **Upload**:
 A one-way, user-initiated copy of individual files from the Sandbox User's computer into an existing Project's Workspace, performed by the trusted Launcher via a native file picker. Claude never gets direct host filesystem access — it only sees the copies. Preserves threat A — true of picking a handful of files one at a time (a CSV, a script); not a claim this makes about carrying in a whole project, see Project Import for that.
 _Avoid_: mount, shared folder (deliberately not a live bind-mount)
@@ -65,7 +68,7 @@ _Avoid_: archive, close, remove from list (nothing is kept and nothing is merely
 The one-time setup step, run by whoever provisions the machine (not the Sandbox User). Installs the Engine, Google Chrome (for the Project session window), the Launcher, and the initial Box image. Replaces a signed installer, which is not available. The Windows script needs Administrator (WSL2 and the Podman machine both do); the macOS one does not.
 
 **Engine**:
-The headless, license-free container runtime that runs the Box on the host in place of Docker Desktop — Colima on macOS, a Podman machine (WSL2, rootful) on Windows. Two runtimes, one property: neither is headed and neither carries a commercial licence (ADR 0004).
+The headless, license-free container runtime that runs the Box on the host in place of Docker Desktop — Colima on macOS, a Podman machine (WSL2, rootful) on Windows. Two runtimes, one property: neither is headed and neither carries a commercial licence (ADR 0004). The Launcher holds an Engine, not a runtime — `isRunning()` and `start()` are all it ever asks, and each runtime's quirks live in its own adapter, so every step outside those two adapters is the same on both platforms.
 
 **Refresh on Launch**:
 On every start, the Launcher pulls the latest Box definition from the public Claudebox GitHub repo and rebuilds the image if it changed, then runs `claude update` inside the running Box (the image's npm layer is cached, so a rebuild alone would keep shipping a stale Claude). This is the sole update mechanism, and the same one runs on demand from **Update Claudebox** on the home screen — for the Sandbox User who never quits the Launcher and would otherwise sit on last week's Box until they did. On demand it also recreates the container, because a rebuilt image changes nothing while the old one is still running; that ends every open Claude session, so it is confirmed first. Requires no credentials because the repo is public. Both halves are best-effort: an offline laptop still opens on its last-built image and its baked Claude, and is told so rather than shown a silent "up to date".

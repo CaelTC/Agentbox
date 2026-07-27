@@ -12,7 +12,6 @@ src/
   core/        Pure, framework-free logic — the tested heart of the Launcher.
                No Electron, no Docker; deterministic and unit-tested.
     config.ts      Load-bearing constants (Resource Cap, volume, image names).
-    colima.ts      Colima start/status argument builders.
     box.ts         docker build/run/exec argument builders + no-host-mount guard.
     egress.ts      The Egress Policy rule-set (mirrors box/egress/apply-egress.sh).
     batteries.ts   Manifest of pre-baked runtimes (cross-checked vs the Dockerfile).
@@ -22,9 +21,11 @@ src/
     preview.ts     Loopback publish args, preview URL, served-port detection.
     refresh.ts     Refresh-on-Launch decision (hash + rebuild-if-changed).
     session-window.ts  Session URL + funnel `docker exec` + Chrome app-mode argv.
-  main/        Electron main process — the EFFECTS around the pure core. Runs
-               Colima/Docker, brokers the Box-side Workspace, and opens a
-               Project's session (funnel + Chrome app-mode window).
+  main/        Electron main process — the EFFECTS around the pure core. Holds
+               the Engine seam (engine.ts + its colima.ts / podman.ts adapters)
+               and the Box-exec seam (box-exec.ts), brokers the Box-side
+               Workspace, and opens a Project's session (funnel + Chrome
+               app-mode window).
   renderer/    The home screen + per-Project control panel. The Claude session
                itself opens in a separate Chrome app-mode window, not in here.
   shared/      The typed IPC contract (ClaudeboxApi) between main and renderer.
