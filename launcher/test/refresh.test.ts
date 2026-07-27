@@ -100,6 +100,16 @@ describe("updateMessage", () => {
     expect(m).toMatch(/restarted/i);
   });
 
+  // An unpinned build means the integrity gate ran with nothing to check
+  // against (threat B) — that must reach the user, not just a console.
+  it("warns to the user's face when the build ran unpinned", () => {
+    const m = updateMessage({ action: "rebuilt", reason: "changed", online: true, unpinned: true });
+    expect(m).toMatch(/UNPINNED/);
+    expect(
+      updateMessage({ action: "rebuilt", reason: "changed", online: true, unpinned: false }),
+    ).not.toMatch(/UNPINNED/);
+  });
+
   it("says nothing was new when the definition is unchanged", () => {
     expect(updateMessage({ action: "started", reason: "unchanged", online: true })).toMatch(
       /already up to date/i,

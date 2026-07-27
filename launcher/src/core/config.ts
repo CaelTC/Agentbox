@@ -55,6 +55,16 @@ export const BOX_CONTAINER = "claudebox";
 export const BOX_USER = "sandbox";
 
 /**
+ * PATH for everything the Launcher runs in the Box AS ROOT. The image's own
+ * PATH puts /usr/local/cargo/bin — a directory the sandbox user can write —
+ * FIRST, so resolving a bare `chown`/`rm`/`claude` through it as root would let
+ * a compromised session plant a binary and escalate (root + NET_ADMIN can flush
+ * the egress wall). Root needs nothing from the cargo toolchain, so root execs
+ * carry this sanitized PATH instead of the image's.
+ */
+export const BOX_ROOT_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
+
+/**
  * The Workspace lives on a named Docker volume — NOT a host mount — so the Box
  * cannot see a single real file on the laptop (ADR 0001, threat A) yet work
  * survives stop/start.

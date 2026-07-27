@@ -109,6 +109,14 @@ export interface RefreshResult {
   reason: string;
   /** False when the definition couldn't be pulled at all — offline, or a clone that won't fast-forward. */
   online: boolean;
+  /**
+   * True when a build ran with no PINNED_DEFINITION_COMMIT configured: the
+   * integrity gate had nothing to check against, so whatever upstream served
+   * was built (threat B). Never silent — `updateMessage` says it to the user's
+   * face, because a disabled security gate that only whispers to a console
+   * nobody reads is a disabled security gate.
+   */
+  unpinned?: boolean;
 }
 
 /**
@@ -121,7 +129,11 @@ export interface RefreshResult {
 export function updateMessage(result: RefreshResult): string {
   switch (result.action) {
     case "rebuilt":
-      return "Claudebox is up to date. The sandbox restarted on the new version.";
+      return result.unpinned
+        ? "Claudebox is up to date. The sandbox restarted on the new version. " +
+            "Warning: this build is UNPINNED — no reviewed commit is configured, so the " +
+            "sandbox was built from whatever the definition repo currently serves."
+        : "Claudebox is up to date. The sandbox restarted on the new version.";
     case "blocked":
       return result.reason;
     case "error":

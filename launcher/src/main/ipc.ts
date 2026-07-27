@@ -1,5 +1,6 @@
 import { BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { statSync } from "node:fs";
+import { resolve } from "node:path";
 import { IPC, type SavedFolder } from "../shared/api";
 import {
   awaitGithubLogin,
@@ -204,15 +205,30 @@ export function registerIpc(window: BrowserWindow): void {
     return { dir, opened: true, lastSaved: stat.mtimeMs };
   });
 
+  // Import's trust boundary: the only folder that may ever cross into the Box
+  // is one the native picker handed out in THIS process. The string the
+  // renderer echoes back with `importFolder` is input, not truth — a
+  // compromised renderer sending '/Users/alex/.ssh' would otherwise copy any
+  // host path into a Workspace the sandboxed session can read (threat A).
+  const pickedFolders = new Set<string>();
+
   // Picker outside the gate, measurement inside it — see `IPC.upload` above.
   route(IPC.planImport, async () => {
     const folder = await pickFolder();
-    return folder === undefined ? undefined : viaBox(() => boxPlanImport(folder));
+    if (folder === undefined) return undefined;
+    pickedFolders.add(resolve(folder)); // resolved — `boxPlanImport` echoes the resolved form
+    return viaBox(() => boxPlanImport(folder));
   });
 
   // The folder path comes from the sheet the plan above produced, but the
-  // copy re-measures it rather than trusting those numbers back.
-  routeViaBox(IPC.importFolder, (folder: string) => boxImportFolder(folder));
+  // copy re-measures it rather than trusting those numbers back — and refuses
+  // outright any path the picker never produced (see `pickedFolders`).
+  routeViaBox(IPC.importFolder, (folder: string) => {
+    if (!pickedFolders.has(resolve(folder))) {
+      throw new Error("Import refused: that folder was not chosen with the folder picker.");
+    }
+    return boxImportFolder(folder);
+  });
 
   // Publishing runs two ephemeral containers off the Box image, so the image has
   // to exist — the same reason Export brings the Box up first.

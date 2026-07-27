@@ -38,23 +38,28 @@ RUN python3 -m venv /opt/terminal-venv \
        uvicorn==0.30.6 \
        websockets==12.0
 
+# --- Non-root user -----------------------------------------------------------
+# Claude runs as an unprivileged user; the entrypoint uses sudo only to install
+# the egress firewall at startup (ticket 02). Created before the Rust install so
+# the toolchain below can be owned by it in the same layer.
+RUN useradd --create-home --shell /bin/bash sandbox \
+  && echo 'sandbox ALL=(root) NOPASSWD: /usr/local/bin/apply-egress.sh' > /etc/sudoers.d/egress \
+  && chmod 0440 /etc/sudoers.d/egress
+
 # Rust via rustup, installed system-wide so every session sees `cargo`/`rustc`.
+# Owned by `sandbox` — NOT world-writable: /usr/local/cargo/bin is first on this
+# PATH, and a world-writable directory on root's PATH is a plant-a-binary root
+# escalation. The Launcher's root execs also carry their own sanitized PATH
+# (launcher config.BOX_ROOT_PATH) and never resolve through here.
 ENV RUSTUP_HOME=/usr/local/rustup \
     CARGO_HOME=/usr/local/cargo \
     PATH=/usr/local/cargo/bin:$PATH
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
       | sh -s -- -y --no-modify-path --profile minimal \
-  && chmod -R a+rwX /usr/local/cargo /usr/local/rustup
+  && chown -R sandbox:sandbox /usr/local/cargo /usr/local/rustup
 
 # --- Claude Code (ticket 01) -------------------------------------------------
 RUN npm install -g @anthropic-ai/claude-code
-
-# --- Non-root user -----------------------------------------------------------
-# Claude runs as an unprivileged user; the entrypoint uses sudo only to install
-# the egress firewall at startup (ticket 02).
-RUN useradd --create-home --shell /bin/bash sandbox \
-  && echo 'sandbox ALL=(root) NOPASSWD: /usr/local/bin/apply-egress.sh' > /etc/sudoers.d/egress \
-  && chmod 0440 /etc/sudoers.d/egress
 
 COPY egress/apply-egress.sh /usr/local/bin/apply-egress.sh
 # The live proof that the rules above actually hold (issue #11). Run once by the

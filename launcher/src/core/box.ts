@@ -1,6 +1,7 @@
 import {
   BOX_CONTAINER,
   BOX_IMAGE,
+  BOX_ROOT_PATH,
   HOME_DIR,
   HOME_VOLUME,
   WORKSPACE_DIR,
@@ -87,7 +88,20 @@ export function boxRunArgs(options: BoxRunOptions = {}): string[] {
  * `timeout` is applied IN the Box so a stalled download can't hang startup.
  */
 export function boxUpdateClaudeArgs(container: string = BOX_CONTAINER): string[] {
-  return ["exec", "-u", "root", container, "timeout", "180", "claude", "update"];
+  // Sanitized PATH for the same reason as box-exec's root seam: never resolve a
+  // root command through the sandbox-writable /usr/local/cargo/bin.
+  return [
+    "exec",
+    "-u",
+    "root",
+    "-e",
+    `PATH=${BOX_ROOT_PATH}`,
+    container,
+    "timeout",
+    "180",
+    "claude",
+    "update",
+  ];
 }
 
 /** A `-v` value is a host bind mount unless its source is a bare named volume. */

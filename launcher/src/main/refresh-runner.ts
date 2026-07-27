@@ -52,7 +52,12 @@ export async function refreshOnLaunch(): Promise<RefreshResult> {
         return { action: "error", reason: `Box rebuild failed: ${built.stderr}`, online };
       }
       if (currentHash) writeStoredHash(currentHash);
-      return { action: "rebuilt", reason: decision.reason, online };
+      return {
+        action: "rebuilt",
+        reason: decision.reason,
+        online,
+        unpinned: !PINNED_DEFINITION_COMMIT,
+      };
     }
     case "start":
       return { action: "started", reason: decision.reason, online };

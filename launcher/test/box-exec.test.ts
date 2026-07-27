@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { BOX_CONTAINER, ENGINE_CLI } from "../src/core/config";
+import { BOX_CONTAINER, BOX_ROOT_PATH, ENGINE_CLI } from "../src/core/config";
 import { BOX_EXEC_TIMEOUT_MS, boxExec, runPipe, sh } from "../src/main/box-exec";
 import { run, spawnPath, type RunResult } from "../src/main/exec";
 
@@ -80,10 +80,13 @@ describe("boxExec argv", () => {
     expect(engineCalls).toEqual([`${ENGINE_CLI} exec ${BOX_CONTAINER} mkdir -p /workspace/demo`]);
   });
 
-  it("runs a root command with -u root, and nothing else does", async () => {
+  // The sanitized PATH is load-bearing: the image's PATH puts the
+  // sandbox-writable /usr/local/cargo/bin first, and a root exec that resolves
+  // a bare `rm`/`chown` through it is a plant-a-binary escalation.
+  it("runs a root command with -u root and a sanitized PATH, and nothing else does", async () => {
     await boxExec.execAsRoot(["rm", "-rf", "/workspace/demo"]);
     expect(engineCalls).toEqual([
-      `${ENGINE_CLI} exec -u root ${BOX_CONTAINER} rm -rf /workspace/demo`,
+      `${ENGINE_CLI} exec -u root -e PATH=${BOX_ROOT_PATH} ${BOX_CONTAINER} rm -rf /workspace/demo`,
     ]);
   });
 

@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { BOX_CONTAINER, ENGINE_CLI } from "../core/config";
+import { BOX_CONTAINER, BOX_ROOT_PATH, ENGINE_CLI } from "../core/config";
 import { failureMessage, run, spawnPath, type RunResult } from "./exec";
 
 /**
@@ -126,10 +126,15 @@ function describe(argv: readonly string[]): string {
 const boxFailure = (what: string, res: RunResult): Error => new Error(failureMessage(what, res));
 
 const inBox = (argv: readonly string[]): string[] => ["exec", BOX_CONTAINER, ...argv];
+// `-e PATH` also governs how the engine RESOLVES the bare command itself, so a
+// root exec never looks in the sandbox-writable /usr/local/cargo/bin (see
+// BOX_ROOT_PATH for the escalation this closes).
 const inBoxAsRoot = (argv: readonly string[]): string[] => [
   "exec",
   "-u",
   "root",
+  "-e",
+  `PATH=${BOX_ROOT_PATH}`,
   BOX_CONTAINER,
   ...argv,
 ];

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { BOX_ROOT_PATH } from "../src/core/config";
 import {
   assertNoHostMounts,
   boxRunArgs,
@@ -47,7 +48,9 @@ describe("boxUpdateClaudeArgs", () => {
   const args = boxUpdateClaudeArgs();
 
   it("updates Claude Code as root in the running Box (root owns the global install)", () => {
-    expect(args.join(" ")).toBe("exec -u root claudebox timeout 180 claude update");
+    expect(args.join(" ")).toBe(
+      `exec -u root -e PATH=${BOX_ROOT_PATH} claudebox timeout 180 claude update`,
+    );
   });
 });
 
