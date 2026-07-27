@@ -1,11 +1,10 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   BLOCKED_CIDRS,
   egressPolicyRules,
   isPrivateAddress,
 } from "../src/core/egress";
+import { repoFile } from "./repo-file";
 
 const flat = (rules: string[][]) => rules.map((r) => r.join(" "));
 
@@ -123,10 +122,7 @@ describe("the Egress Policy's two copies", () => {
   // (a DROP appended after the final default-ACCEPT, the DNS allowance moved
   // below the gateway DROP) silently opens or closes the Box without changing a
   // single value.
-  const SCRIPT = readFileSync(
-    join(__dirname, "..", "..", "box", "egress", "apply-egress.sh"),
-    "utf8",
-  );
+  const SCRIPT = repoFile("box", "egress", "apply-egress.sh");
 
   const GATEWAY = "192.168.5.1";
   const RESOLVER = "192.168.5.53";
@@ -138,17 +134,43 @@ describe("the Egress Policy's two copies", () => {
     return [...array![1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
   }
 
+  /** One IPv4 rule line, and its arguments — the only shape `shellRules` reads. */
+  const IPTABLES_CALL = /^\s*iptables\s+(.+?)\s*$/;
+
+  /**
+   * Lines that DO run a firewall command but sit outside the ordered comparison
+   * on purpose: the flush appends no rule, and the v6 backstop has no IPv4
+   * counterpart in egress.ts. Each is asserted separately below — this list is
+   * what stops "outside the comparison" from meaning "unchecked".
+   */
+  const OUTSIDE_THE_COMPARISON = /^(iptables -F OUTPUT|if command -v ip6tables .*|ip6tables .*)$/;
+
+  /**
+   * Anything that could install a firewall rule, in any spelling — `/sbin/iptables`,
+   * `sudo iptables`, `iptables-restore`, `ip6tables`, `nft`. `shellRules` only
+   * reads bare `iptables` lines, so without this a rule added through any other
+   * spelling would be invisible to the comparison that is the point of this file.
+   */
+  const FIREWALL_COMMAND = /(^|[\s|;&(])((\/\S*)?ip6?tables(-\S+)?|nft)(\s|$)/;
+
+  /** The script's executable lines (comments run nothing), trimmed. */
+  const scriptLines = () =>
+    SCRIPT.split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line !== "" && !line.startsWith("#"));
+
   /**
    * Every `iptables` rule the script runs, in order, with its loops unrolled:
    * one resolver, one gateway, and the script's own CIDR list. `ip6tables` lines
    * are skipped (the v6 backstop has no IPv4 counterpart in egress.ts) and so is
-   * the flush, which appends no rule — its placement is asserted separately.
+   * the flush, which appends no rule — both are asserted separately, and the
+   * completeness test below is what proves nothing ELSE is skipped silently.
    */
   function shellRules(): string[] {
     const cidrs = shellCidrs();
     const rules: string[] = [];
     for (const line of SCRIPT.split("\n")) {
-      const call = line.match(/^\s*iptables\s+(.+?)\s*$/);
+      const call = line.match(IPTABLES_CALL);
       if (!call) continue;
       const args = call[1].replace(/"/g, "").replace(/\s+/g, " ");
       if (args === "-F OUTPUT") continue;
@@ -178,10 +200,64 @@ describe("the Egress Policy's two copies", () => {
   it("is fail-closed in the shell too: the default DROP is set BEFORE the flush", () => {
     // Only the script has a flush, so the ordered comparison above cannot see
     // this: `-F` before `-P` would leave the chain wide open mid-apply.
-    const policy = SCRIPT.indexOf("iptables -P OUTPUT DROP");
-    const flush = SCRIPT.indexOf("iptables -F OUTPUT");
+    //
+    // Line-anchored, because the script explains itself in prose: a comment
+    // mentioning `iptables -P OUTPUT DROP` would otherwise be what this reads,
+    // and the real ordering could then be anything at all.
+    const policy = SCRIPT.search(/^\s*iptables -P OUTPUT DROP\b/m);
+    const flush = SCRIPT.search(/^\s*iptables -F OUTPUT\b/m);
     expect(policy).toBeGreaterThanOrEqual(0);
     expect(flush).toBeGreaterThan(policy);
+  });
+
+  it("runs no firewall command the ordered comparison cannot see", () => {
+    // The comparison above reads bare `iptables …` lines only. That is a fine
+    // extractor and a terrible guarantee on its own: `/sbin/iptables -P OUTPUT
+    // ACCEPT`, `sudo iptables -I OUTPUT 1 -j ACCEPT`, an `iptables-restore`, or a
+    // switch to `nft` would each open the Box while every test above stayed
+    // green. So every firewall line must be accounted for — compared, or on the
+    // short list that is asserted separately.
+    const unaccounted = scriptLines().filter(
+      (line) =>
+        FIREWALL_COMMAND.test(line) &&
+        !IPTABLES_CALL.test(line) &&
+        !OUTSIDE_THE_COMPARISON.test(line),
+    );
+    expect(unaccounted).toEqual([]);
+  });
+
+  it("backstops IPv6 with a deny-all, best-effort, since egress.ts's rules are v4-only", () => {
+    // The hard guarantee is the Launcher's `--sysctl disable_ipv6=1`; this is the
+    // in-Box backstop for it, and until now nothing in the repo asserted it
+    // existed at all. Compared as the WHOLE v6 block, so the allowlist above can
+    // safely wave `ip6tables .*` through: a fourth v6 line lands here.
+    const v6 = scriptLines()
+      .filter((line) => line.startsWith("ip6tables"))
+      .map((line) => line.replace(/\s+/g, " "));
+
+    expect(v6).toEqual([
+      "ip6tables -P OUTPUT DROP 2>/dev/null || true",
+      "ip6tables -F OUTPUT 2>/dev/null || true",
+      "ip6tables -A OUTPUT -o lo -j ACCEPT 2>/dev/null || true",
+    ]);
+  });
+
+  it("never unrolls a loop that would reorder: many values AND more than one rule", () => {
+    // `shellRules` unrolls a loop as A(v1..vn) then B(v1..vn); bash runs A(v1),
+    // B(v1), A(v2)… The two coincide only when a loop has ONE value or ONE rule.
+    // The CIDR loop has five values and one rule; the resolver loop has two rules
+    // and is unrolled with a single resolver. A loop that grew both would make
+    // the comparison above assert an order the Box never runs.
+    const unrolled: Record<string, number> = { cidr: BLOCKED_CIDRS.length, ns: 1 };
+    const loops = [...SCRIPT.matchAll(/^\s*for (\w+) in .*; do\n([\s\S]*?)^\s*done\s*$/gm)];
+    expect(loops.length).toBeGreaterThan(0);
+
+    for (const [, variable, body] of loops) {
+      const values = unrolled[variable];
+      expect(values, `apply-egress.sh now loops over an unknown '${variable}'`).toBeDefined();
+      const rules = body.split("\n").filter((line) => IPTABLES_CALL.test(line));
+      expect(values === 1 || rules.length <= 1).toBe(true);
+    }
   });
 });
 

@@ -1,12 +1,8 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { BATTERIES } from "../src/core/batteries";
+import { repoFile } from "./repo-file";
 
-const dockerfile = readFileSync(
-  join(__dirname, "..", "..", "box", "Dockerfile"),
-  "utf8",
-);
+const dockerfile = repoFile("box", "Dockerfile");
 
 describe("BATTERIES manifest", () => {
   it("lists the runtimes the ticket requires", () => {

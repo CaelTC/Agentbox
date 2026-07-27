@@ -1,7 +1,6 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { transformSync } from "esbuild";
 import { describe, expect, it } from "vitest";
+import { repoFile } from "./repo-file";
 
 /**
  * The renderer is a classic <script>: `src/renderer/app.ts` has no imports and
@@ -17,7 +16,7 @@ import { describe, expect, it } from "vitest";
  *    against their originals, the same trick test/preview.test.ts plays on
  *    box/entrypoint.sh.
  */
-const src = (...parts: string[]) => readFileSync(join(__dirname, "..", "src", ...parts), "utf8");
+const src = (...parts: string[]) => repoFile("launcher", "src", ...parts);
 const APP = src("renderer", "app.ts");
 
 // --- the machinery, cut out and run ------------------------------------------

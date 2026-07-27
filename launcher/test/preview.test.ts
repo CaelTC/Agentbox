@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   PREVIEW_PORTS,
@@ -9,6 +7,7 @@ import {
   previewDoc,
   previewUrl,
 } from "../src/core/preview";
+import { repoFile } from "./repo-file";
 
 describe("loopbackPublishArgs", () => {
   it("publishes each preview port bound to 127.0.0.1 (Mac browser only, never the LAN)", () => {
@@ -86,7 +85,7 @@ describe("the Preview contract's two copies", () => {
   // this is that test. Without it, changing PREVIEW_PORTS updates the doc the
   // Launcher reasons about and silently leaves the Box shipping the old ports.
   it("box/entrypoint.sh writes exactly what previewDoc() returns", () => {
-    const script = readFileSync(join(__dirname, "..", "..", "box", "entrypoint.sh"), "utf8");
+    const script = repoFile("box", "entrypoint.sh");
     const heredoc = script.match(
       /cat > \/home\/sandbox\/\.claude\/CLAUDE\.md <<'EOF'\n([\s\S]*?)\nEOF\n/,
     );

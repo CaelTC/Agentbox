@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { boxRunArgs } from "../src/core/box";
 import {
@@ -10,6 +8,7 @@ import {
 } from "../src/core/config";
 import { TERMINAL_PORT } from "../src/core/preview";
 import { colimaStartArgs, isColimaRunning } from "../src/main/colima";
+import { repoFile } from "./repo-file";
 
 /**
  * core/config.ts is the declared source of truth for the load-bearing constants,
@@ -20,9 +19,6 @@ import { colimaStartArgs, isColimaRunning } from "../src/main/colima";
  * file. Drift means an installer that provisions a differently-named machine, a
  * different image tag, or a Box outside the Resource Cap (CONTEXT.md).
  */
-const repoFile = (...parts: string[]) =>
-  readFileSync(join(__dirname, "..", "..", ...parts), "utf8");
-
 const SKELETON = repoFile("scripts", "claudebox.sh");
 const INSTALL_SH = repoFile("launcher", "install", "install.sh");
 const INSTALL_PS1 = repoFile("launcher", "install", "install.ps1");
@@ -84,7 +80,11 @@ describe("scripts/claudebox.sh (the walking skeleton) against the core", () => {
   });
 
   it("points the user at the web terminal on TERMINAL_PORT", () => {
-    expect(SKELETON).toContain(`127.0.0.1:${TERMINAL_PORT}`);
+    // The URL it PRINTS, bounded at both ends. `toContain("127.0.0.1:7681")` was
+    // satisfied twice over by accident: `-p 127.0.0.1:7681:7681` (already covered
+    // by boxRunArgs above) matched it, and being a prefix match it would have
+    // gone on matching a message that sent the user to `:76810`.
+    expect(SKELETON).toMatch(new RegExp(`http://127\\.0\\.0\\.1:${TERMINAL_PORT}(?![\\d:])`));
   });
 
   it("greps colima status for a line a NAMED profile actually prints", () => {

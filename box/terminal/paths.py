@@ -15,7 +15,11 @@ _SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 def is_valid_slug(slug: str) -> bool:
     """True only for a well-formed Project slug: lowercase a–z / 0–9 / single dashes."""
-    return bool(_SLUG_RE.match(slug or ""))
+    # fullmatch, NOT match: Python's `$` also matches just BEFORE a trailing
+    # newline, so `re.match` accepts "demo\n" — which the Launcher's identical
+    # JavaScript pattern rejects. Same pattern, weaker guard, and the guard is
+    # the point (launcher/test/projects.test.ts asserts this call is fullmatch).
+    return bool(_SLUG_RE.fullmatch(slug or ""))
 
 
 def safe_path(root: str, rel: str) -> str | None:

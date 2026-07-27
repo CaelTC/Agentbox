@@ -1,7 +1,6 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { SLUG_RE, assertValidSlug, sanitizeProjectName } from "../src/core/projects";
+import { repoFile } from "./repo-file";
 
 describe("sanitizeProjectName", () => {
   it("slugifies a friendly name", () => {
@@ -40,23 +39,48 @@ describe("the slug shape's three copies", () => {
   // tested on their own side (above, and box/terminal/test_paths.py); nothing but
   // this checks the three patterns are the SAME pattern. A slack copy in the Box
   // accepts a name the Launcher would never produce.
-  const boxFile = (...parts: string[]) =>
-    readFileSync(join(__dirname, "..", "..", "box", ...parts), "utf8");
+  const boxFile = (...parts: string[]) => repoFile("box", ...parts);
 
-  /** The pattern of a `SLUG_RE = re.compile(r"…")` in a Python source file. */
+  /**
+   * The pattern of a `SLUG_RE = re.compile(r"…")` in a Python source file. Anchored
+   * to the start of its line, so an unrelated `MY_SLUG_RE` elsewhere in the file
+   * cannot be the thing this test reads while the real one drifts.
+   */
   function pythonSlugPattern(source: string, where: string): string {
-    const found = source.match(/_?SLUG_RE\s*=\s*re\.compile\(r"([^"]+)"\)/);
+    const found = source.match(/^\s*_?SLUG_RE\s*=\s*re\.compile\(r"([^"]+)"\)/m);
     expect(found, `${where} no longer compiles a SLUG_RE`).not.toBeNull();
     return found![1];
   }
 
+  /**
+   * HOW the copy applies its pattern, which the pattern text cannot say. Python's
+   * `$` matches just before a trailing newline as well as at the end of the
+   * string, so `SLUG_RE.match("demo\n")` succeeds where the Launcher's identical
+   * JavaScript pattern fails — the same regex, silently slacker on the Box side.
+   * `fullmatch` is what makes the two agree.
+   */
+  function pythonSlugMatcher(source: string, where: string): string {
+    const found = source.match(/^\s*(?:if not |return bool\()_?SLUG_RE\.(\w+)\(/m);
+    expect(found, `${where} no longer applies its SLUG_RE`).not.toBeNull();
+    return found![1];
+  }
+
   it("box/bin/claudebox-session guards the slug with core/projects.ts's regex", () => {
-    expect(pythonSlugPattern(boxFile("bin", "claudebox-session"), "claudebox-session")).toBe(
-      SLUG_RE.source,
-    );
+    const source = boxFile("bin", "claudebox-session");
+    expect(pythonSlugPattern(source, "claudebox-session")).toBe(SLUG_RE.source);
+    expect(pythonSlugMatcher(source, "claudebox-session")).toBe("fullmatch");
   });
 
   it("box/terminal/paths.py rejects the same slugs core/projects.ts does", () => {
-    expect(pythonSlugPattern(boxFile("terminal", "paths.py"), "paths.py")).toBe(SLUG_RE.source);
+    const source = boxFile("terminal", "paths.py");
+    expect(pythonSlugPattern(source, "paths.py")).toBe(SLUG_RE.source);
+    expect(pythonSlugMatcher(source, "paths.py")).toBe("fullmatch");
+  });
+
+  it("rejects a trailing newline on every copy — the divergence `$` hides", () => {
+    // Asserted from the JavaScript side here and from the Python side in
+    // box/terminal/test_paths.py; the `fullmatch` checks above are what carry it
+    // across to the two copies this file can only read as text.
+    expect(SLUG_RE.test("demo\n")).toBe(false);
   });
 });
