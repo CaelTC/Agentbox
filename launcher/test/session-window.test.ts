@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   chromeAppLaunch,
-  ensureSessionExecArgs,
+  ensureSessionArgs,
   killSessionArgs,
   sessionUrl,
   windowsChromePaths,
@@ -22,20 +22,22 @@ describe("sessionUrl", () => {
   });
 });
 
-describe("ensureSessionExecArgs", () => {
+describe("ensureSessionArgs", () => {
+  // The `exec <container>` prefix is the Box-exec seam's, exactly as for
+  // `killSessionArgs`: the router has the Box up before this ever runs, so
+  // nothing here reaches past the seam.
   it("routes through the single funnel, passing the slug as its own argv", () => {
-    expect(ensureSessionExecArgs("game2")).toEqual([
-      "exec",
-      "claudebox",
-      "claudebox-session",
-      "game2",
-    ]);
+    expect(ensureSessionArgs("game2")).toEqual(["claudebox-session", "game2"]);
+  });
+  it("carries no `exec`/container prefix of its own — that belongs to the seam", () => {
+    expect(ensureSessionArgs("game2")).not.toContain("exec");
+    expect(ensureSessionArgs("game2")).not.toContain("claudebox");
   });
   it("never runs interactively (-it) — off a TTY the funnel only ensures the session", () => {
-    expect(ensureSessionExecArgs("game2")).not.toContain("-it");
+    expect(ensureSessionArgs("game2")).not.toContain("-it");
   });
   it("refuses an unsafe slug", () => {
-    expect(() => ensureSessionExecArgs("a; rm -rf /")).toThrow(/unsafe/i);
+    expect(() => ensureSessionArgs("a; rm -rf /")).toThrow(/unsafe/i);
   });
 });
 
@@ -51,7 +53,7 @@ describe("killSessionArgs", () => {
     // its session lives would otherwise leave that session to be re-attached by
     // the next Project with the same slug — cwd on a directory that is gone.
     const killed = killSessionArgs("portfolio").at(-1);
-    const ensured = ensureSessionExecArgs("portfolio");
+    const ensured = ensureSessionArgs("portfolio");
     expect(killed).toBe(ensured[ensured.length - 1]);
   });
 

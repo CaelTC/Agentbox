@@ -1,5 +1,4 @@
 import { existsSync } from "node:fs";
-import { BOX_CONTAINER } from "./config";
 import { assertValidSlug } from "./projects";
 import { TERMINAL_PORT } from "./preview";
 
@@ -20,16 +19,16 @@ export function sessionUrl(slug: string, port: number = TERMINAL_PORT): string {
 }
 
 /**
- * `docker exec` argv that ensures the Project's session exists via the funnel.
- *
- * Still carries its own `exec <container>` prefix, unlike `killSessionArgs`
- * below: its one caller (`main/session.ts`) reaches the Box before the Box is
- * known to be up, so it does not go through the Box-exec seam.
+ * The in-Box command that ensures a Project's session exists, via the funnel.
+ * The `exec <container>` prefix belongs to the Box-exec seam (main/box-exec.ts),
+ * which runs it — exactly as for `killSessionArgs` below. Its one caller opens a
+ * session on a Box the router has already brought up, so there is no moment when
+ * it needs to reach past the seam.
  */
-export function ensureSessionExecArgs(slug: string, container: string = BOX_CONTAINER): string[] {
-  // No `-it`: off a TTY the funnel just ensures the session, it doesn't attach.
-  // The slug is a distinct argv (never a shell string), so it can't inject.
-  return ["exec", container, "claudebox-session", assertValidSlug(slug)];
+export function ensureSessionArgs(slug: string): string[] {
+  // Never interactive: off a TTY the funnel just ensures the session, it doesn't
+  // attach. The slug is a distinct argv (never a shell string), so it can't inject.
+  return ["claudebox-session", assertValidSlug(slug)];
 }
 
 /**

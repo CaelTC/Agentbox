@@ -2,8 +2,8 @@ import { spawn } from "node:child_process";
 import { shell } from "electron";
 import { BOX_CONTAINER, BOX_IMAGE, ENGINE_CLI } from "../core/config";
 import { boxRunArgs, boxUpdateClaudeArgs } from "../core/box";
-import { chromeAppLaunch, ensureSessionExecArgs, sessionUrl } from "../core/session-window";
-import { boxExec } from "./box-exec";
+import { chromeAppLaunch, ensureSessionArgs, sessionUrl } from "../core/session-window";
+import { boxExec, type BoxExec } from "./box-exec";
 import { engine } from "./engine";
 import { inspectBoxState } from "./environment";
 import { mustSucceed, run } from "./exec";
@@ -69,9 +69,15 @@ async function runStep(step: StartupStep, boxDefinitionDir: string): Promise<voi
  * calls this inside the try that reports "Couldn't start Claudebox", so a
  * rejected spawn (no engine on a Finder-launched PATH) would turn a skippable
  * update into a fatal launch. Every way this can go wrong is one `false`.
+ *
+ * The Box-exec seam's ONE documented exception (main/box-exec.ts): it runs as
+ * root, it is best-effort, and it carries its own in-Box `timeout 180`, which is
+ * longer than the seam's deadline. The host-side deadline here is the backstop
+ * that in-Box `timeout` cannot be — it does nothing for a `docker exec` that
+ * never returns, and this one runs holding the Box Gate.
  */
 export async function updateClaudeCode(): Promise<boolean> {
-  const res = await run(ENGINE_CLI, boxUpdateClaudeArgs()).catch(() => null);
+  const res = await run(ENGINE_CLI, boxUpdateClaudeArgs(), undefined, 240_000).catch(() => null);
   return res?.code === 0;
 }
 
@@ -85,8 +91,12 @@ export async function updateClaudeCode(): Promise<boolean> {
 export async function openProjectSession(
   slug: string,
   platform: NodeJS.Platform = process.platform,
+  box: BoxExec = boxExec,
 ): Promise<void> {
-  await mustSucceed(ENGINE_CLI, ensureSessionExecArgs(slug));
+  // Through the Box-exec seam like every other command against a running Box:
+  // the router brings the Box up before this channel's target runs, so there is
+  // nothing here that has to reach past it.
+  await box.exec(ensureSessionArgs(slug), `Opening the '${slug}' session`);
   const url = sessionUrl(slug);
   const launch = chromeAppLaunch(url, platform);
   if (!launch) {

@@ -1,10 +1,10 @@
 import { spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { BOX_CONTAINER, ENGINE_CLI } from "../src/core/config";
-import { boxExec, runPipe, sh, type BoxExec } from "../src/main/box-exec";
+import { BOX_EXEC_TIMEOUT_MS, boxExec, runPipe, sh, type BoxExec } from "../src/main/box-exec";
 import { run, spawnPath, type RunResult } from "../src/main/exec";
 import {
   boxCreateProject,
@@ -111,6 +111,29 @@ describe("boxExec argv", () => {
     ]);
   });
 
+  // A `docker exec` that never returns is not one dead operation: the Box Gate
+  // is single-file, so it is every Box channel dead for the life of the
+  // Launcher — Update Claudebox, the mechanism that would ship the fix, included.
+  it("bounds every exec with a deadline, and deliberately does not bound the copies", async () => {
+    await boxExec.exec(["ls"]);
+    await boxExec.tryExec(["ls"]);
+    await boxExec.execAsRoot(["ls"]);
+    await boxExec.writeFile("/workspace/demo/a", "hi");
+    await boxExec.copyIn("/host/big.zip", "/workspace/demo/big.zip");
+    await boxExec.copyOut("/workspace/demo/big.zip", "/host/big.zip");
+
+    // A multi-GB Import or Export is legitimately slow, and holding the gate for
+    // it is correct — a copy is exactly the thing nothing else may race.
+    expect(vi.mocked(run).mock.calls.map((call) => call[3])).toEqual([
+      BOX_EXEC_TIMEOUT_MS,
+      BOX_EXEC_TIMEOUT_MS,
+      BOX_EXEC_TIMEOUT_MS,
+      BOX_EXEC_TIMEOUT_MS,
+      undefined,
+      undefined,
+    ]);
+  });
+
   it("sends file content as base64, so arbitrary content never meets a shell", async () => {
     const content = `{"name":"Rock & Roll'; rm -rf /"}`;
     await boxExec.writeFile("/workspace/demo/.claudebox/project.json", content);
@@ -141,9 +164,31 @@ describe("boxExec failure contract", () => {
     await expect(boxExec.writeFile("/workspace/a", "hi")).rejects.toThrow(/Writing '\/workspace\/a'/);
   });
 
+  // The affordance that keeps callers from misusing `tryExec` to reword a
+  // failure: naming the operation is the seam's job, at the call site's request.
+  it("names the operation instead of the argv when a caller says what it was doing", async () => {
+    await expect(boxExec.exec(["df", "-kP", "/workspace"], "Reading the Box's free space"))
+      .rejects.toThrow(/^Reading the Box's free space failed \(exit 1\): permission denied$/);
+    await expect(boxExec.execAsRoot(["rm", "-rf", "/x"], "Deleting 'demo'")).rejects.toThrow(
+      /^Deleting 'demo' failed/,
+    );
+  });
+
   it("resolves — never throws — for tryExec, the one tolerant operation", async () => {
     await expect(boxExec.tryExec(["test", "-e", "/workspace/gone"])).resolves.toMatchObject({
       code: 1,
+    });
+  });
+
+  // `run` REJECTS when the Engine binary cannot be spawned at all, and every
+  // tolerant call site reads `.code` off a result it assumes it has. A rejection
+  // there is an unhandled throw out of a function documented never to throw.
+  it("resolves for tryExec even when the Engine cannot be spawned at all", async () => {
+    vi.mocked(run).mockRejectedValue(new Error("spawn docker ENOENT"));
+
+    await expect(boxExec.tryExec(["test", "-e", "/workspace/gone"])).resolves.toMatchObject({
+      code: -1,
+      stderr: expect.stringContaining("ENOENT"),
     });
   });
 });
@@ -194,16 +239,20 @@ interface FakeBox extends BoxExec {
 
 /**
  * A Box that answers with whatever `reply` returns — a string for stdout, an
- * Error to make that one operation fail. This is the whole test double: no
- * module mocking, because the seam is an argument.
+ * Error to make that one operation fail, or a whole `RunResult` for the one
+ * shape the other two cannot express: output AND a non-zero exit, which is what
+ * `find` does when it stumbles over a file that vanished mid-walk. This is the
+ * whole test double: no module mocking, because the seam is an argument.
  */
-function fakeBox(reply: (op: Op, args: readonly string[]) => string | Error = () => ""): FakeBox {
+type Reply = string | Error | RunResult;
+
+function fakeBox(reply: (op: Op, args: readonly string[]) => Reply = () => ""): FakeBox {
   const calls: string[] = [];
   const answer = (op: Op, args: readonly string[]): string => {
     calls.push([op, ...args].join(" "));
     const replied = reply(op, args);
     if (replied instanceof Error) throw replied;
-    return replied;
+    return typeof replied === "string" ? replied : replied.stdout;
   };
   return {
     calls,
@@ -211,9 +260,8 @@ function fakeBox(reply: (op: Op, args: readonly string[]) => string | Error = ()
     tryExec: async (argv) => {
       calls.push(["tryExec", ...argv].join(" "));
       const replied = reply("tryExec", argv);
-      return replied instanceof Error
-        ? { code: 1, stdout: "", stderr: replied.message }
-        : { code: 0, stdout: replied, stderr: "" };
+      if (replied instanceof Error) return { code: 1, stdout: "", stderr: replied.message };
+      return typeof replied === "string" ? { code: 0, stdout: replied, stderr: "" } : replied;
     },
     execAsRoot: async (argv) => void answer("execAsRoot", argv),
     writeFile: async (path, content) => void answer("writeFile", [path, content]),
@@ -324,11 +372,11 @@ describe("boxDeleteProject", () => {
     expect(fake.calls.some((c) => c.startsWith("execAsRoot tmux"))).toBe(false);
   });
 
-  it("reports the Project's name when the removal itself fails", async () => {
+  // The wording is the seam's now (`what`), not a try/catch here that caught an
+  // error only to reword it — so what this pins is that the reason survives.
+  it("reports why the removal failed", async () => {
     const fake = fakeBox((op) => (op === "execAsRoot" ? new Error("device or resource busy") : ""));
-    await expect(boxDeleteProject("demo", "demo", fake)).rejects.toThrow(
-      /Couldn't delete 'demo'.*device or resource busy/s,
-    );
+    await expect(boxDeleteProject("demo", "demo", fake)).rejects.toThrow(/device or resource busy/);
   });
 
   // The typed name is checked against the Box's own metadata, not against
@@ -439,6 +487,68 @@ describe("boxExport — `saved: N` is a promise about files on the disk", () => 
 
     const result = await boxExport("demo", root, ["notes.md"], box);
     expect(result.saved).toBe(1);
+  });
+
+  /**
+   * `find` exits 1 for ANY per-file traversal error — a file a running dev
+   * server unlinked between the walk reaching its directory and reaching it —
+   * while still printing every other file. Read as a failure, that ends an
+   * Export the Sandbox User could otherwise have completed.
+   */
+  it("saves the files `find` did print, even when `find` exited non-zero", async () => {
+    const box = fakeBox((op, argv) => {
+      if (isSlugListing(argv)) return "demo\n";
+      if (isFileListing(argv)) {
+        return { code: 1, stdout: "100644\t12\tnotes.md\n", stderr: "find: './tmp/x': No such file" };
+      }
+      if (op === "copyOut") writeFileSync(argv[1]!, "hello");
+      return "";
+    });
+
+    expect((await boxExport("demo", root, ["notes.md"], box)).saved).toBe(1);
+  });
+
+  // The other half: nothing printed AND a failure is the case the old throw was
+  // really for. An empty listing there would offer nothing to save — and, from
+  // the delete sheet, report that nothing is about to be lost.
+  it("still throws when the listing failed with nothing printed at all", async () => {
+    const box = fakeBox((_op, argv) => {
+      if (isSlugListing(argv)) return "demo\n";
+      if (isFileListing(argv)) {
+        return { code: 1, stdout: "", stderr: "Error: No such container: claudebox" };
+      }
+      return "";
+    });
+
+    await expect(boxExport("demo", root, ["notes.md"], box)).rejects.toThrow(
+      /Couldn't list the files in 'demo'.*No such container/s,
+    );
+  });
+
+  // Files that landed before a mid-loop failure are on the user's disk, and
+  // "last saved" is what Show saved files and the delete sheet report about
+  // them. Overwriting existing files does not move the folder's own mtime, so
+  // without the stamp a second, half-failing Export reports the first one's time.
+  it("stamps 'last saved' when a copy fails part-way, for the files that landed", async () => {
+    const box = fakeBox((op, argv) => {
+      if (isSlugListing(argv)) return "demo\n";
+      if (isFileListing(argv)) return "100644\t12\tnotes.md\n100644\t12\treport.md\n";
+      if (op === "copyOut") {
+        if (argv[0]!.endsWith("report.md")) return new Error("no such file or directory");
+        writeFileSync(argv[1]!, "hello");
+      }
+      return "";
+    });
+
+    const before = Date.now() - 60_000;
+    const dir = join(root, "demo");
+    mkdirSync(dir, { recursive: true });
+    utimesSync(dir, new Date(before), new Date(before));
+
+    await expect(boxExport("demo", root, ["notes.md", "report.md"], box)).rejects.toThrow(
+      /no such file/,
+    );
+    expect(statSync(dir).mtimeMs).toBeGreaterThan(before);
   });
 });
 

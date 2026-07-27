@@ -140,7 +140,7 @@ export async function boxCreateProject(
  * "what am I about to lose", and an imported repo's `.git` is exactly the part a
  * Sandbox User would most regret.
  */
-export async function boxProjectUsage(
+async function boxProjectUsage(
   slug: string,
   box: BoxExec = boxExec,
 ): Promise<{ fileCount: number; totalBytes: number } | undefined> {
@@ -231,11 +231,7 @@ export async function boxDeleteProject(
   // and root would talk to a different, empty socket.
   const killed = await box.tryExec(killSessionArgs(slug));
 
-  try {
-    await box.execAsRoot(["rm", "-rf", dir]);
-  } catch (err) {
-    throw new Error(`Couldn't delete '${slug}': ${(err as Error).message}`);
-  }
+  await box.execAsRoot(["rm", "-rf", dir], `Deleting '${slug}'`);
 
   // Confirmed gone rather than assumed: `rm -rf` exits 0 on plenty of paths it
   // never touched, and the one thing this operation promises is that the Project
@@ -287,10 +283,7 @@ export async function boxUpload(
  * asks for this list and the Launcher classifies it — nothing served from inside
  * the Box decides what the host writes.
  */
-export async function boxListProjectFiles(
-  slug: string,
-  box: BoxExec = boxExec,
-): Promise<BoxFile[]> {
+async function boxListProjectFiles(slug: string, box: BoxExec = boxExec): Promise<BoxFile[]> {
   const dir = projectPath(slug);
   // %m = octal mode, %s = size, %P = path relative to the Project. Regular files
   // only, so symlinks never become a host write.
@@ -300,18 +293,30 @@ export async function boxListProjectFiles(
   // put tens of thousands of identically-greyed rows in the picker. -mindepth 1
   // keeps the prune from matching "." itself and emptying the listing.
   //
-  // Throws: Export and Delete both read this list, and a failed listing that
-  // resolved to "no files" would offer the Sandbox User nothing to save and
-  // then report that nothing was lost.
-  const listing = await box.exec(
+  // Tolerant on purpose, and unusually so: the ROWS are the answer here, not the
+  // exit code. `find` exits 1 for any per-file traversal error — one file a
+  // running dev server unlinked mid-walk is enough — while still printing every
+  // other file it visited, so throwing on the code failed a whole Export over a
+  // listing that was complete apart from a file the user was never going to save.
+  const listing = await box.tryExec(
     sh(
       `cd "$1" && find . -mindepth 1 \\( -name node_modules -o -name '.*' \\) -prune ` +
-        `-o -type f -printf '%m\\t%s\\t%P\\n'`,
+        `-o -type f -printf '%m\\t%s\\t%P\\n' 2>/dev/null`,
       dir,
     ),
   );
 
-  return parseBoxFileListing(listing);
+  // Nothing printed AND a failure is the case the throw was really for (no such
+  // container, no such Project): Export and Delete both read this list, and an
+  // empty one there would offer the Sandbox User nothing to save and then report
+  // that nothing was lost. An empty Project exits 0, so it is not caught here.
+  if (listing.code !== 0 && listing.stdout.trim() === "") {
+    throw new Error(
+      `Couldn't list the files in '${slug}': ${listing.stderr.trim() || "no output"}`,
+    );
+  }
+
+  return parseBoxFileListing(listing.stdout);
 }
 
 /**
@@ -402,20 +407,32 @@ export async function boxExport(
 
   mkdirSync(dir, { recursive: true });
   let unmarked = 0;
-  for (const file of plan.selected) {
-    const target = resolveExportTarget(dir, file.path);
-    mkdirSync(dirname(target), { recursive: true }); // keep the Project's structure
-    // Throws: `saved: N` is a promise about files that are actually on the disk.
-    await box.copyOut(`${projectPath(slug)}/${file.path}`, target);
-    // Nothing lands executable, whatever the Box said. Kept because it is still
-    // correct on macOS and costs nothing — but it is a no-op for executability
-    // on Windows, which is why the untrusted mark below exists (#12).
-    chmodSync(target, 0o644);
-    if (!(await markExportedUntrusted(target))) unmarked += 1;
+  let landed = 0;
+  try {
+    for (const file of plan.selected) {
+      const target = resolveExportTarget(dir, file.path);
+      mkdirSync(dirname(target), { recursive: true }); // keep the Project's structure
+      // Throws: `saved: N` is a promise about files that are actually on the disk.
+      await box.copyOut(`${projectPath(slug)}/${file.path}`, target);
+      // Nothing lands executable, whatever the Box said. Kept because it is still
+      // correct on macOS and costs nothing — but it is a no-op for executability
+      // on Windows, which is why the untrusted mark below exists (#12).
+      chmodSync(target, 0o644);
+      landed += 1;
+      if (!(await markExportedUntrusted(target))) unmarked += 1;
+    }
+  } finally {
+    // Stamped even when a copy failed part-way, because "last saved" is what
+    // Show saved files and the delete sheet report, and files that landed before
+    // the failure are on the Sandbox User's disk whatever this call did next.
+    // Overwriting files that were already there does not touch the folder's own
+    // mtime, so without this a second, half-failing Export would report the
+    // FIRST one's time over work that had just landed.
+    if (landed > 0) {
+      const now = new Date();
+      utimesSync(dir, now, now);
+    }
   }
-
-  const now = new Date();
-  utimesSync(dir, now, now); // stamps "last saved", which Show files reports
   return { ...result, unmarked };
 }
 
@@ -511,13 +528,11 @@ async function freeSpaceBytes(box: BoxExec): Promise<number> {
   // -P (POSIX) guarantees one line per filesystem; plain `df` wraps a long
   // device name onto its own line, which would feed the parser the wrong row.
   //
-  // Tolerant only to keep the wording a Sandbox User sees: the failure is still
-  // an error, just one phrased about the Box rather than about `docker`.
-  const res = await box.tryExec(["df", "-kP", WORKSPACE_DIR]);
-  if (res.code !== 0) {
-    throw new Error(`Could not read the Box's free space: ${res.stderr}`);
-  }
-  return parseDfAvailableBytes(res.stdout);
+  // Not tolerant: a failure here IS a failure, it just wants naming — which is
+  // what `what` is for, rather than a `tryExec` whose result is rethrown anyway.
+  return parseDfAvailableBytes(
+    await box.exec(["df", "-kP", WORKSPACE_DIR], "Reading the Box's free space"),
+  );
 }
 
 interface GatheredImport {
