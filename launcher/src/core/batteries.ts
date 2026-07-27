@@ -38,7 +38,10 @@ export const BATTERIES: readonly Battery[] = [
   {
     name: "mattpocock-skills",
     helloWorld: "claude plugin list",
-    dockerfileMarkers: ["mattpocock-skills"],
+    // The full plugin id, not just the plugin name: a Dockerfile that merely
+    // mentions "mattpocock-skills" once installed `mattpocock-skills@mattpocock-skills`
+    // from a repo that does not exist, and this test still passed.
+    dockerfileMarkers: ["mattpocock-skills@mattpocock"],
   },
 ];
 
