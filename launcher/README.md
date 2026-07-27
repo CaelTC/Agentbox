@@ -41,14 +41,13 @@ kept thin so little logic escapes the tests.
 
 **Two deliberate notes for reviewers:**
 
-- `core/projects.ts` and `core/upload.ts` include a **local-filesystem reference
-  implementation** (`createProject`, `listProjects`, `performUpload`, …) that the
-  unit tests exercise as an executable spec of the naming/collision/metadata
-  rules. In production the Workspace is a named volume with no host mirror
-  (ADR 0001), so `main/workspace.ts` brokers the *same* rules into the Box via
-  `docker exec`/`docker cp`, reusing the pure helpers (`sanitizeProjectName`,
-  `resolveUploadTargets`, `serializeProjectMeta`). The decisions live in one
-  place; only the effect target differs.
+- The Workspace is a named volume with no host mirror (ADR 0001), so there is no
+  host-side Project filesystem at all: `main/workspace.ts` is the only thing that
+  creates, lists, or writes into Projects, brokering every operation into the Box
+  via `docker exec`/`docker cp`. `core/projects.ts` and `core/upload.ts` hold
+  only the pure rules it reuses (`sanitizeProjectName`, `assertValidSlug`,
+  `resolveUploadTargets`, `serializeProjectMeta`), which the unit tests exercise
+  as an executable spec of the naming/collision/metadata rules.
 - Web Preview publishes a fixed set of common dev-server ports
   (`PREVIEW_PORTS`). A server on some other port won't be auto-detected — the
   Project's `CLAUDE.md` steers Claude to a published port (e.g. 5173).

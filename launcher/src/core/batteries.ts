@@ -8,40 +8,14 @@
  */
 export interface Battery {
   readonly name: string;
-  /** A no-install command that proves the runtime works inside the Box. */
-  readonly helloWorld: string;
   /** Substrings, any of which appearing in the Dockerfile proves it's installed. */
   readonly dockerfileMarkers: readonly string[];
 }
 
 export const BATTERIES: readonly Battery[] = [
-  {
-    name: "node",
-    helloWorld: `node -e "console.log('hello from node')"`,
-    dockerfileMarkers: ["FROM node:"],
-  },
-  {
-    name: "python",
-    helloWorld: `python3 -c "print('hello from python')"`,
-    dockerfileMarkers: ["python3"],
-  },
-  {
-    name: "rust",
-    helloWorld: `bash -c 'cd $(mktemp -d) && cargo init -q . && cargo run -q'`,
-    dockerfileMarkers: ["rustup", "cargo"],
-  },
-  {
-    name: "git",
-    helloWorld: "git --version",
-    dockerfileMarkers: ["git"],
-  },
-  {
-    name: "mattpocock-skills",
-    helloWorld: "claude plugin list",
-    dockerfileMarkers: ["mattpocock-skills"],
-  },
+  { name: "node", dockerfileMarkers: ["FROM node:"] },
+  { name: "python", dockerfileMarkers: ["python3"] },
+  { name: "rust", dockerfileMarkers: ["rustup", "cargo"] },
+  { name: "git", dockerfileMarkers: ["git"] },
+  { name: "mattpocock-skills", dockerfileMarkers: ["mattpocock-skills"] },
 ];
-
-export function helloWorldFor(runtime: string): string | undefined {
-  return BATTERIES.find((b) => b.name === runtime)?.helloWorld;
-}

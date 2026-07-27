@@ -8,16 +8,6 @@ import {
 } from "./config";
 import { PREVIEW_PORTS, TERMINAL_PORT, loopbackPublishArgs } from "./preview";
 
-export interface BoxBuildOptions {
-  /** Directory containing the Box's Dockerfile (the checked-in `box/` dir). */
-  contextDir: string;
-  image?: string;
-}
-
-export function boxBuildArgs({ contextDir, image = BOX_IMAGE }: BoxBuildOptions): string[] {
-  return ["build", "-t", image, contextDir];
-}
-
 export interface BoxRunOptions {
   image?: string;
   container?: string;

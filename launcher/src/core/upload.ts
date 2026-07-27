@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { basename, extname, join, resolve, sep } from "node:path";
 
 /**
@@ -61,14 +61,5 @@ export function resolveUploadTargets(
     targets.push({ source, dest: candidate });
   }
 
-  return targets;
-}
-
-/** Resolve targets and copy each file. Returns what was written. */
-export function performUpload(sources: string[], projectDir: string): UploadTarget[] {
-  const targets = resolveUploadTargets(sources, projectDir);
-  for (const { source, dest } of targets) {
-    copyFileSync(source, dest); // a real copy: independent bytes, no link back
-  }
   return targets;
 }
