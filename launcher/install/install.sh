@@ -37,18 +37,9 @@ install_engine() {
   brew install colima docker
 }
 
-# --- 1b. Google Chrome: the Project session window (ticket 03) ----------------
-# The Launcher opens a Project in a chromeless Chrome app-mode window. Install it
-# here so that works out of the box; the Launcher falls back to the default
-# browser if it's ever absent.
-install_chrome() {
-  if [[ -d "/Applications/Google Chrome.app" ]]; then
-    log "Google Chrome already present."
-    return
-  fi
-  log "Installing Google Chrome (for the Project session window)…"
-  brew install --cask google-chrome
-}
+# No browser is installed here. The Launcher draws the Project session window
+# itself, and Preview opens in whatever browser the Mac already treats as
+# default — so provisioning has no browser to choose on the user's behalf.
 
 # --- 2. Fetch the public Box definition (no credentials) ---------------------
 fetch_definition() {
@@ -85,7 +76,6 @@ main() {
   require_macos
   install_homebrew_if_needed
   install_engine
-  install_chrome
   fetch_definition
   prepare_image
   install_launcher

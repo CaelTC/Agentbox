@@ -62,10 +62,13 @@ $CapDiskGiB = 25
 
 # winget, not chocolatey: it ships with Windows 10 1809+ and Windows 11, so
 # unlike install.sh's Homebrew bootstrap there is nothing to install first.
+#
+# No browser is listed. The Launcher draws the Project session window itself,
+# and Preview opens in whatever browser Windows already treats as default — so
+# provisioning has no browser to choose on the user's behalf.
 $WingetPackages = @(
   @{ Id = 'RedHat.Podman'; What = 'the Engine (podman)' },
-  @{ Id = 'Git.Git';       What = 'git (to fetch the Box definition)' },
-  @{ Id = 'Google.Chrome'; What = 'Google Chrome (for the Project session window)' }
+  @{ Id = 'Git.Git';       What = 'git (to fetch the Box definition)' }
 )
 
 function Write-Log {
@@ -173,10 +176,7 @@ Subsystem for Linux" features by hand, restart, and run this script again.
   exit 1
 }
 
-# --- 3. The Engine, git, and Chrome ------------------------------------------
-# Chrome is here for the same reason as in install.sh: the Launcher opens a
-# Project in a chromeless Chrome app-mode window, and falls back to the default
-# browser only if Chrome is absent.
+# --- 3. The Engine and git ---------------------------------------------------
 function Install-Packages {
   if (-not (Get-Command winget.exe -ErrorAction SilentlyContinue)) {
     throw @'

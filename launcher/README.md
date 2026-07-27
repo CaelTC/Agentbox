@@ -69,11 +69,11 @@ npm test          # vitest run
 The built macOS app depends on **electron** (the app shell), which is **not
 needed for typechecking or tests** and is therefore not a runtime dependency in
 this repo. The Claude session opens in a **BrowserWindow the Launcher owns**, so
-no browser needs to be installed for it (the Install Script still installs
-Chrome; Preview and any other link go to the host's default browser). That
-window loads the Box's page with no preload, no Node and a sandboxed renderer,
-and is held to the console's own origin — the Box is the untrusted side of the
-boundary even when the Launcher is the one drawing it. There is no embedded
+no browser is a dependency of it at all — the Install Script installs none, and
+Preview goes to whatever the host already treats as default. That window loads
+the Box's page with no preload, no Node and a sandboxed renderer, and is held to
+the console's own origin — the Box is the untrusted side of the boundary even
+when the Launcher is the one drawing it. There is no embedded
 terminal — the session is viewed
 through the Box's loopback-forwarded web console, so no `node-pty`/`xterm`.
 

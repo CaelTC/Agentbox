@@ -128,9 +128,9 @@ docs/adr/    Architecture Decision Records.
 ## Installing
 
 The Install Script runs **once, on the machine being provisioned, by whoever
-provisions it** — never by the Sandbox User. It installs the Engine, Google
-Chrome, the initial Box image and the Launcher,
-and it configures **no credential anywhere**: the definition repo is public, so
+provisions it** — never by the Sandbox User. It installs the Engine, the initial
+Box image and the Launcher — no browser, since the Launcher draws the session
+window itself — and it configures **no credential anywhere**: the repo is public, so
 there is no secret to leak (ADR 0002).
 
 ### macOS
@@ -161,7 +161,7 @@ It performs nine steps, all of them safely re-runnable:
 2. Ensure WSL2. **On a machine that has never had WSL2, this enables it and then
    stops with "restart Windows and run this script again".** That restart is
    unavoidable; after it, re-running the script carries on from where it left off.
-3. `winget install` podman, git and Chrome (skipping any already present).
+3. `winget install` podman and git (skipping any already present).
 4. Write `%USERPROFILE%\.wslconfig` with the Resource Cap's CPU/memory. Two
    honest limits here: `.wslconfig` applies to *every* WSL distro on the machine,
    and it has no disk ceiling — so on Windows the Resource Cap does not yet bound

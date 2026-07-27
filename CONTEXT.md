@@ -50,7 +50,7 @@ A one-way, user-initiated copy of a whole project folder from the Sandbox User's
 _Avoid_: mirror of Export, the reverse of Export (Export carries documents *out* under an allowlist; Import carries a whole project *in*, unfiltered — the two are not symmetric)
 
 **Install Script**:
-The one-time setup step, run by whoever provisions the machine (not the Sandbox User). Installs the Engine, Google Chrome (for the Project session window), the Launcher, and the initial Box image. Replaces a signed installer, which is not available. The Windows script needs Administrator (WSL2 and the Podman machine both do); the macOS one does not.
+The one-time setup step, run by whoever provisions the machine (not the Sandbox User). Installs the Engine, the Launcher, and the initial Box image — no browser, because the Launcher draws the Project session window itself. Replaces a signed installer, which is not available. The Windows script needs Administrator (WSL2 and the Podman machine both do); the macOS one does not.
 
 **Engine**:
 The headless, license-free container runtime that runs the Box on the host in place of Docker Desktop — Colima on macOS, a Podman machine (WSL2, rootful) on Windows. Two runtimes, one property: neither is headed and neither carries a commercial licence (ADR 0004).
