@@ -19,8 +19,19 @@ import {
 /**
  * Wire the renderer's requests to the trusted operations. This is the ONLY
  * place the home screen's intents become real Docker/filesystem effects.
+ *
+ * `homeWindow` is a lookup rather than a window because these handlers outlive
+ * any one window: registration is global to ipcMain, and the home window can be
+ * closed and reopened (dock click) underneath them. It is only ever the parent
+ * for native pickers, so a moment with no home window just means an unparented
+ * sheet, never a lost request.
  */
-export function registerIpc(window: BrowserWindow): void {
+export function registerIpc(homeWindow: () => BrowserWindow | undefined): void {
+  const pickFrom = (options: Electron.OpenDialogOptions) => {
+    const parent = homeWindow();
+    return parent ? dialog.showOpenDialog(parent, options) : dialog.showOpenDialog(options);
+  };
+
   ipcMain.handle(IPC.listProjects, () => boxListProjects());
 
   ipcMain.handle(IPC.createProject, (_e, name: string) => boxCreateProject(name));
@@ -39,7 +50,7 @@ export function registerIpc(window: BrowserWindow): void {
   });
 
   ipcMain.handle(IPC.upload, async (_e, slug: string) => {
-    const picked = await dialog.showOpenDialog(window, {
+    const picked = await pickFrom({
       title: "Upload files into this Project",
       properties: ["openFile", "multiSelections"],
     });
@@ -85,7 +96,7 @@ export function registerIpc(window: BrowserWindow): void {
   // Project Import (ticket 09). The Box must be up for the free-space check
   // (`df`) that both the sheet and the actual copy rely on.
   ipcMain.handle(IPC.planImport, async () => {
-    const picked = await dialog.showOpenDialog(window, {
+    const picked = await pickFrom({
       title: "Open a folder from your computer",
       properties: ["openDirectory"],
     });

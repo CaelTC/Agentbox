@@ -67,17 +67,25 @@ async function bootstrap(window: BrowserWindow): Promise<void> {
   }
 }
 
-app.whenReady().then(() => {
-  const window = createWindow();
-  registerIpc(window);
-  window.webContents.once("did-finish-load", () => void bootstrap(window));
+/** The home window — tracked by identity because Project session windows are now
+ * Launcher windows too, so "are there any windows?" no longer answers "is the
+ * home screen gone?". Clicking the dock icon must reopen the home screen even
+ * when a session window is still up. */
+let home: BrowserWindow | undefined;
 
+function openHome(): void {
+  home = createWindow();
+  home.webContents.once("did-finish-load", () => void bootstrap(home!));
+  home.on("closed", () => (home = undefined));
+}
+
+app.whenReady().then(() => {
+  // Once, not per window: ipcMain handlers are global, so registering a second
+  // set for a reopened home window throws ("second handler for 'session:open'").
+  registerIpc(() => home);
+  openHome();
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      const w = createWindow();
-      registerIpc(w);
-      w.webContents.once("did-finish-load", () => void bootstrap(w));
-    }
+    if (!home) openHome();
   });
 });
 
@@ -88,7 +96,7 @@ app.on("window-all-closed", () => {
 
 /**
  * The Launcher is the user's on/off switch (ticket 03): quitting it stops the
- * Box to free the Resource Cap, which also ends any open Chrome session window —
+ * Box to free the Resource Cap, which also ends any open session window —
  * so confirm once before quitting. Stopping is fire-and-forget (stopBoxDetached),
  * so a slow/failed `docker stop` can't trap the user; the quit proceeds regardless.
  */

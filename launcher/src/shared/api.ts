@@ -15,9 +15,10 @@ export interface ClaudeboxApi {
   listTemplates(): Promise<StarterTemplate[]>;
   createFromTemplate(templateId: string, name?: string): Promise<Project>;
   /**
-   * Bring the Box up, ensure the Project's session via the funnel, and open it
-   * in a Chrome app-mode window. Also serves "Reopen terminal" (re-attaches the
-   * live session).
+   * Bring the Box up, ensure the Project's session via the funnel, and show it
+   * in the Launcher's own session window. Idempotent per Project: called again
+   * while that Project's window is open, it raises that window instead of
+   * opening a second view of the same session.
    */
   openSession(slug: string): Promise<void>;
   /** Open a native file picker and copy the chosen files into the Project. */
