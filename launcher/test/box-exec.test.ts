@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { BOX_CONTAINER, ENGINE_CLI } from "../src/core/config";
-import { boxExec, sh, type BoxExec } from "../src/main/box-exec";
+import { boxExec, runPipe, sh, type BoxExec } from "../src/main/box-exec";
 import { run, spawnPath, type RunResult } from "../src/main/exec";
 import {
   boxCreateProject,
@@ -34,9 +34,20 @@ import {
 vi.mock("../src/main/exec", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../src/main/exec")>()),
   run: vi.fn(),
-  runPipe: vi.fn(),
 }));
-vi.mock("node:child_process", () => ({ spawn: vi.fn() }));
+
+/**
+ * `spawn` is mocked only so `stopDetached` can be inspected without launching
+ * anything — every other test gets the real one back in `beforeEach`, because
+ * `runPipe` (this module's own, since `copyInStream` is its only caller) is
+ * asserted against real pipelines at the foot of this file.
+ */
+vi.mock("node:child_process", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("node:child_process")>()),
+  spawn: vi.fn(),
+}));
+const realSpawn = (await vi.importActual<typeof import("node:child_process")>("node:child_process"))
+  .spawn;
 
 const ok = (stdout = ""): RunResult => ({ code: 0, stdout, stderr: "" });
 const boom = (stderr = "no such container"): RunResult => ({ code: 1, stdout: "", stderr });
@@ -52,6 +63,7 @@ beforeEach(() => {
     return ok();
   });
   vi.mocked(spawn).mockReset();
+  vi.mocked(spawn).mockImplementation(realSpawn);
 });
 
 describe("sh — the module's answer to shell quoting", () => {
@@ -492,4 +504,58 @@ describe("boxImportFolder", () => {
     const box = importBox((op) => (op === "writeFile" ? new Error("read-only file system") : ""));
     await expect(boxImportFolder(folder, box)).rejects.toThrow(/read-only/);
   });
+});
+
+/* ------------------------------------------------------------------------- *
+ * `runPipe` — `copyInStream`'s plumbing, against real processes.
+ * ------------------------------------------------------------------------- */
+
+describe("runPipe", () => {
+  // The precedence rule below is the whole reason this function was rewritten:
+  // Import shipped once reporting success on a copy that moved nothing.
+  it("reports the FIRST stage's failure even when the second exits 0", async () => {
+    const res = await runPipe(
+      { command: "sh", args: ["-c", "printf partial; exit 3"] },
+      { command: "cat", args: [] },
+    );
+    expect(res.code).toBe(3);
+  });
+
+  it("reports the second stage's failure when the first is clean", async () => {
+    const res = await runPipe(
+      { command: "sh", args: ["-c", "printf ok"] },
+      { command: "sh", args: ["-c", "cat >/dev/null; exit 4"] },
+    );
+    expect(res.code).toBe(4);
+  });
+
+  it("succeeds and returns the second stage's stdout when both are clean", async () => {
+    const res = await runPipe({ command: "cat", args: [] }, { command: "cat", args: [] }, "hello");
+    expect(res.code).toBe(0);
+    expect(res.stdout).toBe("hello");
+  });
+
+  // A second stage that exits before reading makes the pipe write EPIPE. An
+  // unlistened 'error' takes the Launcher's main process down — and merely
+  // swallowing it is not enough either: the first stage then blocks forever on
+  // a buffer nobody drains, so this test hangs rather than fails if that
+  // teardown regresses. Resolving at all IS the assertion.
+  it("survives the second stage exiting without reading its input", async () => {
+    const res = await runPipe(
+      { command: "sh", args: ["-c", "printf 'x%.0s' $(seq 1 200000)"] },
+      { command: "sh", args: ["-c", "exit 0"] },
+    );
+    expect(typeof res.code).toBe("number");
+  }, 5_000);
+
+  // The mirror case: a first stage that exits without reading its stdin. EPIPE
+  // lands on the write side instead, and is just as fatal unlistened.
+  it("survives the first stage exiting without reading its input", async () => {
+    const res = await runPipe(
+      { command: "sh", args: ["-c", "exit 5"] },
+      { command: "cat", args: [] },
+      "x".repeat(200_000),
+    );
+    expect(res.code).toBe(5);
+  }, 5_000);
 });

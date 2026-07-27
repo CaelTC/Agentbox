@@ -1,6 +1,6 @@
 import { ENGINE_PROFILE, RESOURCE_CAP, type ResourceCap } from "../core/config";
 import type { Engine } from "./engine";
-import { mustSucceed, run, runOk } from "./exec";
+import { mustSucceed, run } from "./exec";
 
 /**
  * The Podman adapter: the Box's VM on Windows (issue #10), the counterpart of
@@ -75,8 +75,8 @@ export const podman: Engine = {
    */
   async start(): Promise<void> {
     // `machine inspect` exits non-zero when there is no such machine, so absence
-    // is an exit code, not a parse.
-    if (!(await runOk(PODMAN, podmanMachineInspectArgs()))) {
+    // is an exit code, not a parse — the same read `isRunning` above does.
+    if ((await run(PODMAN, podmanMachineInspectArgs())).code !== 0) {
       await mustSucceed(PODMAN, podmanMachineInitArgs());
     }
     // Outside the init branch on purpose. If `init` succeeded and this failed,

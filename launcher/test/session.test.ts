@@ -5,7 +5,7 @@ import { shell } from "electron";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ENGINE_CLI } from "../src/core/config";
 import { mustSucceed, run } from "../src/main/exec";
-import { openProjectSession } from "../src/main/session";
+import { openProjectSession, updateClaudeCode } from "../src/main/session";
 
 /**
  * The Windows session-window branch (issue #10). `openProjectSession` takes an
@@ -17,7 +17,6 @@ import { openProjectSession } from "../src/main/session";
 
 vi.mock("../src/main/exec", () => ({
   run: vi.fn(),
-  runOk: vi.fn(),
   mustSucceed: vi.fn(),
 }));
 
@@ -145,5 +144,27 @@ describe("openProjectSession on the Mac — unchanged (issue #10)", () => {
     await openProjectSession("demo", "darwin");
 
     expect(shell.openExternal).toHaveBeenCalledWith(URL);
+  });
+});
+
+/**
+ * The best-effort contract, spelled out at the call site now that `runOk` is
+ * gone. `bootstrap` awaits this INSIDE the try that reports "Couldn't start
+ * Claudebox", so anything that escapes here turns a skippable Claude Code
+ * update into a failed launch.
+ */
+describe("updateClaudeCode is best effort", () => {
+  it("is false, not a throw, when the Engine cannot even be spawned", async () => {
+    vi.mocked(run).mockRejectedValue(new Error("spawn docker ENOENT"));
+    await expect(updateClaudeCode()).resolves.toBe(false);
+  });
+
+  it("is false when the update ran and failed (offline registry)", async () => {
+    vi.mocked(run).mockResolvedValue({ code: 1, stdout: "", stderr: "ETIMEDOUT" });
+    await expect(updateClaudeCode()).resolves.toBe(false);
+  });
+
+  it("is true on a clean update", async () => {
+    await expect(updateClaudeCode()).resolves.toBe(true);
   });
 });

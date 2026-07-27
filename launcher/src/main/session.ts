@@ -6,7 +6,7 @@ import { chromeAppLaunch, ensureSessionExecArgs, sessionUrl } from "../core/sess
 import { boxExec } from "./box-exec";
 import { engine } from "./engine";
 import { inspectBoxState } from "./environment";
-import { mustSucceed, run, runOk } from "./exec";
+import { mustSucceed, run } from "./exec";
 import { startupPlan, type StartupStep } from "../core/startup";
 
 /** Start the Engine at the Resource Cap if it isn't already up (needed before any engine call). */
@@ -64,9 +64,15 @@ async function runStep(step: StartupStep, boxDefinitionDir: string): Promise<voi
  * (not backgrounded) so no Project session can start mid-install. Best effort by
  * design: offline, a slow registry or a bad publish must never stop the Box from
  * opening — the version baked into the image keeps working.
+ *
+ * Hence the `catch`, spelled out here rather than hidden in a wrapper: bootstrap
+ * calls this inside the try that reports "Couldn't start Claudebox", so a
+ * rejected spawn (no engine on a Finder-launched PATH) would turn a skippable
+ * update into a fatal launch. Every way this can go wrong is one `false`.
  */
 export async function updateClaudeCode(): Promise<boolean> {
-  return runOk(ENGINE_CLI, boxUpdateClaudeArgs());
+  const res = await run(ENGINE_CLI, boxUpdateClaudeArgs()).catch(() => null);
+  return res?.code === 0;
 }
 
 /**

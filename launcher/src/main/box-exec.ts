@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { BOX_CONTAINER, ENGINE_CLI } from "../core/config";
-import { run, runPipe, spawnPath, type PipeStage, type RunResult } from "./exec";
+import { run, spawnPath, type RunResult } from "./exec";
 
 /**
  * The Box-exec seam: every invocation of the Engine CLI against the RUNNING Box
@@ -22,11 +22,16 @@ import { run, runPipe, spawnPath, type PipeStage, type RunResult } from "./exec"
  * 2. QUOTING. Callers pass argv, or a script plus its values through `sh()` —
  *    never a hand-quoted `sh -c` string with a Box path spliced into it.
  *
- * 3. THE PATH FIX. Everything routes through exec.ts's `run` / `runPipe` /
- *    `spawnPath`, so a Launcher opened from Finder (minimal PATH, no
- *    `/opt/homebrew/bin`) can still find the Engine — `stopDetached` included,
- *    which used to spawn the Engine directly and die of ENOENT inside a bare
- *    `catch {}`, leaving the Box running after quit.
+ * 3. THE PATH FIX. Everything routes through exec.ts's `run` / `spawnPath`, so
+ *    a Launcher opened from Finder (minimal PATH, no `/opt/homebrew/bin`) can
+ *    still find the Engine — `stopDetached` and `runPipe` included, both of
+ *    which spawn for themselves. `stopDetached` used to spawn the Engine
+ *    without it and die of ENOENT inside a bare `catch {}`, leaving the Box
+ *    running after quit.
+ *
+ * `runPipe` lives at the foot of this file rather than in exec.ts: streaming a
+ * tar into the Box is its only caller, so its two failure modes and the
+ * normalisation of them (`copyInStream`) belong on one screen.
  *
  * The interface is the test surface: `main/workspace.ts` takes a `BoxExec`, so
  * its behaviour is asserted against one fake Box instead of by mocking the whole
@@ -165,3 +170,76 @@ export const boxExec: BoxExec = {
     child.unref();
   },
 };
+
+/* ------------------------------------------------------------------------- *
+ * `copyInStream`'s plumbing. Exported only so its exit-code precedence and its
+ * two EPIPE directions can be asserted against real processes.
+ * ------------------------------------------------------------------------- */
+
+export interface PipeStage {
+  readonly command: string;
+  readonly args: readonly string[];
+}
+
+/**
+ * Pipe `a`'s stdout into `b`'s stdin, spawned directly — no `sh -c`. Import
+ * (ticket 09) is the first host-side command built from a user-chosen path
+ * (the folder they picked); a shell there is a quoting hazard for nothing.
+ *
+ * `input` is written to `a`'s stdin and resolves with BOTH stages' stderr.
+ */
+export function runPipe(a: PipeStage, b: PipeStage, input = ""): Promise<RunResult> {
+  return new Promise((promiseResolve, reject) => {
+    const env = { ...process.env, PATH: spawnPath() };
+    const first = spawn(a.command, a.args, { stdio: ["pipe", "pipe", "pipe"], env });
+    const second = spawn(b.command, b.args, { stdio: ["pipe", "pipe", "pipe"], env });
+
+    first.stdout.pipe(second.stdin);
+    // A write to a dead process's stdin raises EPIPE, and an 'error' with no
+    // listener takes the whole Launcher down. Both directions can hit it: `b`
+    // exiting before it has read the stream, and `a` exiting before it has read
+    // `input` (a `tar` that dies on a bad -C). Either child's non-zero exit is
+    // the real error; the stream error is noise on top of it.
+    second.stdin.on("error", () => {});
+    first.stdin.on("error", () => {});
+
+    let settled = false;
+    const fail = (err: Error) => {
+      if (settled) return;
+      settled = true;
+      reject(err);
+    };
+    first.on("error", fail);
+    second.on("error", fail);
+
+    let stdout = "";
+    let stderr = "";
+    second.stdout.on("data", (d) => (stdout += String(d)));
+    first.stderr.on("data", (d) => (stderr += String(d)));
+    second.stderr.on("data", (d) => (stderr += String(d)));
+
+    // BOTH exit codes matter, and `a`'s is reported first: a `tar` that dies
+    // mid-stream still leaves `docker cp` exiting 0 on the truncated archive it
+    // did receive, so checking only `b` reports a partial copy as a success.
+    let firstCode: number | null = null;
+    let secondCode: number | null = null;
+    const settle = () => {
+      if (settled || firstCode === null || secondCode === null) return;
+      settled = true;
+      promiseResolve({ code: firstCode !== 0 ? firstCode : secondCode, stdout, stderr });
+    };
+    first.on("close", (code) => ((firstCode = code ?? -1), settle()));
+    second.on("close", (code) => {
+      secondCode = code ?? -1;
+      // If `b` died before draining the stream, `a` is still writing into a
+      // buffer nobody will read, and blocks forever once it fills — this
+      // Promise would never settle, and the Import the user is watching would
+      // spin indefinitely. Closing the read end hands `a` the SIGPIPE a real
+      // shell pipeline would have. A no-op when `a` has already finished.
+      first.stdout.destroy();
+      settle();
+    });
+
+    first.stdin.end(input);
+  });
+}

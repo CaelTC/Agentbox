@@ -16,7 +16,7 @@ import { refreshOnLaunch, updateClaudebox, type UpdateSteps } from "../src/main/
  * last-built image and says nothing. So the clone is pinned here.
  */
 
-vi.mock("../src/main/exec", () => ({ run: vi.fn(), runOk: vi.fn(), mustSucceed: vi.fn() }));
+vi.mock("../src/main/exec", () => ({ run: vi.fn(), mustSucceed: vi.fn() }));
 
 vi.mock("node:fs", async (importOriginal) => ({
   ...(await importOriginal<typeof import("node:fs")>()),

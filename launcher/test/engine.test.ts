@@ -1,11 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { engineCli } from "../src/core/config";
-import { mustSucceed, run, runOk } from "../src/main/exec";
+import { mustSucceed, run } from "../src/main/exec";
 import { engineFor } from "../src/main/engine";
 
 vi.mock("../src/main/exec", () => ({
   run: vi.fn(),
-  runOk: vi.fn(),
   mustSucceed: vi.fn(),
 }));
 
@@ -16,11 +15,12 @@ const record = (command: string, args: readonly string[]) => {
 };
 
 const ok = { code: 0, stdout: "", stderr: "" };
+/** `podman machine inspect` on a machine that is not there. */
+const absent = { code: 125, stdout: "", stderr: "Error: claudebox: VM does not exist" };
 
 beforeEach(() => {
   calls.length = 0;
   vi.mocked(mustSucceed).mockImplementation(async (c, a) => record(c, a));
-  vi.mocked(runOk).mockImplementation(async (c, a) => (record(c, a), true));
   vi.mocked(run).mockImplementation(async (c, a) => (record(c, a), ok));
 });
 
@@ -45,7 +45,7 @@ describe("Engine.start", () => {
 
   it("on Windows inspects, inits the absent machine, sets it rootful, then starts", async () => {
     // `machine inspect` exits non-zero when there is no such machine.
-    vi.mocked(runOk).mockImplementation(async (c, a) => (record(c, a), false));
+    vi.mocked(run).mockImplementation(async (c, a) => (record(c, a), absent));
 
     await engineFor("win32").start();
 
@@ -58,7 +58,7 @@ describe("Engine.start", () => {
   });
 
   it("on Windows starts an existing machine without re-initing it", async () => {
-    await engineFor("win32").start(); // runOk defaults to true = machine present
+    await engineFor("win32").start(); // `run` defaults to exit 0 = machine present
 
     expect(calls).toEqual([
       "podman machine inspect --format {{.State}} claudebox",
@@ -77,7 +77,7 @@ describe("Engine.start", () => {
   });
 
   it("self-heals: a machine deleted behind the Launcher's back is re-created on the next start", async () => {
-    vi.mocked(runOk).mockImplementation(async (c, a) => (record(c, a), false));
+    vi.mocked(run).mockImplementation(async (c, a) => (record(c, a), absent));
     await engineFor("win32").start();
     expect(calls).toContain("podman machine init --cpus 4 --memory 6144 --disk-size 25 claudebox");
   });
