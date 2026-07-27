@@ -46,10 +46,31 @@ sessions into it; individual sessions come and go while the Workspace (a named
 volume) and the Box persist. It needs `--cap-add NET_ADMIN` so the entrypoint
 can install the firewall.
 
-## Plugin pre-install caveat
+## Plugin pre-install
 
-The Dockerfile pre-installs the mattpocock-skills plugin so its skills are
-available with no per-session setup (ticket 03). The exact `claude plugin …`
-invocation depends on the Claude Code plugin CLI available at build time; the
-step is written defensively (it warns rather than failing the build) and is the
-single place to adjust if the CLI surface changes.
+The mattpocock-skills plugin is provisioned in two places, and needs both:
+
+- **`Dockerfile`** bakes it into the image, so a Box built from scratch has the
+  skills before its first session.
+- **`entrypoint.sh`** re-checks it on every start. `/home/sandbox` is a named
+  volume, so a Box whose home volume already existed never picks up a change to
+  the bake — the entrypoint is what reaches those Boxes.
+
+The invocation itself is exact and was wrong for a while, silently:
+
+```sh
+claude plugin marketplace add https://github.com/mattpocock/skills.git
+claude plugin install mattpocock-skills@mattpocock --scope user
+```
+
+- The repo is `mattpocock/skills`; `mattpocock/mattpocock-skills` is a 404.
+- The `owner/repo` shorthand clones over **SSH**, and the Box has no GitHub key,
+  so only the HTTPS URL authenticates.
+- The marketplace names itself `mattpocock`, so the id is
+  `mattpocock-skills@mattpocock` — `@mattpocock-skills` resolves to nothing.
+- There is no `--yes` flag on `plugin install`; the scope flag is `--scope user`.
+
+The build step deliberately has no `|| true`: a Battery that fails to install
+should break the build, not the Sandbox User's first session. The entrypoint
+top-up *is* best-effort, so an unreachable GitHub cannot stop a Box from
+starting — it prints a `WARN` instead.

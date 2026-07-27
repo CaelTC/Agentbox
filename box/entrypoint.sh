@@ -44,6 +44,25 @@ npx vite --host 0.0.0.0 --port 5173
 Then tell the user to click **Preview**.
 EOF
 
+# The mattpocock-skills Battery (ticket 03). The Dockerfile bakes it into the
+# image, but /home/sandbox is a named volume: a Box whose home volume was
+# created before the bake — or while the bake was still installing the wrong
+# plugin id — keeps its empty ~/.claude/plugins forever. So top it up here on
+# every start, for the same reason the CLAUDE.md above is rewritten every start.
+# Backgrounded and best-effort: a slow or unreachable GitHub must never delay
+# the Box, and after the first success the check costs one `plugin list`.
+provision_skills() {
+  if claude plugin list 2>/dev/null | grep -q "mattpocock-skills@mattpocock"; then
+    return 0
+  fi
+  # Adding an already-known marketplace is an error, not a no-op, so the install
+  # must not be chained behind it.
+  claude plugin marketplace add https://github.com/mattpocock/skills.git >/dev/null 2>&1 || true
+  claude plugin install mattpocock-skills@mattpocock --scope user >/dev/null 2>&1 \
+    || echo "WARN: could not provision mattpocock-skills; see box/README.md" >&2
+}
+provision_skills &
+
 # Serve the web console (Starlette → tmux) in the background, AFTER egress is up.
 # Reachable only via the Launcher's loopback port-forward, never the LAN. Best
 # effort: a terminal failure must not stop the Box from hosting Claude sessions.
