@@ -55,10 +55,11 @@ function renderer() {
   const js = transformSync(region![0], { loader: "ts" }).code;
   const document = fakeDocument();
   // A `setTimeout` that never fires, so a flash stays put to be asserted on.
-  const build = new Function("document", "setTimeout", `${js}\nreturn { el, flash, openSheet, runOperation };`);
+  const build = new Function("document", "setTimeout", `${js}\nreturn { el, fail, flash, openSheet, runOperation };`);
   return { document, ...build(document, () => undefined) } as {
     document: ReturnType<typeof fakeDocument>;
     el: (tag: string, props?: Record<string, unknown>, children?: unknown[]) => any;
+    fail: (prefix: string, err: unknown) => string;
     flash: (message: string) => void;
     openSheet: (title: string, contents: unknown[], actions: unknown[]) => () => void;
     runOperation: (op: Record<string, unknown>) => Promise<void>;
@@ -168,13 +169,95 @@ describe("runOperation", () => {
       button,
       busyLabel: "Saving…",
       close,
-      run: () => Promise.reject(new Error("Error: No such container: claudebox")),
+      // The shape a rejection ACTUALLY has by the time it reaches here: Electron
+      // wraps everything thrown in a handler on its way back across the bridge.
+      run: () =>
+        Promise.reject(
+          new Error("Error invoking remote method 'export:save': Error: No such container: claudebox"),
+        ),
       done: () => expect.unreachable("done() ran for a failed operation"),
       failed: "Couldn't save",
     });
 
     expect(sheets(document)).toHaveLength(0);
-    expect(flashes(document)).toEqual(["Couldn't save: Error: No such container: claudebox"]);
+    expect(flashes(document)).toEqual(["Couldn't save: No such container: claudebox"]);
+  });
+
+  /**
+   * A `done` that throws is a SUCCEEDED operation whose screen couldn't catch
+   * up. Reported as the operation failing, it told the Sandbox User "Couldn't
+   * delete My website" about a delete that had already happened, and left them
+   * on the panel of a Project that no longer exists.
+   */
+  it("says something different when the operation worked and only the refresh didn't", async () => {
+    const { document, el, runOperation } = renderer();
+    const button = el("button", { textContent: "Delete forever" });
+    let closes = 0;
+
+    await runOperation({
+      button,
+      busyLabel: "Deleting…",
+      close: () => closes++,
+      run: () => Promise.resolve("deleted"),
+      done: () => Promise.reject(new Error("the Box stopped answering")),
+      failed: "Couldn't delete My website",
+    });
+
+    expect(closes).toBe(1); // the success path closed the sheet, once
+    expect(flashes(document)).toEqual(["Done, but the screen couldn't refresh: the Box stopped answering"]);
+  });
+
+  // What follows a finished operation is a screen, and the screens start
+  // operations of their own — a finished Import opens the new Project's session.
+  // Holding the busy state across `done` refused the click `done` had just made.
+  it("has let go of the busy state by the time done() runs", async () => {
+    const { el, runOperation } = renderer();
+    const button = el("button", { textContent: "Bring it in" });
+    let opened = 0;
+
+    await runOperation({
+      button,
+      busyLabel: "Bringing it in…",
+      run: () => Promise.resolve("imported"),
+      done: () =>
+        runOperation({
+          button: el("button", { textContent: "Reopen session" }),
+          busyLabel: "Opening…",
+          run: () => Promise.resolve((opened += 1)),
+          done: () => undefined,
+          failed: "Couldn't open the Claude session",
+        }),
+      failed: "Couldn't bring that in",
+    });
+
+    expect(opened).toBe(1);
+  });
+
+  // The action cards are a title and a description, not one string: replacing
+  // their text to say "Uploading…" would flatten the card into a text node, so
+  // they go grey instead and say the rest in a flash when they land.
+  it("disables a card without a busy label, and leaves its contents alone", async () => {
+    const { document, el, runOperation } = renderer();
+    const card = el("button", { className: "card" }, [el("strong", { textContent: "Upload files" })]);
+    const work = pending<string[]>();
+
+    const running = runOperation({
+      button: card,
+      run: () => work.promise,
+      done: () => undefined,
+      failed: "Couldn't upload those files",
+    });
+
+    expect(card.disabled).toBe(true);
+    expect(card.children).toHaveLength(1); // still a card, not a label
+
+    work.fail(new Error("Error invoking remote method 'upload:pick': Error: no space left on device"));
+    await running;
+
+    // A failed Upload used to be completely silent: no catch, no flash, and a
+    // card that simply did nothing.
+    expect(flashes(document)).toEqual(["Couldn't upload those files: no space left on device"]);
+    expect(card.disabled).toBe(false);
   });
 
   it("runs one operation at a time, across screens", async () => {
@@ -207,7 +290,7 @@ describe("runOperation", () => {
     });
 
     expect(updates).toBe(0); // the Box was never touched
-    expect(updateBtn.disabled).toBeUndefined(); // and its button was left alone
+    expect(updateBtn.disabled).toBeFalsy(); // and its button was left alone
     expect(flashes(document)).toEqual(["Claudebox is already busy with something else. Let that finish first."]);
 
     exporting.ok("saved");
@@ -235,6 +318,34 @@ describe("runOperation", () => {
     );
 
     expect(runs).toBe(1);
+  });
+});
+
+describe("fail", () => {
+  // Everything the trusted layer throws crosses `ipcRenderer.invoke`, which
+  // rebuilds it as `Error invoking remote method '<channel>': Error: <msg>`.
+  // That is the string the Sandbox User was being shown, in front of the only
+  // words in it that meant anything.
+  it("strips Electron's IPC wrapper before the reason", () => {
+    const { fail } = renderer();
+    expect(fail("Couldn't upload those files", new Error("Error invoking remote method 'upload:pick': Error: no space left on device"))).toBe(
+      "Couldn't upload those files: no space left on device",
+    );
+  });
+
+  it("strips a bare Error: too, and survives something that isn't an Error at all", () => {
+    const { fail } = renderer();
+    expect(fail("Couldn't save", new Error("Error: No such container: claudebox"))).toBe(
+      "Couldn't save: No such container: claudebox",
+    );
+    expect(fail("Couldn't save", "the Box is gone")).toBe("Couldn't save: the Box is gone");
+  });
+
+  it("is the only thing in app.ts that composes a failure out of an error", () => {
+    // Seven hand-rolled `Couldn't …: ${(err as Error).message}` catches used to
+    // sit alongside it, none of them stripping the wrapper above. A new one is
+    // how the noise gets back onto the screen.
+    expect(APP.match(/Couldn't[^`\n]*\$\{\(?err/g)).toBeNull();
   });
 });
 

@@ -30,6 +30,24 @@ function flash(message: string): void {
 }
 
 /**
+ * The one failure sentence in the app: a prefix in the Sandbox User's terms,
+ * then the reason. Every "Couldn't …" on screen is composed here, so none of
+ * them can drift into a different shape.
+ *
+ * The stripping is the point. Electron wraps every rejection that crosses the
+ * bridge, so what a handler threw arrives as `Error invoking remote method
+ * 'upload:pick': Error: no space left on device` — and the inner `Error: `
+ * survives the unwrapping. Neither is anything a Sandbox User can act on, and
+ * both were being shown verbatim in front of the only words that helped.
+ */
+function fail(prefix: string, err: unknown): string {
+  const reason = (err instanceof Error ? err.message : String(err))
+    .replace(/^Error invoking remote method '[^']*': /, "")
+    .replace(/^Error: /, "");
+  return `${prefix}: ${reason}`;
+}
+
+/**
  * Every modal in Claudebox is this sheet: a backdrop, one panel, a title, the
  * caller's own contents, and a row of actions along the bottom. Four of them
  * opened with the same seven lines and closed with the same four before this
@@ -55,8 +73,13 @@ function openSheet(title: string, contents: (Node | string)[], actions: Node[]):
 /** A button that reaches into the Box, and what to do with either outcome. */
 type Operation<T> = {
   button: HTMLButtonElement;
-  /** What the button says while it runs — "Saving…", "Deleting…". */
-  busyLabel: string;
+  /**
+   * What the button says while it runs — "Saving…", "Deleting…". Omitted by the
+   * action cards, whose label is a title and a description rather than one
+   * string: replacing their text would flatten the card. Those go grey and say
+   * the rest in a flash when they land.
+   */
+  busyLabel?: string;
   run: () => Promise<T>;
   done: (result: T) => void | Promise<void>;
   /** "Couldn't save" — the reason is appended, so the copy reads the same everywhere. */
@@ -75,6 +98,12 @@ type Operation<T> = {
  * Disabling the button that was clicked cannot see that far, which is why the
  * busy state lives here and nowhere else.
  *
+ * EVERY control that reaches the Box comes through here, not just the four that
+ * commit something: the cards, the two sheets' openers, "Reopen session". A
+ * bare listener behind a queued Update is a click that does nothing visible for
+ * minutes and then produces a picker out of nowhere — and, when the Box refuses
+ * it, an unhandled rejection nobody ever sees.
+ *
  * What this is NOT is the safety: main enforces the Box Gate over every channel
  * that reaches the Box, including the ones no button here owns. This is the
  * SAYING — a screen that tells the Sandbox User why nothing is happening,
@@ -90,24 +119,40 @@ async function runOperation<T>(op: Operation<T>): Promise<void> {
   operationInFlight = true;
   const label = op.button.textContent;
   op.button.disabled = true;
-  op.button.textContent = op.busyLabel;
+  if (op.busyLabel) op.button.textContent = op.busyLabel;
+
+  const outcome = await op
+    .run()
+    .then((result) => ({ ok: true as const, result }), (err: unknown) => ({ ok: false as const, err }));
+
+  // The operation is over either way, and it is over BEFORE `done` runs: `done`
+  // re-renders a screen, and the screens now start operations of their own (a
+  // finished Import opens the new Project's session). Holding the busy state
+  // across the re-render would refuse the very click the re-render just made.
+  operationInFlight = false;
+  // The sheet goes before `done` runs: what follows a finished operation is
+  // usually a re-render of the screen underneath it. Once, on either outcome.
+  op.close?.();
+  // A sheet takes its button with it; a button that stayed on screen has to be
+  // handed back, or the screen is left with one dead control on it.
+  if (!op.close) {
+    op.button.disabled = false;
+    if (op.busyLabel) op.button.textContent = label;
+  }
+
+  if (!outcome.ok) {
+    flash(fail(op.failed, outcome.err));
+    return;
+  }
+  // `done` is the screen catching up with an operation that already SUCCEEDED,
+  // so its own failure is a different sentence: a Project that was deleted stays
+  // deleted however the re-render behind it goes, and telling the Sandbox User
+  // "Couldn't delete My website" about a delete that worked is worse than
+  // telling them nothing.
   try {
-    const result = await op.run();
-    // The sheet goes before `done` runs: what follows a finished operation is
-    // usually a re-render of the screen underneath it.
-    op.close?.();
-    await op.done(result);
+    await op.done(outcome.result);
   } catch (err) {
-    op.close?.();
-    flash(`${op.failed}: ${(err as Error).message}`);
-  } finally {
-    operationInFlight = false;
-    // A sheet takes its button with it; a button that stayed on screen has to be
-    // handed back, or the screen is left with one dead control on it.
-    if (!op.close) {
-      op.button.disabled = false;
-      op.button.textContent = label;
-    }
+    flash(fail("Done, but the screen couldn't refresh", err));
   }
 }
 
@@ -147,8 +192,23 @@ function footer(): HTMLElement {
   ]);
 }
 
+/**
+ * The home screen. Listing Projects FAILS rather than reporting an empty
+ * Workspace when the Box can't be read, so this can go wrong — and it is
+ * reached from four places (the bootstrap, "← All projects", a finished Delete,
+ * signing out of GitHub), none of which has anything to add. So the one screen
+ * that says the Box is unreachable is rendered here, once, and this never
+ * rejects: a caller that had to remember `.catch` is a dead button waiting to
+ * happen, which is exactly what three of those four were.
+ */
 async function renderHome(): Promise<void> {
-  const projects = await cb.listProjects();
+  let projects: Project[];
+  try {
+    projects = await cb.listProjects();
+  } catch (err) {
+    renderBootstrapError(fail("Couldn't read your projects", err));
+    return;
+  }
   const root = app();
   root.replaceChildren();
 
@@ -166,17 +226,39 @@ async function renderHome(): Promise<void> {
 
   // A blank Project.
   const nameInput = el("input", { type: "text", placeholder: "Name your project…" }) as HTMLInputElement;
-  const createBtn = el("button", { className: "btn", textContent: "Create blank project" });
-  createBtn.addEventListener("click", async () => {
+  const createBtn = el("button", { className: "btn", textContent: "Create blank project" }) as HTMLButtonElement;
+  createBtn.addEventListener("click", () => {
     if (!nameInput.value.trim()) return;
-    const project = await cb.createProject(nameInput.value.trim());
-    await openProject(project);
+    void runOperation({
+      button: createBtn,
+      busyLabel: "Creating…",
+      run: () => cb.createProject(nameInput.value.trim()),
+      done: (project) => openProject(project),
+      failed: "Couldn't create that project",
+    });
   });
 
   // Project Import (ticket 09): a folder on the host becomes a Project. One
-  // confirmation sheet stands between the folder picker and anything crossing.
-  const importBtn = el("button", { className: "btn", textContent: "Open a folder from my computer" });
-  importBtn.addEventListener("click", () => void startImport());
+  // confirmation sheet stands between the folder picker and anything crossing —
+  // and the picker itself is opened by the trusted layer before it takes the Box
+  // Gate, so this operation is only as long as measuring the chosen folder.
+  const importBtn = el("button", {
+    className: "btn",
+    textContent: "Open a folder from my computer",
+  }) as HTMLButtonElement;
+  importBtn.addEventListener("click", () =>
+    void runOperation({
+      button: importBtn,
+      busyLabel: "Opening…",
+      run: () => cb.planImport(),
+      // Undefined means the native picker was cancelled: nothing crossed, and
+      // there is nothing to confirm.
+      done: (listing) => {
+        if (listing) renderImportSheet(listing);
+      },
+      failed: "Couldn't read that folder",
+    }),
+  );
 
   root.append(
     section("light", [
@@ -265,12 +347,22 @@ async function githubAccountSection(): Promise<HTMLElement | undefined> {
   }
   if (!status.connected) return undefined;
 
-  const swap = el("button", { className: "btn--link", textContent: "Use a different account" });
-  swap.addEventListener("click", async () => {
-    await cb.disconnectGithub();
-    flash("Signed out of GitHub. The next “Save to GitHub” will ask which account to use.");
-    await renderHome();
-  });
+  const swap = el("button", {
+    className: "btn--link",
+    textContent: "Use a different account",
+  }) as HTMLButtonElement;
+  swap.addEventListener("click", () =>
+    void runOperation({
+      button: swap,
+      busyLabel: "Signing out…",
+      run: () => cb.disconnectGithub(),
+      done: () => {
+        flash("Signed out of GitHub. The next “Save to GitHub” will ask which account to use.");
+        return renderHome();
+      },
+      failed: "Couldn't sign out of GitHub",
+    }),
+  );
 
   return section("light", [
     el("p", { className: "eyebrow", textContent: "GitHub" }),
@@ -279,13 +371,21 @@ async function githubAccountSection(): Promise<HTMLElement | undefined> {
   ]);
 }
 
-/** One action, its plain-language consequence, and the click that does it. */
-function actionCard(title: string, description: string, onClick: () => void): HTMLElement {
+/**
+ * One action, its plain-language consequence, and the click that does it. The
+ * card is handed to its own handler because every one of these reaches the Box:
+ * they run as operations, and an operation disables the control that started it.
+ */
+function actionCard(
+  title: string,
+  description: string,
+  onClick: (card: HTMLButtonElement) => void,
+): HTMLButtonElement {
   const card = el("button", { className: "card" }, [
     el("strong", { textContent: title }),
     el("span", { textContent: description }),
-  ]);
-  card.addEventListener("click", onClick);
+  ]) as HTMLButtonElement;
+  card.addEventListener("click", () => onClick(card));
   return card;
 }
 
@@ -302,8 +402,19 @@ async function openProject(project: Project): Promise<void> {
   back.addEventListener("click", () => void renderHome());
 
   // Re-open the Chrome window on the same live session (still alive in tmux).
-  const reopen = el("button", { className: "btn", textContent: "Reopen session" });
-  reopen.addEventListener("click", () => void cb.openSession(project.slug));
+  // Opening this screen does the same thing through the same button, so the one
+  // control that can bring the session back is also the one that says whether
+  // it came up — and says so from the moment the screen appears.
+  const reopen = el("button", { className: "btn", textContent: "Reopen session" }) as HTMLButtonElement;
+  const session = () =>
+    runOperation({
+      button: reopen,
+      busyLabel: "Opening…",
+      run: () => cb.openSession(project.slug),
+      done: () => undefined,
+      failed: "Couldn't open the Claude session",
+    });
+  reopen.addEventListener("click", () => void session());
 
   root.append(
     hero(
@@ -317,58 +428,79 @@ async function openProject(project: Project): Promise<void> {
     ),
   );
 
-  const upload = actionCard("Upload files", "Bring documents in from your computer.", async () => {
-    const copied = await cb.upload(project.slug);
-    if (copied.length) flash(`Uploaded ${copied.length} file(s) into ${project.name}.`);
-  });
+  // Every card below reaches into the Box, so every one of them is an operation:
+  // it disables its own card, refuses while another is in flight rather than
+  // queueing silently behind a rebuild, and — the thing an unhandled rejection
+  // could never do — says so when it fails instead of looking simply dead.
+  const upload = actionCard("Upload files", "Bring documents in from your computer.", (card) =>
+    void runOperation({
+      button: card,
+      run: () => cb.upload(project.slug),
+      // An empty list is a cancelled picker, not a failed copy.
+      done: (copied) => {
+        if (copied.length) flash(`Uploaded ${copied.length} file(s) into ${project.name}.`);
+      },
+      failed: "Couldn't upload those files",
+    }),
+  );
 
   // Export (tickets 07/08): carry the Project's documents onto the real computer.
-  // Both of these reach into the Box, so both can fail before they show anything
-  // — an unreported rejection would leave the button looking simply dead.
-  const save = actionCard("Save to my computer", "Carry this project's files back out.", async () => {
-    try {
-      renderExportPicker(project, await cb.listExportFiles(project.slug));
-    } catch (err) {
-      flash(`Couldn't open ${project.name} to save it: ${(err as Error).message}`);
-    }
-  });
+  const save = actionCard("Save to my computer", "Carry this project's files back out.", (card) =>
+    void runOperation({
+      button: card,
+      run: () => cb.listExportFiles(project.slug),
+      done: (listing) => renderExportPicker(project, listing),
+      failed: `Couldn't open ${project.name} to save it`,
+    }),
+  );
 
-  const show = actionCard("Show saved files", "Open the folder the saved copies land in.", async () => {
-    try {
-      const res = await cb.showSavedFiles(project.slug);
-      flash(
-        res.opened
-          ? `Last saved ${when(res.lastSaved)}.`
-          : `Nothing saved yet — “Save to my computer” puts this project in ${res.dir}.`,
-      );
-    } catch (err) {
-      flash(`Couldn't show the saved files: ${(err as Error).message}`);
-    }
-  });
+  const show = actionCard("Show saved files", "Open the folder the saved copies land in.", (card) =>
+    void runOperation({
+      button: card,
+      run: () => cb.showSavedFiles(project.slug),
+      done: (res) =>
+        flash(
+          res.opened
+            ? `Last saved ${when(res.lastSaved)}.`
+            : `Nothing saved yet — “Save to my computer” puts this project in ${res.dir}.`,
+        ),
+      failed: "Couldn't show the saved files",
+    }),
+  );
 
-  const preview = actionCard("Preview", "Look at whatever this project is serving.", async () => {
-    const res = await cb.openPreview();
-    flash(res.opened ? `Opened ${res.url}` : "Nothing is being served yet — ask Claude to start a server.");
-  });
+  const preview = actionCard("Preview", "Look at whatever this project is serving.", (card) =>
+    void runOperation({
+      button: card,
+      run: () => cb.openPreview(),
+      done: (res) =>
+        flash(res.opened ? `Opened ${res.url}` : "Nothing is being served yet — ask Claude to start a server."),
+      failed: "Couldn't open the preview",
+    }),
+  );
 
   // Save to GitHub (ADR 0006). The token lives in the Launcher; this button only
   // asks for the publish, and the two-container split happens on the host side.
-  const github = actionCard("Save to GitHub", "Keep this project in a private repo on your account.", () =>
-    startPublish(project),
+  const github = actionCard("Save to GitHub", "Keep this project in a private repo on your account.", (card) =>
+    void startPublish(project, card),
   );
 
   // Delete sits OUTSIDE the action grid, not as a fifth card in it. The four
   // above are all things you can undo by doing them again; this one is the only
   // control in Claudebox that destroys work, and putting it in the same row of
   // identical cards would make it a misclick away from the one beside it.
-  const destroy = el("button", { className: "btn--link destroy", textContent: "Delete this project" });
-  destroy.addEventListener("click", async () => {
-    try {
-      renderDeleteSheet(project, await cb.planDelete(project.slug));
-    } catch (err) {
-      flash(`Couldn't open ${project.name} to delete it: ${(err as Error).message}`);
-    }
-  });
+  const destroy = el("button", {
+    className: "btn--link destroy",
+    textContent: "Delete this project",
+  }) as HTMLButtonElement;
+  destroy.addEventListener("click", () =>
+    void runOperation({
+      button: destroy,
+      busyLabel: "Checking…",
+      run: () => cb.planDelete(project.slug),
+      done: (listing) => renderDeleteSheet(project, listing),
+      failed: `Couldn't open ${project.name} to delete it`,
+    }),
+  );
 
   root.append(
     section("light", [
@@ -385,7 +517,7 @@ async function openProject(project: Project): Promise<void> {
   );
   root.append(footer());
 
-  await cb.openSession(project.slug);
+  await session();
 }
 
 /**
@@ -393,12 +525,15 @@ async function openProject(project: Project): Promise<void> {
  * publish follows from the same click — a Sandbox User asked to save, not to
  * sign in, so the sign-in is a step inside that, never a separate errand.
  */
-async function startPublish(project: Project): Promise<void> {
+async function startPublish(project: Project, card: HTMLButtonElement): Promise<void> {
   let status: GithubStatus;
   try {
+    // Host-only, and the one step here that isn't the operation: reading the
+    // connected Account never reaches the Box, so it neither takes the busy
+    // state nor waits for it.
     status = await cb.githubStatus();
   } catch (err) {
-    flash(`Couldn't check your GitHub account: ${(err as Error).message}`);
+    flash(fail("Couldn't check your GitHub account", err));
     return;
   }
 
@@ -407,28 +542,32 @@ async function startPublish(project: Project): Promise<void> {
     return;
   }
   if (!status.connected) {
-    renderGithubConnect(project);
+    // Signing in is minutes of polling GitHub and touches nothing — it stays
+    // outside the busy state, exactly as it stays outside the Box Gate.
+    renderGithubConnect(project, card);
     return;
   }
-  await publish(project);
+  await publish(project, card);
 }
 
-async function publish(project: Project): Promise<void> {
-  flash(`Saving ${project.name} to GitHub…`);
-  try {
-    const res = await cb.saveToGithub(project.slug);
+function publish(project: Project, card: HTMLButtonElement): Promise<void> {
+  return runOperation({
+    button: card,
+    // Said from inside `run`, so a publish that was REFUSED for being second in
+    // line doesn't announce itself first and then deny it.
+    run: () => (flash(`Saving ${project.name} to GitHub…`), cb.saveToGithub(project.slug)),
     // Naming the branch matters: it is whatever was checked out in the Box, and
     // on a feature branch the repo's front page will not show what was just
     // saved. "(private)" only when Claudebox made the repo — a Project that came
     // in with its own remote publishes back to it, whatever that repo already is.
-    flash(
-      res.created
-        ? `Created ${res.url} (private) — branch ${res.branch}.`
-        : `Saved to ${res.url} — branch ${res.branch}.`,
-    );
-  } catch (err) {
-    flash(`Couldn't save to GitHub: ${(err as Error).message}`);
-  }
+    done: (res) =>
+      flash(
+        res.created
+          ? `Created ${res.url} (private) — branch ${res.branch}.`
+          : `Saved to ${res.url} — branch ${res.branch}.`,
+      ),
+    failed: "Couldn't save to GitHub",
+  });
 }
 
 /**
@@ -436,7 +575,7 @@ async function publish(project: Project): Promise<void> {
  * and — plainly, because it is the whole cost of this feature — what the sign-in
  * lets Claudebox reach.
  */
-function renderGithubConnect(project: Project): void {
+function renderGithubConnect(project: Project, card: HTMLButtonElement): void {
   const step = el("p", { className: "sub", textContent: "Asking GitHub for a code…" });
   const code = el("p", { className: "total" });
   const cancel = el("button", { className: "btn--link", textContent: "Cancel" });
@@ -473,10 +612,10 @@ function renderGithubConnect(project: Project): void {
       // stays up — cancelling here just closes it; nothing is stored either way.
       await cb.awaitGithubLogin();
       close();
-      await publish(project);
+      await publish(project, card);
     } catch (err) {
       close();
-      flash(`Couldn't connect GitHub: ${(err as Error).message}`);
+      flash(fail("Couldn't connect GitHub", err));
     }
   })();
 }
@@ -576,22 +715,6 @@ function renderDeleteSheet(project: Project, listing: DeleteListing): void {
  */
 function normalize(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
-}
-
-/**
- * "Open a folder from my computer" (ticket 09): picking a folder measures it, then
- * shows the one confirmation sheet. Nothing crosses if the picker is cancelled.
- */
-async function startImport(): Promise<void> {
-  let listing: ImportListing | undefined;
-  try {
-    listing = await cb.planImport();
-  } catch (err) {
-    flash(`Couldn't read that folder: ${(err as Error).message}`);
-    return;
-  }
-  if (!listing) return; // the native picker was cancelled
-  renderImportSheet(listing);
 }
 
 /**
@@ -807,9 +930,9 @@ function renderBootstrapError(message: string): void {
 // (they live on a named volume reached through the running Box).
 renderStarting();
 window.claudebox.onBootstrap((status) => {
-  // The Project listing now FAILS rather than reporting an empty Workspace when
-  // the Box can't be read, so the first render can reject — say so instead of
-  // leaving the Sandbox User on "Warming the room" forever.
-  if (status.ok) void renderHome().catch((err: unknown) => renderBootstrapError((err as Error).message));
+  // `renderHome` renders its own failure (a listing that can't reach the Box
+  // leaves the Sandbox User on "Warming the room" forever otherwise), so there
+  // is nothing to catch out here.
+  if (status.ok) void renderHome();
   else renderBootstrapError(status.message);
 });

@@ -96,7 +96,10 @@ async function bootstrap(window: BrowserWindow): Promise<void> {
       }
     });
   } catch (error) {
-    send({ ok: false, message: `Couldn't start Claudebox: ${String(error)}` });
+    // The message, not the Error: the renderer puts this straight on screen
+    // under "The room stayed cold.", and `String(error)` prefixes it with a
+    // second "Error:" the Sandbox User can do nothing with.
+    send({ ok: false, message: `Couldn't start Claudebox: ${(error as Error).message}` });
   }
 }
 
