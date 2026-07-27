@@ -5,6 +5,7 @@ import {
   refreshDecision,
   shouldRebuild,
   updateMessage,
+  buildMessage,
 } from "../src/core/refresh";
 
 const defA = [
@@ -131,5 +132,25 @@ describe("updateMessage", () => {
     expect(updateMessage({ action: "error", reason: "Box rebuild failed: boom", online: true })).toMatch(
       /^Couldn't update Claudebox: /,
     );
+  });
+});
+
+/**
+ * A first build compiles the whole Box and takes minutes; a rebuild off warm
+ * layers usually does not. `refreshDecision` already knows which it is, so the
+ * screen can say so instead of leaving someone to guess from a stalled line.
+ */
+describe("buildMessage", () => {
+  it("warns that the first build is a long one", () => {
+    expect(buildMessage(true)).toMatch(/few minutes/i);
+  });
+
+  it("does not repeat that warning on later rebuilds", () => {
+    expect(buildMessage(false)).not.toMatch(/few minutes/i);
+  });
+
+  it("says it is building, either way", () => {
+    expect(buildMessage(true)).toMatch(/building/i);
+    expect(buildMessage(false)).toMatch(/building/i);
   });
 });

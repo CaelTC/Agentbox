@@ -1,17 +1,10 @@
 import { app, BrowserWindow, dialog } from "electron";
 import { join } from "node:path";
-import { IPC, type BootstrapStatus } from "../shared/api";
+import { IPC } from "../shared/api";
+import { bootstrap } from "./bootstrap";
 import { boxGate } from "./box-gate";
-import { homeListedProjects, registerIpc } from "./ipc";
-import { hostBoxDefinitionDir } from "./paths";
-import { refreshOnLaunch } from "./refresh-runner";
-import {
-  ensureBoxReady,
-  ensureEngine,
-  removeBoxContainer,
-  stopBoxDetached,
-  updateClaudeCode,
-} from "./session";
+import { registerIpc } from "./ipc";
+import { stopBoxDetached } from "./session";
 
 /**
  * Electron entry point (ticket 04). Double-clicking the Launcher lands here: it
@@ -37,82 +30,23 @@ function createWindow(): BrowserWindow {
 }
 
 /**
- * Get the Engine and the Box running BEFORE the home screen queries Projects.
- * Order matters: the Engine must be up before Refresh-on-Launch can build,
- * and the Box must be running before Projects (which live on the named volume)
- * can be listed or created. Status is reported to the renderer, not swallowed.
- *
- * Held under the Box Gate, because Refresh on Launch is an Update Claudebox that
- * nobody pressed: the home screen is already loaded and clickable while this
- * runs (that is what `did-finish-load` means), and its first `listProjects` —
- * or an impatient "Update Claudebox" — would otherwise reach a container this
- * is in the middle of removing and recreating. Taking the gate turns that race
- * into a queue. Nothing in here goes back through the router, so there is no
- * way for the gate to wait on itself.
- *
- * TWO turns at the gate, not one. The Box being ready is what the home screen
- * waits on; the Claude Code update is a separate operation, queued behind the
- * home screen's own first listing, so the Projects appear as soon as the Box is
- * up. Held as one, `claude update` (up to `timeout 180`) sat in front of the
- * home screen on every single launch — and the "Updating Claude Code…" status
- * that was supposed to explain the wait could never be seen, because the window
- * was still empty. That status is gone rather than moved: an `ok` status is what
- * makes the renderer draw the home screen, so the honest number of them is one.
+ * Run the launch sequence and pipe its status to this window. The sequence
+ * itself is `main/bootstrap.ts` — everything here is the wiring it deliberately
+ * knows nothing about.
  */
-async function bootstrap(window: BrowserWindow): Promise<void> {
-  const send = (status: BootstrapStatus) => window.webContents.send(IPC.bootstrap, status);
-  try {
-    await boxGate(async () => {
-      await ensureEngine();
-      const refresh = await refreshOnLaunch(); // pull + rebuild only if changed
-      if (refresh.action === "error" || refresh.action === "blocked") {
-        // Non-fatal for a machine that already has an image; fatal only if there's
-        // nothing to run, which ensureBoxReady surfaces below. A `blocked` is the
-        // integrity gate declining an untrusted definition — the one outcome that
-        // must never pass unlogged.
-        console.warn(`Refresh on Launch: ${refresh.reason}`);
-      } else if (refresh.action === "rebuilt") {
-        // Recreate the container so the new image is actually used; the login and
-        // Workspace survive on their named volumes.
-        await removeBoxContainer();
-      }
-      await ensureBoxReady(hostBoxDefinitionDir());
-    });
-    // The Box is usable from here on, so this is the Sandbox User's last word on
-    // it — and the only one: an `ok` status is what makes the renderer draw the
-    // home screen, so a second would redraw it under whatever they were doing.
-    // The update reports itself to the console instead, which is all a
-    // best-effort step that changes nothing on screen has to say.
-    send({ ok: true, message: "Claudebox is ready." });
-    // Behind the home screen's own first listing, never in front of it (see
-    // `homeListedProjects`); capped, so a window that never asks for its
-    // Projects doesn't skip the update for the whole launch. Still before any
-    // session can attach — every later click queues behind this at the gate,
-    // `openSession` included.
-    await Promise.race([homeListedProjects, new Promise((r) => setTimeout(r, 5_000).unref())]);
-    await boxGate(async () => {
-      if (!(await updateClaudeCode())) {
-        console.warn("Claude Code update skipped; keeping the version baked into the Box image.");
-      }
-    });
-  } catch (error) {
-    // The message, not the Error: the renderer puts this straight on screen
-    // under "The room stayed cold.", and `String(error)` prefixes it with a
-    // second "Error:" the Sandbox User can do nothing with.
-    send({ ok: false, message: `Couldn't start Claudebox: ${(error as Error).message}` });
-  }
-}
+const launch = (window: BrowserWindow): Promise<void> =>
+  bootstrap((status) => window.webContents.send(IPC.bootstrap, status));
 
 app.whenReady().then(() => {
   const window = createWindow();
   registerIpc(window);
-  window.webContents.once("did-finish-load", () => void bootstrap(window));
+  window.webContents.once("did-finish-load", () => void launch(window));
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       const w = createWindow();
       registerIpc(w);
-      w.webContents.once("did-finish-load", () => void bootstrap(w));
+      w.webContents.once("did-finish-load", () => void launch(w));
     }
   });
 });

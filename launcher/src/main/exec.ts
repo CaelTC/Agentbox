@@ -101,10 +101,25 @@ export function run(
   });
 }
 
+/**
+ * How much of a failed command's output reaches the screen. A failed `docker
+ * build` writes hundreds of lines, and the Launcher has no log file and no
+ * devtools — so this screen is the only place the reason exists, and it is also
+ * a `<p>` in front of a non-technical Sandbox User. The TAIL is what is kept:
+ * the head of a build log is cache hits, the error is at the end. The character
+ * bound is not the line bound in other clothes — BuildKit's default progress
+ * output is ANSI redraws, which arrive as one enormous line.
+ */
+const DETAIL_LINES = 15;
+const DETAIL_CHARS = 800;
+
 /** The one sentence a failed command is reported as, here and at the Box-exec seam. */
 export function failureMessage(what: string, res: RunResult): string {
-  const detail = res.stderr.trim() || res.stdout.trim() || "no output";
-  return `${what} failed (exit ${res.code}): ${detail}`;
+  const raw = res.stderr.trim() || res.stdout.trim() || "no output";
+  const lines = raw.split("\n");
+  let detail = lines.length > DETAIL_LINES ? lines.slice(-DETAIL_LINES).join("\n") : raw;
+  if (detail.length > DETAIL_CHARS) detail = detail.slice(-DETAIL_CHARS);
+  return `${what} failed (exit ${res.code}): ${detail.length < raw.length ? `…\n${detail}` : detail}`;
 }
 
 /** Run a command, throwing its stderr if it did not exit 0. */

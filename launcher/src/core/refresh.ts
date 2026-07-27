@@ -94,6 +94,19 @@ export function refreshDecision(inputs: RefreshInputs): RefreshOutcome {
 }
 
 /**
+ * The starting screen's sub-line while the image builds. Same machinery voice as
+ * `stepMessage`, with the one thing the Sandbox User needs that a phase name
+ * cannot carry: a first build downloads and compiles the whole Box and takes
+ * minutes, a rebuild off warm layers usually does not — and `refreshDecision`
+ * already knows which this is, so nobody has to guess from a stalled screen.
+ */
+export function buildMessage(firstBuild: boolean): string {
+  return firstBuild
+    ? "Building the image. The first build takes a few minutes."
+    : "Building the image…";
+}
+
+/**
  * What one run of the refresh actually did. Reported to the renderer as well as
  * to the console, because Refresh is no longer only a launch step: "Update
  * Claudebox" runs the same thing on a button, and then someone is waiting to be

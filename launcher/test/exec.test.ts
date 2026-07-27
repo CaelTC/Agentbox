@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { run, spawnPath } from "../src/main/exec";
+import { failureMessage, run, spawnPath } from "../src/main/exec";
 
 const allExist = () => true;
 const noneExist = () => false;
@@ -55,5 +55,44 @@ describe("run's deadline", () => {
 
   it("has no deadline at all when none is asked for (the copies)", async () => {
     expect(await run("sh", ["-c", "printf hi"])).toMatchObject({ code: 0, stdout: "hi" });
+  });
+});
+
+/**
+ * What a failed command is allowed to put on screen. The Launcher ships with no
+ * log file and no devtools, so this sentence is the ONLY place the reason
+ * survives — and it is also a paragraph in front of a non-technical Sandbox
+ * User, who a failed `docker build` would otherwise hand several hundred lines.
+ */
+describe("failureMessage", () => {
+  const res = (stderr: string, code = 1) => ({ code, stdout: "", stderr });
+
+  it("passes a short failure through untouched", () => {
+    expect(failureMessage("`docker start`", res("no such container"))).toBe(
+      "`docker start` failed (exit 1): no such container",
+    );
+  });
+
+  it("keeps the TAIL of a long build log — the error is at the end, not the top", () => {
+    const log = [...Array(200).keys()].map((i) => `#${i} [ ${i}/200] CACHED`).join("\n");
+    const message = failureMessage("Box rebuild", res(`${log}\nERROR: no space left on device`));
+
+    expect(message).toContain("ERROR: no space left on device");
+    expect(message).not.toContain("#0 [ 0/200] CACHED");
+    expect(message).toContain("…"); // says it was cut, rather than pretending
+    expect(message.split("\n").length).toBeLessThan(20);
+  });
+
+  it("bounds one enormous line too — BuildKit's default output is ANSI redraws", () => {
+    const message = failureMessage("Box rebuild", res("x".repeat(50_000)));
+    expect(message.length).toBeLessThan(1_000);
+  });
+
+  it("says something when the command failed silently", () => {
+    expect(failureMessage("`docker build`", res(""))).toContain("no output");
+  });
+
+  it("falls back to stdout when stderr is empty", () => {
+    expect(failureMessage("`git pull`", { code: 1, stdout: "diverged", stderr: "" })).toContain("diverged");
   });
 });

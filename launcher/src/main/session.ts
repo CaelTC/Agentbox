@@ -7,12 +7,18 @@ import { boxExec, type BoxExec } from "./box-exec";
 import { engine } from "./engine";
 import { inspectBoxState } from "./environment";
 import { mustSucceed, run } from "./exec";
-import { startupPlan, type StartupStep } from "../core/startup";
+import { startupPlan, stepMessage, type OnStep, type StartupStep } from "../core/startup";
 
-/** Start the Engine at the Resource Cap if it isn't already up (needed before any engine call). */
-export async function ensureEngine(): Promise<void> {
+/**
+ * Start the Engine at the Resource Cap if it isn't already up (needed before any
+ * engine call). Announces itself only when it actually has to start one: a warm
+ * relaunch would otherwise flash "Starting the engine…" at a Sandbox User who
+ * waited for nothing.
+ */
+export async function ensureEngine(onStep?: OnStep): Promise<void> {
   const state = await inspectBoxState();
   if (!state.engineRunning) {
+    onStep?.(stepMessage("start-engine")!);
     await engine.start();
   }
 }
@@ -32,9 +38,13 @@ export async function removeBoxContainer(): Promise<void> {
  * them. On a warm machine this collapses to a no-op so reopening is fast; a
  * stopped container is restarted (not recreated) so the login survives.
  */
-export async function ensureBoxReady(boxDefinitionDir: string): Promise<void> {
+export async function ensureBoxReady(boxDefinitionDir: string, onStep?: OnStep): Promise<void> {
   const plan = startupPlan(await inspectBoxState());
   for (const step of plan) {
+    // Before the step, not after: the whole point is to name the wait while it
+    // is being waited on. A warm plan is [attach] alone, which says nothing.
+    const message = stepMessage(step);
+    if (message) onStep?.(message);
     await runStep(step, boxDefinitionDir);
   }
 }

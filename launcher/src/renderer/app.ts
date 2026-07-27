@@ -156,6 +156,18 @@ async function runOperation<T>(op: Operation<T>): Promise<void> {
   }
 }
 
+/**
+ * Elapsed wait, as a Sandbox User would say it out loud. TOTAL since the
+ * starting screen appeared, never reset per phase: "it's been eleven minutes" is
+ * the sentence they need when they give up and ask for help, and a clock that
+ * restarts on every phase hides exactly that during the one phase long enough to
+ * matter.
+ */
+function clock(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(total / 60)}m ${String(total % 60).padStart(2, "0")}s`;
+}
+
 // --- end of the renderer's machinery -----------------------------------------
 
 /**
@@ -185,6 +197,24 @@ function section(kind: string, children: (Node | string)[]): HTMLElement {
   ]);
 }
 
+/**
+ * Bad news that did not stop the launch, held under the hero until the Sandbox
+ * User dismisses it. `role="status"` because it appears without them doing
+ * anything, and the dismiss button is labelled for a screen reader — "×" is not
+ * a word.
+ */
+function noticeStrip(message: string): HTMLElement {
+  const strip = el("div", { className: "notice", role: "status" });
+  const dismiss = el("button", {
+    className: "notice__dismiss",
+    textContent: "×",
+    ariaLabel: "Dismiss this message",
+  });
+  dismiss.addEventListener("click", () => strip.remove());
+  strip.append(el("p", { textContent: message }), dismiss);
+  return strip;
+}
+
 /** Place-anchored, and the same on every screen. */
 function footer(): HTMLElement {
   return el("footer", { className: "footer" }, [
@@ -200,8 +230,14 @@ function footer(): HTMLElement {
  * that says the Box is unreachable is rendered here, once, and this never
  * rejects: a caller that had to remember `.catch` is a dead button waiting to
  * happen, which is exactly what three of those four were.
+ *
+ * `notice` is the launch's bad news on a launch that still worked — a rebuild
+ * that failed, a refused definition — and only the bootstrap ever passes one.
+ * It is a strip rather than a `flash` on purpose: a build is minutes long, the
+ * Sandbox User has walked away, and a toast that expires while nobody is
+ * looking is a `console.warn` with extra steps.
  */
-async function renderHome(): Promise<void> {
+async function renderHome(notice?: string): Promise<void> {
   let projects: Project[];
   try {
     projects = await cb.listProjects();
@@ -223,6 +259,8 @@ async function renderHome(): Promise<void> {
       }),
     ]),
   );
+
+  if (notice) root.append(noticeStrip(notice));
 
   // A blank Project.
   const nameInput = el("input", { type: "text", placeholder: "Name your project…" }) as HTMLInputElement;
@@ -906,14 +944,44 @@ function when(epochMs?: number): string {
   return new Date(epochMs).toLocaleString();
 }
 
-function renderStarting(): void {
+/**
+ * The starting screen, painted ONCE and then updated in place. Re-rendering it
+ * per phase would restart the clock and jump the hero, and the clock is the only
+ * thing on screen that proves the Launcher is still alive during the several
+ * minutes a first build takes.
+ */
+let startingStep: HTMLElement | undefined;
+let startingClock: ReturnType<typeof setInterval> | undefined;
+
+function renderStarting(message: string): void {
+  if (startingStep) {
+    startingStep.textContent = message;
+    return;
+  }
+  const step = el("p", { className: "lead", textContent: message });
+  const elapsed = el("p", { className: "elapsed", textContent: clock(0) });
+  const startedAt = Date.now();
+  startingStep = step;
+  startingClock = setInterval(() => (elapsed.textContent = clock(Date.now() - startedAt)), 1000);
   app().replaceChildren(
     hero([
       el("p", { className: "eyebrow", textContent: "Claudebox" }),
       el("h1", { className: "hero__title", textContent: "Warming the room." }),
-      el("p", { className: "lead", textContent: "Getting the sandbox ready. This takes a moment on the first run." }),
+      step,
+      elapsed,
     ]),
   );
+}
+
+/**
+ * Every way off the starting screen goes through here. The interval outlives the
+ * nodes it writes to — `replaceChildren` detaches them without stopping it — so
+ * a launch that ends without this ticks for the life of the Launcher.
+ */
+function stopStarting(): void {
+  if (startingClock !== undefined) clearInterval(startingClock);
+  startingClock = undefined;
+  startingStep = undefined;
 }
 
 function renderBootstrapError(message: string): void {
@@ -928,11 +996,19 @@ function renderBootstrapError(message: string): void {
 
 // Wait for the Engine + Box to be ready before the home screen queries Projects
 // (they live on a named volume reached through the running Box).
-renderStarting();
+renderStarting("Getting the sandbox ready…");
 window.claudebox.onBootstrap((status) => {
+  // `working` is the sub-line of the screen already up, and arrives as often as
+  // the launch has something new to say; the two terminal statuses each arrive
+  // once and are what take the screen down.
+  if ("phase" in status) {
+    renderStarting(status.message);
+    return;
+  }
+  stopStarting();
   // `renderHome` renders its own failure (a listing that can't reach the Box
   // leaves the Sandbox User on "Warming the room" forever otherwise), so there
   // is nothing to catch out here.
-  if (status.ok) void renderHome();
+  if (status.ok) void renderHome(status.notice);
   else renderBootstrapError(status.message);
 });

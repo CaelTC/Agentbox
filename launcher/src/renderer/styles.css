@@ -128,7 +128,23 @@ h1, h2, h3 {
 .lead { margin: 0; font-size: var(--text-lead); max-width: 34ch; }
 .sub { margin: 0; opacity: 0.8; }
 .empty { opacity: 0.75; }
-.error { margin: 0; font-size: var(--text-lead); color: var(--nootka-steam); }
+/* `pre-wrap` because what lands here is the tail of a failed command's output,
+   and collapsed newlines turn fifteen readable lines into one run-on sentence. */
+.error {
+  margin: 0;
+  font-size: var(--text-lead);
+  color: var(--nootka-steam);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* The elapsed clock on the starting screen — quiet, and the one thing moving. */
+.elapsed {
+  margin: 0;
+  font-size: var(--text-meta);
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+}
 .meta { font-size: var(--text-meta); opacity: 0.75; }
 
 /* ------------------------------------------------------------------ hero ---- */
@@ -395,6 +411,36 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 }
 .danger p { max-width: 62ch; margin: 0; }
 .destroy { font-weight: var(--weight-bold); white-space: nowrap; }
+
+/* ---------------------------------------------------------------- notice ---- */
+
+/* Bad news from a launch that still worked. Not a toast: it waits for the
+   Sandbox User to come back from wherever they went during the build. */
+.notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--radius-lg);
+  padding: 0.85rem clamp(1.25rem, 4vw, 3rem);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  font-size: var(--text-meta);
+}
+.notice p {
+  margin: 0;
+  flex: 1;
+  max-width: 80ch;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.notice__dismiss {
+  flex: none;
+  padding: 0 0.35rem;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-size: var(--text-lead);
+  line-height: 1;
+}
 
 /* ----------------------------------------------------------------- flash ---- */
 

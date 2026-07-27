@@ -15,6 +15,34 @@ export interface BoxState {
 
 export type StartupStep = "start-engine" | "build-image" | "run-box" | "start-box" | "attach";
 
+/**
+ * How a slow step announces itself while it runs. Optional everywhere it is
+ * threaded, so a caller that has no screen to draw on — every test, and
+ * `updateClaudebox` — passes nothing and is unchanged.
+ */
+export type OnStep = (message: string) => void;
+
+/**
+ * What the starting screen says while a step runs. Plain machinery, in the
+ * Launcher's own words: the Sandbox User cannot act on any of it, but the person
+ * who set the machine up reads this screen over their shoulder, and "something
+ * is happening" is worth less than "it is building".
+ *
+ * `attach` has nothing to say — it is the plan's terminator, not work — so it
+ * returns undefined rather than an empty line the caller has to remember to skip.
+ */
+const STEP_MESSAGES: Record<StartupStep, string | undefined> = {
+  "start-engine": "Starting the engine…",
+  "build-image": "Building the image…",
+  "run-box": "Starting the container…",
+  "start-box": "Starting the container…",
+  attach: undefined,
+};
+
+export function stepMessage(step: StartupStep): string | undefined {
+  return STEP_MESSAGES[step];
+}
+
 export function startupPlan(state: BoxState): StartupStep[] {
   const steps: StartupStep[] = [];
 

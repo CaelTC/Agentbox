@@ -111,10 +111,25 @@ export interface GithubDeviceCode {
   expiresInSeconds: number;
 }
 
-export interface BootstrapStatus {
-  ok: boolean;
-  message: string;
-}
+/**
+ * What bootstrap tells the renderer. THREE states, not two: a launch that has to
+ * build the Box image is minutes long, and "Warming the room." with nothing
+ * moving under it is indistinguishable from a Launcher that has hung (issue #27).
+ *
+ * `working` arrives any number of times — it is the sub-line of the starting
+ * screen, replaced in place. A terminal status arrives exactly ONCE: `ok: true`
+ * is what makes the renderer draw the home screen, so a second would redraw it
+ * under whatever the Sandbox User was doing by then.
+ *
+ * `notice` is the launch's non-fatal bad news — a rebuild that failed, or the
+ * integrity gate refusing an untrusted definition — on a launch that went on to
+ * succeed on the last-known-good image. It rides on the ready status rather than
+ * being a status of its own, because it changes nothing about what to draw.
+ */
+export type BootstrapStatus =
+  | { phase: "working"; message: string }
+  | { ok: true; message: string; notice?: string }
+  | { ok: false; message: string };
 
 export interface SavedFolder {
   /** The host folder this Project saves into — shown even when nothing is there yet. */

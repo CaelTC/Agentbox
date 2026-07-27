@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { startupPlan, type BoxState } from "../src/core/startup";
+import { startupPlan, stepMessage, type BoxState } from "../src/core/startup";
 
 const state = (over: Partial<BoxState> = {}): BoxState => ({
   engineRunning: false,
@@ -61,5 +61,27 @@ describe("startupPlan", () => {
     expect(plan).not.toContain("build-image");
     expect(plan).not.toContain("run-box");
     expect(plan).not.toContain("start-box");
+  });
+});
+
+/**
+ * The starting screen's sub-line. Every step that makes the Sandbox User WAIT
+ * has to name itself, because a motionless screen and a hung Launcher look the
+ * same (issue #27); `attach` is the plan's terminator rather than work, so it is
+ * the one step with nothing to say.
+ */
+describe("stepMessage", () => {
+  it("names every step that costs the Sandbox User a wait", () => {
+    for (const step of ["start-engine", "build-image", "run-box", "start-box"] as const) {
+      expect(stepMessage(step)).toBeTruthy();
+    }
+  });
+
+  it("says nothing for attach — it is the end of the plan, not a wait", () => {
+    expect(stepMessage("attach")).toBeUndefined();
+  });
+
+  it("calls the long one a build, since that is the wait people ask about", () => {
+    expect(stepMessage("build-image")).toMatch(/building/i);
   });
 });

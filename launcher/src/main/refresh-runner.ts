@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSy
 import { join, relative } from "node:path";
 import { BOX_IMAGE, DEFINITION_REPO, ENGINE_CLI, PINNED_DEFINITION_COMMIT } from "../core/config";
 import {
+  buildMessage,
   commitTrusted,
   hashDefinition,
   refreshDecision,
@@ -9,7 +10,8 @@ import {
   type DefinitionFile,
   type RefreshResult,
 } from "../core/refresh";
-import { run } from "./exec";
+import type { OnStep } from "../core/startup";
+import { failureMessage, run } from "./exec";
 import { claudeboxHome, hostBoxDefinitionDir, hostDefinitionDir } from "./paths";
 import { ensureBoxReady, ensureEngine, removeBoxContainer, updateClaudeCode } from "./session";
 
@@ -25,11 +27,12 @@ import { ensureBoxReady, ensureEngine, removeBoxContainer, updateClaudeCode } fr
  */
 const hashFile = () => join(claudeboxHome(), "image.hash");
 
-export async function refreshOnLaunch(): Promise<RefreshResult> {
+export async function refreshOnLaunch(onStep?: OnStep): Promise<RefreshResult> {
   const previousHash = readStoredHash();
 
   // Get the public definition onto the host (HTTPS, no credentials). Failure ⇒
   // treat as offline: the last-built image keeps running (ADR 0002).
+  onStep?.("Checking for updates…");
   const online = await fetchDefinition();
   const currentHash = online ? hashDefinition(readDefinitionFiles()) : undefined;
 
@@ -47,9 +50,13 @@ export async function refreshOnLaunch(): Promise<RefreshResult> {
           : { action: "blocked", reason: `${untrusted} Keeping the last-built Box image.`, online };
       }
 
+      onStep?.(buildMessage(previousHash === undefined));
       const built = await run(ENGINE_CLI, ["build", "-t", BOX_IMAGE, hostBoxDefinitionDir()]);
       if (built.code !== 0) {
-        return { action: "error", reason: `Box rebuild failed: ${built.stderr}`, online };
+        // Through `failureMessage` like every other failed command, rather than
+        // pasting the whole build log into a reason that now reaches a screen:
+        // this is the one composer that bounds what a Sandbox User is shown.
+        return { action: "error", reason: failureMessage("Box rebuild", built), online };
       }
       if (currentHash) writeStoredHash(currentHash);
       return {
