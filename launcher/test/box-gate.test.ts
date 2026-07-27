@@ -193,10 +193,13 @@ describe("the router's gate", () => {
     const uploading = invoke(IPC.upload, "demo");
     await settle();
 
-    // Not even the Box is brought up yet: the recreate is mid-flight, so
-    // `ensureBoxReady` would be racing the very container being replaced.
+    // The picker opened — it is a question, and questions are not held (below).
+    // But nothing has reached the Box: not even bringing it up, because the
+    // recreate is mid-flight and `ensureBoxReady` would be racing the very
+    // container being replaced.
+    expect(dialog.showOpenDialog).toHaveBeenCalled();
     expect(ensureBoxReady).not.toHaveBeenCalled();
-    expect(dialog.showOpenDialog).not.toHaveBeenCalled();
+    expect(boxUpload).not.toHaveBeenCalled();
 
     vi.mocked(boxUpload).mockResolvedValue([]);
     update.resolve("Claudebox is up to date.");
@@ -205,6 +208,31 @@ describe("the router's gate", () => {
 
     expect(ensureBoxReady).toHaveBeenCalled();
     expect(await uploading).toEqual([]);
+  });
+
+  /**
+   * The gate is single-file and a picker is a human decision with no deadline,
+   * so holding one across the other is how one Sandbox User who wandered off
+   * mid-browse freezes every Box channel in the Launcher. The other direction
+   * costs as much: a stopped Box brought up FIRST is minutes of nothing in front
+   * of a picker they just clicked for. So both native pickers open before the
+   * gate is taken, and hand it only what was chosen.
+   */
+  it("opens both native pickers without taking the gate at all", async () => {
+    const held = deferred<string>();
+    vi.mocked(updateClaudebox).mockReturnValue(held.promise);
+    void invoke(IPC.updateBox);
+    await settle();
+
+    // Cancelling reaches the Box for nothing, so it never queues behind the
+    // Update — both of these answer while the gate is still held.
+    vi.mocked(dialog.showOpenDialog).mockResolvedValue({ canceled: true, filePaths: [] });
+
+    expect(await invoke(IPC.upload, "demo")).toEqual([]);
+    expect(await invoke(IPC.planImport)).toBeUndefined();
+    expect(ensureBoxReady).not.toHaveBeenCalled();
+
+    held.resolve("Claudebox is up to date.");
   });
 
   it("lets the next operation through when the one before it failed", async () => {
