@@ -186,8 +186,11 @@ export function registerIpc(homeWindow: () => BrowserWindow | undefined): void {
     homeHasItsProjects(); // still inside the gate — see `homeListedProjects`
     // The home screen shows each Project's last save. Host-side filesystem work
     // only — no Box call — plus, on the first render after upgrade, one stamp
-    // write per landing folder an earlier build Exported into. Bounded: once per
-    // folder, ever, and stamped folders are a single stat from then on.
+    // write per landing folder an earlier build Exported into. A stamped folder
+    // is a single stat from then on, so the write is once per folder when it
+    // succeeds; a folder that has no stamp and cannot be given one — the host
+    // refuses the write, or an Export failed before its first file and left the
+    // folder empty — is re-probed on every render instead.
     return withLastSaved(projects, exportRoot());
   });
   routeViaBox(IPC.createProject, (name: string) => boxCreateProject(name));

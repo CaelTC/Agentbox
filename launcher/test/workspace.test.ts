@@ -442,6 +442,24 @@ describe("boxExport — `saved: N` is a promise about files on the disk", () => 
     expect(statSync(stamp).mtimeMs).toBeGreaterThan(before);
   });
 
+  // The stamp is the record of an Export, never its outcome: a landing folder
+  // the host will not let us stamp — a full disk is the one that happens in the
+  // wild — must not flash a failure over files that are on the user's computer.
+  it("saves the files even when the stamp cannot be written", async () => {
+    const box = fakeBox((op, argv) => {
+      const canned = listing(argv);
+      if (canned !== undefined) return canned;
+      if (op === "copyOut") writeFileSync(argv[1]!, "hello");
+      return "";
+    });
+
+    // A directory where the stamp file goes: every write to it fails EISDIR.
+    mkdirSync(join(root, "demo", SAVED_STAMP), { recursive: true });
+
+    const result = await boxExport("demo", root, ["notes.md"], box);
+    expect(result.saved).toBe(1);
+  });
+
   // The folder's own mtime is what this stamp exists NOT to be: Finder bumps it
   // by opening the folder, and "Saved just now" is then a claim about a
   // months-old Export that nothing in the app can tell apart from a real one.

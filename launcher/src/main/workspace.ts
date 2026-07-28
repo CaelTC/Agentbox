@@ -4,7 +4,6 @@ import {
   lstatSync,
   mkdirSync,
   readdirSync,
-  rmSync,
   statSync,
   utimesSync,
   writeFileSync,
@@ -212,7 +211,10 @@ export async function boxDeleteListing(
  * been proven to have landed by the time the write is attempted, so a landing
  * folder the host will not let us write into still reports when it was saved —
  * it just pays for the walk again next time. A stamp that was created but could
- * not be dated is removed rather than left reading `now`, which is the drift.
+ * not be dated is LEFT, reading `now`: creating it already bumped the folder's
+ * own mtime, so removing it would send every later call back through the
+ * backfill against that bumped value — one frozen wrong date instead of a date
+ * that says "just now" forever.
  *
  * Every failure to READ here is `undefined`. This is decoration on the home
  * screen and a softer sentence on the delete sheet; a landing folder the host
@@ -231,11 +233,7 @@ export function lastSavedAt(exportDir: string): number | undefined {
       writeFileSync(stamp, `${new Date(folder.mtimeMs).toISOString()}\n`);
       utimesSync(stamp, folder.atime, folder.mtime);
     } catch {
-      try {
-        rmSync(stamp, { force: true });
-      } catch {
-        // Neither datable nor removable: the answer below is still the true one.
-      }
+      // The record is best-effort; the answer below was read before any write.
     }
     return folder.mtimeMs;
   } catch {
@@ -526,7 +524,17 @@ export async function boxExport(
     // folder — and this is the only write that means an Export happened. The
     // mtime of the stamp is the record; the line inside it is for whoever finds
     // the file and wonders.
-    if (landed > 0) writeFileSync(join(dir, SAVED_STAMP), `${new Date().toISOString()}\n`);
+    //
+    // The record can fail; the Export cannot fail with it. Files that landed are
+    // on the Sandbox User's disk, and a `finally` that throws would replace both
+    // `saved: N` and whatever real error the copy loop was already raising.
+    if (landed > 0) {
+      try {
+        writeFileSync(join(dir, SAVED_STAMP), `${new Date().toISOString()}\n`);
+      } catch {
+        // Undated on disk; `lastSavedAt` backfills it from the folder next time.
+      }
+    }
   }
   return { ...result, unmarked };
 }
