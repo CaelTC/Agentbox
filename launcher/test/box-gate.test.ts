@@ -59,6 +59,10 @@ vi.mock("../src/main/workspace", () => ({
   boxListProjects: vi.fn(),
   boxPlanImport: vi.fn(),
   boxUpload: vi.fn(),
+  // Host-side decoration on the listing, not a Box call — the identity keeps
+  // this test's subject (what the gate serialises) exactly what it was.
+  withLastSaved: (projects: unknown) => projects,
+  lastSavedAt: () => undefined,
 }));
 
 interface Deferred<T> {

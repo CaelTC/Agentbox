@@ -12,6 +12,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { BOX_USER, WORKSPACE_DIR } from "../core/config";
 import { size } from "../core/format";
 import {
+  SAVED_STAMP,
   parseBoxFileListing,
   planExport,
   resolveExportDir,
@@ -179,15 +180,92 @@ export async function boxDeleteListing(
     boxProjectUsage(slug, box),
     boxExportDir(slug, exportRoot, box),
   ]);
-  const saved = statSync(exportDir, { throwIfNoEntry: false });
+  const saved = lastSavedAt(exportDir);
 
   return {
     slug,
     name: project.name,
     ...usage,
     exportDir,
-    ...(saved ? { lastSaved: saved.mtimeMs } : {}),
+    ...(saved === undefined ? {} : { lastSaved: saved }),
   };
+}
+
+/**
+ * When an Export last landed in this folder — the stamp `boxExport` writes, never
+ * the folder's own mtime (core/export.ts says why). Absent is the honest answer
+ * for a folder nothing has been saved into: on the delete sheet it is the
+ * difference between "your copies stay where they are" and "once it's deleted,
+ * it's gone", and that sentence has to be true rather than reassuring.
+ *
+ * A landing folder written before the stamp existed gets one backfill, so that
+ * sentence stays true for Exports an earlier build made: a folder holding a
+ * non-dotfile demonstrably received an Export, and the folder's mtime is the only
+ * record left of when. It is consulted ONCE and then frozen into the stamp — the
+ * Finder drift the stamp exists to remove cannot creep back in afterwards. The
+ * dotfile exclusion is what keeps the promise honest: no dotfile is exportable
+ * (core/export.ts), so a folder holding only a `.DS_Store` is one Finder opened
+ * and nothing ever saved into.
+ *
+ * Writing that stamp is best-effort, the ANSWER is not: an Export has already
+ * been proven to have landed by the time the write is attempted, so a landing
+ * folder the host will not let us write into still reports when it was saved —
+ * it just pays for the walk again next time. A stamp that was created but could
+ * not be dated is LEFT, reading `now`: creating it already bumped the folder's
+ * own mtime, so removing it would send every later call back through the
+ * backfill against that bumped value — one frozen wrong date instead of a date
+ * that says "just now" forever.
+ *
+ * Every failure to READ here is `undefined`. This is decoration on the home
+ * screen and a softer sentence on the delete sheet; a landing folder the host
+ * will not let us read must not take either screen down with it.
+ */
+export function lastSavedAt(exportDir: string): number | undefined {
+  const stamp = join(exportDir, SAVED_STAMP);
+  try {
+    const stamped = statSync(stamp, { throwIfNoEntry: false });
+    if (stamped) return stamped.mtimeMs;
+
+    const folder = statSync(exportDir, { throwIfNoEntry: false });
+    if (!folder || !holdsAnExportedFile(exportDir)) return undefined;
+
+    try {
+      writeFileSync(stamp, `${new Date(folder.mtimeMs).toISOString()}\n`);
+      utimesSync(stamp, folder.atime, folder.mtime);
+    } catch {
+      // The record is best-effort; the answer below was read before any write.
+    }
+    return folder.mtimeMs;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Is there anything in this landing folder that only an Export could have put
+ * there? `boxExport` keeps the Project's own directory structure, so a Project
+ * whose files all lived under `docs/` lands as directories with the files a level
+ * down — the evidence is at any depth, not just the top. Stops at the FIRST one:
+ * this is a yes/no question asked inside the Box Gate, not an inventory.
+ *
+ * A directory the host will not let us read is "no evidence HERE", not "no
+ * evidence": one unreadable subfolder must not bury a real Export sitting beside
+ * it, or the delete sheet goes back to "once it's deleted, it's gone" over copies
+ * that are on disk — the sentence this whole backfill exists to keep true.
+ */
+function holdsAnExportedFile(dir: string): boolean {
+  let entries;
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return false;
+  }
+  for (const entry of entries) {
+    if (entry.name.startsWith(".")) continue; // no dotfile is exportable
+    if (entry.isFile()) return true;
+    if (entry.isDirectory() && holdsAnExportedFile(join(dir, entry.name))) return true;
+  }
+  return false;
 }
 
 /**
@@ -353,6 +431,31 @@ export async function boxExportDir(
 }
 
 /**
+ * When each Project was last saved onto this computer, read from the Export
+ * stamp. Purely host-side: no Box call, no new IPC channel, and the home screen
+ * gets one true thing to say about every Project at once.
+ *
+ * Never saved is the ORDINARY case and is not an exception: `lastSavedAt` reports
+ * it as `undefined`, so the common path no longer throws once per Project per
+ * render, and neither can an unreadable landing folder. The try/catch that
+ * remains is for the one call that genuinely throws — a friendly name that
+ * `resolveExportDir` refuses —
+ * because this is decoration, not an answer. The home screen already fails loudly
+ * when the Box can't be read; it must not fail at all over a timestamp.
+ */
+export function withLastSaved(projects: readonly Project[], exportRoot: string): Project[] {
+  return projects.map((project) => {
+    let lastSaved: number | undefined;
+    try {
+      lastSaved = lastSavedAt(resolveExportDir(exportRoot, project, projects));
+    } catch {
+      return project; // that row loses its subtitle, and nothing else changes
+    }
+    return lastSaved === undefined ? project : { ...project, lastSaved };
+  });
+}
+
+/**
  * One Project by slug, alongside the full listing it came from — `resolveExportDir`
  * needs the siblings to disambiguate two Projects whose friendly names collide.
  */
@@ -423,14 +526,30 @@ export async function boxExport(
     }
   } finally {
     // Stamped even when a copy failed part-way, because "last saved" is what
-    // Show saved files and the delete sheet report, and files that landed before
-    // the failure are on the Sandbox User's disk whatever this call did next.
-    // Overwriting files that were already there does not touch the folder's own
-    // mtime, so without this a second, half-failing Export would report the
-    // FIRST one's time over work that had just landed.
+    // Show saved files, the delete sheet and every home screen row report, and
+    // files that landed before the failure are on the Sandbox User's disk
+    // whatever this call did next.
+    //
+    // A file of its own rather than the folder's mtime: writing into a folder is
+    // not the only thing that moves that mtime — Finder does it by opening the
+    // folder — and this is the only write that means an Export happened. The
+    // mtime of the stamp is the record; the line inside it is for whoever finds
+    // the file and wonders.
+    //
+    // The record can fail; the Export cannot fail with it. Files that landed are
+    // on the Sandbox User's disk, and a `finally` that throws would replace both
+    // `saved: N` and whatever real error the copy loop was already raising.
     if (landed > 0) {
-      const now = new Date();
-      utimesSync(dir, now, now);
+      try {
+        writeFileSync(join(dir, SAVED_STAMP), `${new Date().toISOString()}\n`);
+      } catch {
+        // What survives depends on whether this Project had ever been saved
+        // before: a MISSING stamp is backfilled from the folder next time, but an
+        // EXISTING one keeps the earlier Export's date, because `lastSavedAt`
+        // returns on the stamp it finds and never reaches the backfill. So a
+        // second Export whose stamp write fails reports the first one's date
+        // until a later Export writes the stamp successfully.
+      }
     }
   }
   return { ...result, unmarked };

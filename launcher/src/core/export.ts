@@ -27,6 +27,19 @@ import { join, resolve, sep } from "node:path";
 export const EXPORT_CAP_BYTES = 2 * 1024 * 1024 * 1024;
 
 /**
+ * The stamp one Export leaves in the landing folder. "Last saved" is THIS file's
+ * mtime and never the folder's own: the folder's is bumped by anything that
+ * writes into it, and Finder drops a `.DS_Store` there the moment it is opened —
+ * which turned "open that folder" on a Project last saved in March into a home
+ * screen claiming it was saved just now.
+ *
+ * Dot-prefixed, and so out of reach of the Export itself twice over: the Box-side
+ * listing prunes dotfiles (main/workspace.ts), and no dotfile is on the allowlist
+ * above — a Project cannot write its own landing folder's stamp.
+ */
+export const SAVED_STAMP = ".claudebox-saved";
+
+/**
  * Documents plus web files, so a "personal webpage" Project is useful when it
  * lands. Deliberately no source code, archives or binaries: anything that is not
  * here is shown to the user with a reason rather than silently dropped.

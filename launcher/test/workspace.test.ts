@@ -1,7 +1,8 @@
-import { mkdirSync, mkdtempSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { SAVED_STAMP } from "../src/core/export";
 import { importTarArgs, importTarInput } from "../src/core/import";
 import { run, type RunResult } from "../src/main/exec";
 import {
@@ -12,6 +13,7 @@ import {
   boxImportFolder,
   boxListProjects,
   boxUpload,
+  lastSavedAt,
 } from "../src/main/workspace";
 import { fakeBox, type Op } from "./fake-box";
 
@@ -255,10 +257,89 @@ describe("boxDeleteListing — the sheet between a click and permanent loss", ()
     expect((await boxDeleteListing("demo", root, box("1\n1\n"))).lastSaved).toBeUndefined();
   });
 
-  it("reports when the Exported copies that SURVIVE this delete last landed", async () => {
+  // A landing folder can exist without an Export ever having landed in it, and
+  // this sheet is the one place where the difference is load-bearing: it must
+  // not promise surviving copies over a folder that only Finder ever touched.
+  it("has no lastSaved when the folder is there but nothing was ever saved into it", async () => {
     mkdirSync(join(root, "My Site"), { recursive: true });
 
+    expect((await boxDeleteListing("demo", root, box("1\n1\n"))).lastSaved).toBeUndefined();
+  });
+
+  it("reports when the Exported copies that SURVIVE this delete last landed", async () => {
+    mkdirSync(join(root, "My Site"), { recursive: true });
+    writeFileSync(join(root, "My Site", SAVED_STAMP), "2026-07-01T00:00:00.000Z\n");
+
     expect((await boxDeleteListing("demo", root, box("1\n1\n"))).lastSaved).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * The stamp is younger than the feature, so the folders of everyone who Exported
+ * before it existed hold copies no stamp accounts for. Left alone, the delete
+ * sheet would tell those users "once it's deleted, it's gone" over files sitting
+ * on their disk — the one sentence in the app that has to be true.
+ */
+describe("lastSavedAt — the one-time backfill for Exports older than the stamp", () => {
+  let dir: string;
+  const anHourAgo = new Date(Date.now() - 3_600_000);
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "claudebox-stamp-"));
+  });
+
+  it("stamps a folder an earlier build Exported into, from the folder's own mtime", () => {
+    writeFileSync(join(dir, "notes.md"), "hello");
+    utimesSync(dir, anHourAgo, anHourAgo);
+
+    expect(lastSavedAt(dir)).toBeCloseTo(anHourAgo.getTime(), -1);
+  });
+
+  // The whole point of the stamp is that the folder's mtime drifts. Reading it
+  // once is the deal; reading it again after Finder has been in there is not.
+  it("freezes that reading, so the drift cannot creep back in afterwards", () => {
+    writeFileSync(join(dir, "notes.md"), "hello");
+    utimesSync(dir, anHourAgo, anHourAgo);
+    const backfilled = lastSavedAt(dir);
+
+    writeFileSync(join(dir, ".DS_Store"), "finder");
+
+    expect(lastSavedAt(dir)).toBe(backfilled);
+  });
+
+  // Export keeps the Project's own directory structure, so a landing folder can
+  // legitimately hold nothing but directories — the users this backfill exists for.
+  it("finds the Exported copies when they landed inside a subfolder", () => {
+    mkdirSync(join(dir, "docs", "2024"), { recursive: true });
+    writeFileSync(join(dir, "docs", "2024", "report.md"), "hello");
+    utimesSync(dir, anHourAgo, anHourAgo);
+
+    expect(lastSavedAt(dir)).toBeCloseTo(anHourAgo.getTime(), -1);
+  });
+
+  // The answer is proven before the stamp is attempted, so it survives a folder
+  // the host will not let us write into — the delete sheet's sentence stays true.
+  it("still reports the save when the stamp cannot be written", () => {
+    writeFileSync(join(dir, "notes.md"), "hello");
+    utimesSync(dir, anHourAgo, anHourAgo);
+    chmodSync(dir, 0o500);
+
+    try {
+      expect(lastSavedAt(dir)).toBeCloseTo(anHourAgo.getTime(), -1);
+      expect(statSync(join(dir, SAVED_STAMP), { throwIfNoEntry: false })).toBeUndefined();
+    } finally {
+      chmodSync(dir, 0o700);
+    }
+  });
+
+  it("leaves a folder only Finder ever touched unstamped", () => {
+    writeFileSync(join(dir, ".DS_Store"), "finder");
+
+    expect(lastSavedAt(dir)).toBeUndefined();
+    expect(statSync(join(dir, SAVED_STAMP), { throwIfNoEntry: false })).toBeUndefined();
+  });
+
+  it("is undefined rather than a throw when the folder cannot be read", () => {
+    expect(lastSavedAt(join(dir, "never-exported"))).toBeUndefined();
   });
 });
 
@@ -334,9 +415,9 @@ describe("boxExport — `saved: N` is a promise about files on the disk", () => 
   });
 
   // Files that landed before a mid-loop failure are on the user's disk, and
-  // "last saved" is what Show saved files and the delete sheet report about
-  // them. Overwriting existing files does not move the folder's own mtime, so
-  // without the stamp a second, half-failing Export reports the first one's time.
+  // "last saved" is what Show saved files, the delete sheet and the home screen
+  // report about them. The stamp is a file of its own rather than the folder's
+  // mtime, which anything writing into the folder — Finder included — bumps.
   it("stamps 'last saved' when a copy fails part-way, for the files that landed", async () => {
     const box = fakeBox((op, argv) => {
       if (isSlugListing(argv)) return "demo\n";
@@ -350,13 +431,55 @@ describe("boxExport — `saved: N` is a promise about files on the disk", () => 
 
     const before = Date.now() - 60_000;
     const dir = join(root, "demo");
+    const stamp = join(dir, SAVED_STAMP);
     mkdirSync(dir, { recursive: true });
-    utimesSync(dir, new Date(before), new Date(before));
+    writeFileSync(stamp, "old\n");
+    utimesSync(stamp, new Date(before), new Date(before));
 
     await expect(boxExport("demo", root, ["notes.md", "report.md"], box)).rejects.toThrow(
       /no such file/,
     );
-    expect(statSync(dir).mtimeMs).toBeGreaterThan(before);
+    expect(statSync(stamp).mtimeMs).toBeGreaterThan(before);
+  });
+
+  // The stamp is the record of an Export, never its outcome: a landing folder
+  // the host will not let us stamp — a full disk is the one that happens in the
+  // wild — must not flash a failure over files that are on the user's computer.
+  it("saves the files even when the stamp cannot be written", async () => {
+    const box = fakeBox((op, argv) => {
+      const canned = listing(argv);
+      if (canned !== undefined) return canned;
+      if (op === "copyOut") writeFileSync(argv[1]!, "hello");
+      return "";
+    });
+
+    // A directory where the stamp file goes: every write to it fails EISDIR.
+    mkdirSync(join(root, "demo", SAVED_STAMP), { recursive: true });
+
+    const result = await boxExport("demo", root, ["notes.md"], box);
+    expect(result.saved).toBe(1);
+  });
+
+  // The folder's own mtime is what this stamp exists NOT to be: Finder bumps it
+  // by opening the folder, and "Saved just now" is then a claim about a
+  // months-old Export that nothing in the app can tell apart from a real one.
+  it("records the save in a file of its own, not in the landing folder's mtime", async () => {
+    const box = fakeBox((op, argv) => {
+      if (isSlugListing(argv)) return "demo\n";
+      if (isFileListing(argv)) return "100644\t12\tnotes.md\n";
+      if (op === "copyOut") writeFileSync(argv[1]!, "hello");
+      return "";
+    });
+
+    const dir = join(root, "demo");
+    await boxExport("demo", root, ["notes.md"], box);
+
+    const saved = statSync(join(dir, SAVED_STAMP)).mtimeMs;
+    // Anything at all landing in the folder afterwards — a .DS_Store is the one
+    // that happens in the wild — moves the folder on and leaves the stamp alone.
+    writeFileSync(join(dir, ".DS_Store"), "finder");
+    expect(statSync(join(dir, SAVED_STAMP)).mtimeMs).toBe(saved);
+    expect(lastSavedAt(dir)).toBe(saved);
   });
 });
 

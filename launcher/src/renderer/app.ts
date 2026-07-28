@@ -168,6 +168,80 @@ function clock(ms: number): string {
   return `${Math.floor(total / 60)}m ${String(total % 60).padStart(2, "0")}s`;
 }
 
+/**
+ * The folders the Files tab lists down its left pane: every directory that holds
+ * a file, and every directory above one, so an indented list reads as a tree
+ * without any tree state to keep. The Project root is deliberately NOT in here —
+ * it is the "All files" row, which is the empty prefix and matches everything.
+ */
+function fileFolders(paths: readonly string[]): string[] {
+  const folders = new Set<string>();
+  for (const path of paths) {
+    const segments = path.split("/");
+    segments.pop(); // the file's own name
+    let prefix = "";
+    for (const segment of segments) {
+      prefix = prefix ? `${prefix}/${segment}` : segment;
+      folders.add(prefix);
+    }
+  }
+  // Sorted on the separator swapped for NUL, so that every folder is followed by
+  // its own descendants with no sibling wedged between them — which is what makes
+  // indent-by-depth alone enough to draw the tree. A plain sort() breaks that for
+  // any sibling name whose next character is below "/" (space, "-", ".", "+"):
+  // "docs-old" lands between "docs" and "docs/2024", and "2024" then draws one
+  // level under the wrong parent.
+  const order = (folder: string) => folder.replaceAll("/", "\u0000");
+  return [...folders].sort((a, b) => (order(a) < order(b) ? -1 : order(a) > order(b) ? 1 : 0));
+}
+
+/** A folder row holds everything UNDER it, however deep. "" is the whole Project. */
+function inFolder(path: string, folder: string): boolean {
+  return folder === "" || path.startsWith(`${folder}/`);
+}
+
+/** The filter field: anywhere in the path, so "csv" finds data/2024-costs.csv. */
+function matchesFilter(path: string, query: string): boolean {
+  return path.toLowerCase().includes(query.trim().toLowerCase());
+}
+
+/**
+ * What the Files tab's action bar says about the current ticking. The cap is the
+ * Export ceiling (core/export.ts); this only decides whether "Save …" is
+ * clickable, and the trusted layer re-checks both the selection and the total
+ * before a byte is written.
+ */
+function selectionTotal(
+  files: readonly { path: string; size: number }[],
+  selected: ReadonlySet<string>,
+  capBytes: number,
+): { count: number; bytes: number; over: boolean } {
+  const picked = files.filter((f) => selected.has(f.path));
+  const bytes = picked.reduce((sum, f) => sum + f.size, 0);
+  return { count: picked.length, bytes, over: bytes > capBytes };
+}
+
+/**
+ * What stays ticked when the Files tab is rebuilt. "Add files…" is an addition,
+ * not a reset: someone who narrowed 200 files down to three and then added a
+ * document has to end up with four ticked, not 201 — a click that copies out the
+ * 198 they deliberately excluded. So the earlier ticks carry across, and any path
+ * the earlier listing did not have — the files just added — starts ticked, the
+ * same way it would on a first open.
+ *
+ * No `prior` is a first open or a Refresh: everything exportable starts ticked,
+ * so "save all of it" is one click, and on Refresh the reset is what the word
+ * implies.
+ */
+function carriedSelection(
+  files: readonly { path: string; exportable: boolean }[],
+  prior?: { selected: ReadonlySet<string>; known: ReadonlySet<string> },
+): Set<string> {
+  const keeps = (path: string): boolean =>
+    !prior || prior.selected.has(path) || !prior.known.has(path);
+  return new Set(files.filter((f) => f.exportable && keeps(f.path)).map((f) => f.path));
+}
+
 // --- end of the renderer's machinery -----------------------------------------
 
 /**
@@ -183,12 +257,34 @@ function heroMark(): HTMLElement {
   ]);
 }
 
-/** A full-bleed dark brand band split against a light panel holding the mark. */
-function hero(copy: (Node | string)[], modifier = ""): HTMLElement {
-  return el("header", { className: `hero ${modifier}`.trim() }, [
+/**
+ * A full-bleed dark brand band split against a light panel holding the mark.
+ *
+ * Only the starting and error screens use this now — they ARE the whole window,
+ * and `.hero:only-child` lets it fill one. The screens a Sandbox User works in
+ * carry `brandBar` instead: a 40vh hero on top of the home screen put the one
+ * thing they opened the Launcher for below the fold.
+ */
+function hero(copy: (Node | string)[]): HTMLElement {
+  return el("header", { className: "hero" }, [
     el("div", { className: "hero__copy" }, copy),
     heroMark(),
   ]);
+}
+
+/**
+ * The brand, one line high. It is what is left of the hero on the two working
+ * screens: the mark and the name still open the window, but they cost a strip
+ * rather than two fifths of it, so the projects list — and, inside a Project,
+ * the controls — start at the top of the page instead of below a statement.
+ */
+function brandBar(children: (Node | string)[]): HTMLElement {
+  return el("header", { className: "brandbar" }, [el("div", { className: "container" }, children)]);
+}
+
+/** The mark at bar scale — no disc, because a strip has no room for clear space. */
+function brandMark(): HTMLElement {
+  return el("img", { className: "brandbar__mark", src: "./assets/nootka-mark.png", alt: "Nootka Saunas" });
 }
 
 function section(kind: string, children: (Node | string)[]): HTMLElement {
@@ -215,10 +311,19 @@ function noticeStrip(message: string): HTMLElement {
   return strip;
 }
 
-/** Place-anchored, and the same on every screen. */
-function footer(): HTMLElement {
+/**
+ * Place-anchored, and the same on every screen — plus, on the home screen, the
+ * housekeeping. GitHub and "Claudebox itself" used to be two consecutive light
+ * bands with full section weight, which between them took more of the home
+ * screen than the Projects did. They are the same two controls here, at the size
+ * of what they are: things you touch once a month, at the bottom, on one line.
+ */
+function footer(utilities: Node[] = []): HTMLElement {
   return el("footer", { className: "footer" }, [
-    el("div", { className: "container" }, ["Claudebox runs on your computer. Built in British Columbia."]),
+    el("div", { className: "container footer__row" }, [
+      el("span", { textContent: "Claudebox runs on your computer. Built in British Columbia." }),
+      ...utilities,
+    ]),
   ]);
 }
 
@@ -249,86 +354,152 @@ async function renderHome(notice?: string): Promise<void> {
   root.replaceChildren();
 
   root.append(
-    hero([
-      el("p", { className: "eyebrow", textContent: "Claudebox" }),
-      el("h1", { className: "hero__title", textContent: "A sealed room." }),
+    brandBar([
+      brandMark(),
+      el("strong", { className: "brandbar__name", textContent: "Claudebox" }),
       el("p", {
-        className: "lead",
-        textContent:
-          "Claude works inside a sandbox on your computer. Nothing leaves it unless you carry it out.",
+        className: "brandbar__lead",
+        textContent: "A sealed room. Nothing leaves it unless you carry it out.",
       }),
     ]),
   );
 
   if (notice) root.append(noticeStrip(notice));
 
-  // A blank Project.
-  const nameInput = el("input", { type: "text", placeholder: "Name your project…" }) as HTMLInputElement;
+  // The Projects (ticket 05) are the home screen now, first and at full width:
+  // resuming yesterday's work is what the Launcher is opened for, and it used to
+  // sit two bands down, behind a statement of what Claudebox is.
+  //
+  // Starting something new is the first tile rather than a band of its own —
+  // both ways in (blank, or a folder from the computer) are the same intent, and
+  // an empty Workspace then has its next step inside the grid instead of above it.
+  const grid = el("div", { className: "grid" }, [newProjectCard()]);
+  for (const project of projects) {
+    grid.append(
+      actionCard(project.name, savedMeta(project), () => void openProject(project)),
+    );
+  }
+
+  root.append(
+    section("light", [
+      el("p", { className: "eyebrow", textContent: "Your projects" }),
+      grid,
+      ...(projects.length === 0
+        ? [el("p", { className: "empty", textContent: "Nothing here yet — start one above." })]
+        : []),
+    ]),
+  );
+
+  root.append(footer([...(await githubAccountLine()), updateLink()]));
+}
+
+/**
+ * What one Project row says besides its name. The Launcher knows exactly one
+ * thing about a Project without asking the Box again, and it happens to be the
+ * one worth saying: whether any of it is on the Sandbox User's own computer.
+ * That is the sentence the Delete sheet leans on too, and the answer to "which
+ * of these have I actually carried out yet".
+ */
+function savedMeta(project: Project): string {
+  return project.lastSaved
+    ? `Saved to your computer ${when(project.lastSaved)}`
+    : "Not saved to your computer yet";
+}
+
+/** The one tile that isn't a Project: both ways of starting one. */
+function newProjectCard(): HTMLButtonElement {
+  const card = actionCard(
+    "New project",
+    "Blank, or a folder from your computer",
+    () => renderNewProjectSheet(),
+  );
+  card.className = "card card--new";
+  return card;
+}
+
+/**
+ * Starting something new, on the sheet every other single decision in the app
+ * uses. Both doors are here because they are one intent: a Sandbox User who
+ * wants to work on the folder already on their desktop is starting a Project,
+ * not browsing files — which is why "Open a folder from my computer" is here and
+ * NOT in the Files tab, whose whole subject is one Project that already exists.
+ */
+function renderNewProjectSheet(): void {
+  const nameInput = el("input", {
+    type: "text",
+    placeholder: "Name your project…",
+    autocomplete: "off",
+  }) as HTMLInputElement;
+
   const createBtn = el("button", { className: "btn", textContent: "Create blank project" }) as HTMLButtonElement;
-  createBtn.addEventListener("click", () => {
-    if (!nameInput.value.trim()) return;
-    void runOperation({
-      button: createBtn,
-      busyLabel: "Creating…",
-      run: () => cb.createProject(nameInput.value.trim()),
-      done: (project) => openProject(project),
-      failed: "Couldn't create that project",
-    });
-  });
+  createBtn.disabled = true; // a Project with no name is refused by the trusted layer anyway
+  nameInput.addEventListener("input", () => (createBtn.disabled = nameInput.value.trim() === ""));
 
   // Project Import (ticket 09): a folder on the host becomes a Project. One
   // confirmation sheet stands between the folder picker and anything crossing —
   // and the picker itself is opened by the trusted layer before it takes the Box
   // Gate, so this operation is only as long as measuring the chosen folder.
   const importBtn = el("button", {
-    className: "btn",
+    className: "btn--link",
     textContent: "Open a folder from my computer",
   }) as HTMLButtonElement;
+
+  const cancel = el("button", { className: "btn--link", textContent: "Cancel" });
+
+  const close = openSheet(
+    "Start something new",
+    [
+      el("label", { className: "confirm" }, [
+        el("span", { textContent: "What is it called?" }),
+        nameInput,
+      ]),
+      el("p", {
+        className: "sub",
+        textContent:
+          "Or bring one you already have: the folder is copied into the sandbox, and you'll see exactly what crosses before it does.",
+      }),
+      importBtn,
+    ],
+    [cancel, createBtn],
+  );
+
+  cancel.addEventListener("click", close); // cancelling creates nothing
+
+  // Closed from `done` rather than by handing `close` to the operation, which
+  // would dismiss the sheet on either outcome: the other sheets that do that are
+  // confirmations with nothing to retype, and this one holds a typed name. A
+  // refused create leaves the sheet up with the name still in the field.
+  createBtn.addEventListener("click", () =>
+    void runOperation({
+      button: createBtn,
+      busyLabel: "Creating…",
+      run: () => cb.createProject(nameInput.value.trim()),
+      done: (project) => {
+        close();
+        return openProject(project);
+      },
+      failed: "Couldn't create that project",
+    }),
+  );
+
   importBtn.addEventListener("click", () =>
     void runOperation({
       button: importBtn,
       busyLabel: "Opening…",
       run: () => cb.planImport(),
-      // Undefined means the native picker was cancelled: nothing crossed, and
-      // there is nothing to confirm.
+      // Undefined means the native picker was cancelled: nothing crossed, so
+      // there is nothing to confirm — and this sheet stays up, because the
+      // Sandbox User has not finished deciding what to start.
       done: (listing) => {
-        if (listing) renderImportSheet(listing);
+        if (!listing) return;
+        close();
+        renderImportSheet(listing);
       },
       failed: "Couldn't read that folder",
     }),
   );
 
-  root.append(
-    section("light", [
-      el("p", { className: "eyebrow", textContent: "Start something new" }),
-      el("div", { className: "new-project" }, [nameInput, createBtn]),
-      el("div", { className: "new-project" }, [importBtn]),
-    ]),
-  );
-
-  // Existing Projects (ticket 05) — a dark band, so the list reads as its own place.
-  const projectBlock: (Node | string)[] = [el("p", { className: "eyebrow", textContent: "Your projects" })];
-  if (projects.length === 0) {
-    projectBlock.push(
-      el("p", { className: "empty", textContent: "Nothing here yet. Start one above and it will appear." }),
-    );
-  } else {
-    const list = el("ul", { className: "projects" });
-    for (const p of projects) {
-      const open = el("button", {}, [
-        el("span", { textContent: p.name }),
-        el("span", { className: "meta", textContent: "Open" }),
-      ]);
-      open.addEventListener("click", () => openProject(p));
-      list.append(el("li", {}, [open]));
-    }
-    projectBlock.push(list);
-  }
-  root.append(section("water", projectBlock));
-  const account = await githubAccountSection();
-  if (account) root.append(account);
-  root.append(updateSection());
-  root.append(footer());
+  nameInput.focus();
 }
 
 /**
@@ -336,12 +507,12 @@ async function renderHome(notice?: string): Promise<void> {
  * leaves: a fix ships, and a Sandbox User who never quits the Launcher stays on
  * last week's Box with no way to ask for the new one.
  *
- * Home screen only, and a quiet link rather than a card. Updating restarts the
- * sandbox and closes every open Claude session, which is not a thing to put a
- * click away from "Open project" — and it is nobody's reason for opening the
- * Launcher.
+ * Home screen only, and a footer link rather than a band of its own. Updating
+ * restarts the sandbox and closes every open Claude session, which is not a
+ * thing to put a click away from a Project tile — and it is nobody's reason for
+ * opening the Launcher.
  */
-function updateSection(): HTMLElement {
+function updateLink(): HTMLButtonElement {
   const update = el("button", { className: "btn--link", textContent: "Update Claudebox" }) as HTMLButtonElement;
 
   update.addEventListener("click", () =>
@@ -358,14 +529,7 @@ function updateSection(): HTMLElement {
     }),
   );
 
-  return section("light", [
-    el("p", { className: "eyebrow", textContent: "Claudebox itself" }),
-    el("p", {
-      textContent:
-        "Claudebox updates itself each time you open it. If you've been told there's a fix, you can check now instead.",
-    }),
-    update,
-  ]);
+  return update;
 }
 
 /**
@@ -376,14 +540,14 @@ function updateSection(): HTMLElement {
  * Absent entirely when nothing is connected: the "Save to GitHub" card already
  * offers to connect, and an empty row here would be a second, deader door.
  */
-async function githubAccountSection(): Promise<HTMLElement | undefined> {
+async function githubAccountLine(): Promise<Node[]> {
   let status: GithubStatus;
   try {
     status = await cb.githubStatus();
   } catch {
-    return undefined; // never let a GitHub hiccup keep the home screen from rendering
+    return []; // never let a GitHub hiccup keep the home screen from rendering
   }
-  if (!status.connected) return undefined;
+  if (!status.connected) return [];
 
   const swap = el("button", {
     className: "btn--link",
@@ -402,17 +566,15 @@ async function githubAccountSection(): Promise<HTMLElement | undefined> {
     }),
   );
 
-  return section("light", [
-    el("p", { className: "eyebrow", textContent: "GitHub" }),
-    el("p", { textContent: `Saving to ${status.login}'s account.` }),
-    swap,
-  ]);
+  return [el("span", { textContent: `Saving to ${status.login}'s account.` }), swap];
 }
 
 /**
- * One action, its plain-language consequence, and the click that does it. The
- * card is handed to its own handler because every one of these reaches the Box:
- * they run as operations, and an operation disables the control that started it.
+ * One action, its plain-language consequence, and the click that does it. A
+ * shape, not a promise about where the click goes: the home screen's tiles open
+ * a Project or a sheet and touch nothing, while the panel's cards reach the Box.
+ * The card is handed to its own handler for the latter — those run as operations,
+ * and an operation disables the control that started it.
  */
 function actionCard(
   title: string,
@@ -433,9 +595,12 @@ function actionCard(
  * Project — no terminal is embedded here.
  *
  * Opening a Project does NOT open the session: landing here is how a user gets
- * to Upload, Save and Preview too, and having a terminal appear over the panel
+ * to the files and the publish too, and having a terminal appear over the panel
  * every time they came back for one of those was noise. The session opens when
  * it is asked for, and asking twice raises the window rather than adding one.
+ *
+ * Two tabs, because the panel holds two subjects that were competing for one
+ * grid: what you DO with this Project, and what is IN it.
  */
 async function openProject(project: Project): Promise<void> {
   const root = app();
@@ -474,58 +639,89 @@ async function openProject(project: Project): Promise<void> {
       }),
   );
 
-  root.append(
-    hero(
-      [
-        back,
-        el("h1", { className: "hero__title", textContent: project.name }),
-        el("p", { className: "lead", textContent: "Open the session when you want Claude. This window holds the controls." }),
-        el("div", { className: "hero__actions" }, [openSession]),
-      ],
-      "hero--project",
-    ),
-  );
+  const sessionTab = el("button", { className: "tab tab--on", role: "tab", textContent: "Session" }) as HTMLButtonElement;
+  const filesTab = el("button", { className: "tab", role: "tab", textContent: "Files" }) as HTMLButtonElement;
 
-  // Every card below reaches into the Box, so every one of them is an operation:
-  // it disables its own card, refuses while another is in flight rather than
-  // queueing silently behind a rebuild, and — the thing an unhandled rejection
-  // could never do — says so when it fails instead of looking simply dead.
-  const upload = actionCard("Upload files", "Bring documents in from your computer.", (card) =>
+  // One region under the bar, swapped in place. The tabs are the only navigation
+  // in the app that isn't a whole screen, so they change as little as possible:
+  // the bar, the Project's name and the way out all stay where they were.
+  //
+  // `showing` counts the swaps, and a read that lands after one has happened is
+  // stale: only the button a read was started FROM is disabled while it runs, so
+  // the Sandbox User can click Session mid-read — and a listing that then took
+  // the screen back would yank them out of the panel they had just chosen.
+  const body = el("div", { className: "tabbed", role: "tabpanel" });
+  let showing = 0;
+  const select = (tab: HTMLButtonElement, content: Node): void => {
+    for (const t of [sessionTab, filesTab]) {
+      t.className = t === tab ? "tab tab--on" : "tab";
+      t.ariaSelected = String(t === tab);
+    }
+    showing += 1;
+    body.replaceChildren(content);
+  };
+
+  // The Files tab reads the Project ONCE, when it is opened, and again only when
+  // the Sandbox User asks for it (Refresh) or changes what is there (Add files…).
+  // Nothing here is on a timer: every read takes the Box Gate, which is not
+  // re-entrant, so a poll would sit on the lock the session itself needs.
+  //
+  // A failed read is caught HERE rather than left to `runOperation`, because the
+  // panel still has to appear: "Add files…" is the only way into a Project, and
+  // it opens a host picker that owes the listing nothing. The sentence is the
+  // same one either way — `fail` composes every failure in this file.
+  const cantRead = `Couldn't read the files in ${project.name}`;
+  const loadFiles = (button: HTMLButtonElement, prior?: PriorTicks): void => {
+    const startedAt = showing;
     void runOperation({
-      button: card,
-      run: () => cb.upload(project.slug),
-      // An empty list is a cancelled picker, not a failed copy.
-      done: (copied) => {
-        if (copied.length) flash(`Uploaded ${copied.length} file(s) into ${project.name}.`);
+      button,
+      run: (): Promise<ExportListing | undefined> =>
+        cb.listExportFiles(project.slug).catch((err: unknown) => {
+          flash(fail(cantRead, err));
+          return undefined;
+        }),
+      done: (listing) => {
+        if (showing === startedAt) select(filesTab, filesPanel(project, listing, loadFiles, prior));
       },
-      failed: "Couldn't upload those files",
-    }),
+      // Required by `Operation`, and unreachable here: `run` catches its own
+      // failure above, so the promise this hands over never rejects.
+      failed: cantRead,
+    });
+  };
+
+  sessionTab.addEventListener("click", () => select(sessionTab, sessionPanel(project)));
+  filesTab.addEventListener("click", () => loadFiles(filesTab));
+
+  root.append(
+    brandBar([
+      back,
+      el("h1", { className: "brandbar__project", textContent: project.name }),
+      el("nav", { className: "tabs", role: "tablist", ariaLabel: `${project.name} panels` }, [
+        sessionTab,
+        filesTab,
+      ]),
+      openSession,
+    ]),
   );
 
-  // Export (tickets 07/08): carry the Project's documents onto the real computer.
-  const save = actionCard("Save to my computer", "Carry this project's files back out.", (card) =>
-    void runOperation({
-      button: card,
-      run: () => cb.listExportFiles(project.slug),
-      done: (listing) => renderExportPicker(project, listing),
-      failed: `Couldn't open ${project.name} to save it`,
-    }),
-  );
+  select(sessionTab, sessionPanel(project));
+  root.append(section("light", [body]));
+  root.append(footer());
+}
 
-  const show = actionCard("Show saved files", "Open the folder the saved copies land in.", (card) =>
-    void runOperation({
-      button: card,
-      run: () => cb.showSavedFiles(project.slug),
-      done: (res) =>
-        flash(
-          res.opened
-            ? `Last saved ${when(res.lastSaved)}.`
-            : `Nothing saved yet — “Save to my computer” puts this project in ${res.dir}.`,
-        ),
-      failed: "Couldn't show the saved files",
-    }),
-  );
-
+/**
+ * What you DO with this Project. Two cards, because the grid's own rule is that
+ * an even set reads as a block and an odd one reads as three-plus-an-orphan — it
+ * had grown to five. Three of those five were file transfer and moved into the
+ * Files tab, which also ended the screen having three different buttons whose
+ * first word was "save".
+ *
+ * Both reach into the Box, so both are operations: each disables its own card,
+ * refuses while another is in flight rather than queueing silently behind a
+ * rebuild, and — the thing an unhandled rejection could never do — says so when
+ * it fails instead of looking simply dead.
+ */
+function sessionPanel(project: Project): HTMLElement {
   const preview = actionCard("Preview", "Look at whatever this project is serving.", (card) =>
     void runOperation({
       button: card,
@@ -536,14 +732,16 @@ async function openProject(project: Project): Promise<void> {
     }),
   );
 
-  // Save to GitHub (ADR 0006). The token lives in the Launcher; this button only
-  // asks for the publish, and the two-container split happens on the host side.
+  // Save to GitHub (ADR 0006) stays here rather than moving to Files: it is
+  // publishing the Project to an account, not carrying files onto this computer.
+  // The token lives in the Launcher; this button only asks for the publish, and
+  // the two-container split happens on the host side.
   const github = actionCard("Save to GitHub", "Keep this project in a private repo on your account.", (card) =>
     void startPublish(project, card),
   );
 
-  // Delete sits OUTSIDE the action grid, not as a fifth card in it. The four
-  // above are all things you can undo by doing them again; this one is the only
+  // Delete sits OUTSIDE the action grid, not as another card in it. The two
+  // above are things you can undo by doing them again; this one is the only
   // control in Claudebox that destroys work, and putting it in the same row of
   // identical cards would make it a misclick away from the one beside it.
   const destroy = el("button", {
@@ -560,20 +758,248 @@ async function openProject(project: Project): Promise<void> {
     }),
   );
 
-  root.append(
-    section("light", [
-      el("p", { className: "eyebrow", textContent: "This project" }),
-      el("div", { className: "grid grid--actions" }, [upload, save, show, preview, github]),
-      el("div", { className: "danger" }, [
-        el("p", {
-          textContent:
-            "Finished with this project? Deleting it removes it and everything in it from the sandbox, for good.",
-        }),
-        destroy,
+  return el("div", {}, [
+    el("p", { className: "eyebrow", textContent: "This project" }),
+    el("div", { className: "grid grid--actions" }, [preview, github]),
+    el("div", { className: "danger" }, [
+      el("p", {
+        textContent:
+          "Finished with this project? Deleting it removes it and everything in it from the sandbox, for good.",
+      }),
+      destroy,
+    ]),
+  ]);
+}
+
+/**
+ * What a rebuilt Files tab needs to know about the one it replaces: which paths
+ * were ticked, and which paths it had at all — the second is what makes a file
+ * that appeared since then recognisable as new. See `carriedSelection`.
+ */
+interface PriorTicks {
+  readonly selected: ReadonlySet<string>;
+  readonly known: ReadonlySet<string>;
+}
+
+/**
+ * The Files tab (tickets 07/08): everything in one Project, and the three things
+ * a Sandbox User does with it — bring files in, carry files out, and look at
+ * what has already been carried out. Those used to be three cards on the panel,
+ * two of which said "save", each of which answered its question in a toast that
+ * expired. Here the answer is the list itself.
+ *
+ * The Launcher builds this from what IT enumerated inside the Box — nothing
+ * served from inside the Box decides what the host writes — and everything
+ * ticked is still re-validated in the trusted layer before a byte is written, so
+ * this pane is a convenience, never the security boundary.
+ *
+ * Refused files are listed, greyed, with the reason `core/export.ts` gave beside
+ * them. Hiding them would be the kinder-looking bug: a user whose analysis script
+ * doesn't come out should read why here, not wonder about it afterwards.
+ *
+ * `listing` is absent when the read failed, and the panel is still built: "Add
+ * files…" is the ONLY way into a Project, it opens a picker on the host, and it
+ * must not be reachable only through a Box read that can fail. What a failed read
+ * costs is what the Launcher genuinely doesn't know — the list, the totals, and
+ * the landing folder's name — never the way in or the way to try again.
+ */
+function filesPanel(
+  project: Project,
+  listing: ExportListing | undefined,
+  reload: (button: HTMLButtonElement, prior?: PriorTicks) => void,
+  prior?: PriorTicks,
+): HTMLElement {
+  const files = listing?.files ?? [];
+  const paths = files.map((f) => f.path);
+  const selected = carriedSelection(files, prior);
+  let folder = ""; // the whole Project
+  let query = "";
+
+  const tree = el("ul", { className: "tree" });
+  const list = el("ul", { className: "files" });
+  const total = el("span", { className: "total" });
+  const filter = el("input", {
+    type: "search",
+    placeholder: "Filter files…",
+    ariaLabel: "Filter files",
+    autocomplete: "off",
+  }) as HTMLInputElement;
+  const add = el("button", { className: "btn--link", textContent: "Add files…" }) as HTMLButtonElement;
+  const refresh = el("button", { className: "btn--link", textContent: "Refresh" }) as HTMLButtonElement;
+  const saveBtn = el("button", { className: "btn" }) as HTMLButtonElement;
+  const openSaved = el("button", { className: "btn--link", textContent: "Open that folder" }) as HTMLButtonElement;
+
+  function drawTree(): void {
+    tree.replaceChildren();
+    for (const dir of ["", ...fileFolders(paths)]) {
+      const row = el("button", {
+        className: dir === folder ? "tree__row tree__row--on" : "tree__row",
+        // Only the last segment: the row above it already said the rest.
+        textContent: dir === "" ? "All files" : dir.slice(dir.lastIndexOf("/") + 1),
+      });
+      row.style.paddingLeft = `${0.75 + (dir === "" ? 0 : dir.split("/").length) * 0.8}rem`;
+      row.addEventListener("click", () => {
+        folder = dir;
+        drawTree();
+        drawFiles();
+      });
+      tree.append(el("li", {}, [row]));
+    }
+  }
+
+  function drawFiles(): void {
+    const shown = files.filter((f) => inFolder(f.path, folder) && matchesFilter(f.path, query));
+    list.replaceChildren();
+    for (const file of shown) {
+      const check = el("input", {
+        type: "checkbox",
+        checked: selected.has(file.path),
+        disabled: !file.exportable,
+      }) as HTMLInputElement;
+      check.addEventListener("change", () => {
+        if (check.checked) selected.add(file.path);
+        else selected.delete(file.path);
+        drawTotal();
+      });
+      list.append(
+        el("li", {}, [
+          el("label", { className: file.exportable ? "file" : "file blocked" }, [
+            check,
+            el("span", {
+              className: "name",
+              // Relative to the folder on the left: picking one shortens the rows
+              // instead of repeating the path you just clicked.
+              textContent: folder === "" ? file.path : file.path.slice(folder.length + 1),
+            }),
+            el("span", {
+              className: "why",
+              // core/export.ts owns these sentences. They are shown as written.
+              textContent: file.exportable ? size(file.size) : file.reason ?? "",
+            }),
+          ]),
+        ]),
+      );
+    }
+    if (shown.length === 0) {
+      list.append(
+        el("li", {}, [
+          el("p", {
+            className: "empty",
+            textContent: !listing
+              ? "Couldn't read what's in this project. Refresh to try again — you can still add files."
+              : query
+                ? "Nothing here matches that."
+                : "Nothing in this folder yet.",
+          }),
+        ]),
+      );
+    }
+    drawTotal();
+  }
+
+  // The count is on the button because it is what the click will do, and the
+  // total is beside it because the cap is the reason a click might be refused.
+  // Selection survives switching folders and filtering: ticking things in two
+  // folders and saving both is the whole point of keeping it in one place.
+  function drawTotal(): void {
+    if (!listing) return; // no cap to measure against, and no action bar on screen
+    const picked = selectionTotal(files, selected, listing.capBytes);
+    total.textContent = picked.over
+      ? `${size(picked.bytes)} — over the ${size(listing.capBytes)} limit. Untick something.`
+      : `${size(picked.bytes)} of ${size(listing.capBytes)}`;
+    total.className = picked.over ? "total over" : "total";
+    saveBtn.textContent =
+      picked.count === 1 ? "Save 1 file to my computer" : `Save ${picked.count} files to my computer`;
+    saveBtn.disabled = picked.over || picked.count === 0;
+  }
+
+  filter.addEventListener("input", () => {
+    query = filter.value;
+    drawFiles();
+  });
+
+  refresh.addEventListener("click", () => reload(refresh));
+
+  add.addEventListener("click", () =>
+    void runOperation({
+      button: add,
+      busyLabel: "Adding…",
+      run: () => cb.upload(project.slug),
+      // An empty list is a cancelled picker, not a failed copy — and nothing
+      // changed, so there is nothing to read again.
+      done: (copied) => {
+        if (!copied.length) return;
+        flash(`Added ${copied.length} file(s) to ${project.name}.`);
+        // Adding is not re-reading: the ticks the Sandbox User already made go
+        // across to the panel that replaces this one, and only what wasn't here
+        // before arrives ticked.
+        reload(add, { selected, known: new Set(paths) });
+      },
+      failed: "Couldn't add those files",
+    }),
+  );
+
+  saveBtn.addEventListener("click", () =>
+    void runOperation({
+      button: saveBtn,
+      busyLabel: "Saving…",
+      run: () => cb.saveToComputer(project.slug, [...selected]),
+      done: (res) => {
+        flash(
+          res.overCap
+            ? `Too big to save: ${size(res.totalBytes)}, and the limit is ${size(res.capBytes)}. Nothing was saved.`
+            : saved(res),
+        );
+        // The boxes stay live while "Saving…" runs, and `runOperation` puts back
+        // the label and the enabled state it captured BEFORE the save — so a tick
+        // changed mid-save would otherwise leave a button reading the old count
+        // that saves the new one. Redrawing from the selection settles both.
+        drawTotal();
+      },
+      failed: "Couldn't save",
+    }),
+  );
+
+  openSaved.addEventListener("click", () =>
+    void runOperation({
+      button: openSaved,
+      busyLabel: "Opening…",
+      run: () => cb.showSavedFiles(project.slug),
+      done: (res) => {
+        if (!res.opened) flash(`Nothing saved yet — the folder appears the first time you save.`);
+      },
+      failed: "Couldn't open the saved folder",
+    }),
+  );
+
+  drawTree();
+  drawFiles();
+
+  return el("div", {}, [
+    el("p", { className: "eyebrow", textContent: "Files in this project" }),
+    el("div", { className: "two" }, [
+      tree,
+      el("div", {}, [
+        el("div", { className: "tools" }, [filter, add, refresh]),
+        list,
+        // Saving needs a selection and a cap to measure it against; both come
+        // from the listing, so a failed read leaves the bar off rather than
+        // offering a button that could only refuse.
+        ...(listing ? [el("div", { className: "bar" }, [saveBtn, total])] : []),
       ]),
     ]),
-  );
-  root.append(footer());
+    // "Show saved files" was a card that answered a question with a toast. The
+    // answer is on screen now, and the button only opens the folder. The folder's
+    // name is the Box's to tell, so this line waits for a listing too.
+    ...(listing
+      ? [
+          el("div", { className: "saved" }, [
+            el("span", { textContent: `Saved copies land in ${listing.dir}.` }),
+            openSaved,
+          ]),
+        ]
+      : []),
+  ]);
 }
 
 /**
@@ -844,88 +1270,6 @@ function renderImportSheet(listing: ImportListing): void {
 }
 
 /**
- * The Export picker (ticket 08). The Launcher builds and renders this list from
- * files it enumerated inside the Box — nothing served from inside the Box
- * decides what the host writes. Everything ticked here is still re-validated in
- * the trusted layer, so this list is a convenience, never the security boundary.
- */
-function renderExportPicker(project: Project, listing: ExportListing): void {
-  const boxes: HTMLInputElement[] = [];
-  const list = el("ul", { className: "files" });
-
-  for (const file of listing.files) {
-    const check = el("input", {
-      type: "checkbox",
-      checked: file.exportable, // exportable files are ticked, so one click still works
-      disabled: !file.exportable,
-    }) as HTMLInputElement;
-    check.dataset.path = file.path;
-    check.dataset.size = String(file.size);
-    if (file.exportable) boxes.push(check);
-
-    const label = el("label", { className: file.exportable ? "file" : "file blocked" }, [
-      check,
-      el("span", { className: "name", textContent: file.path }),
-      el("span", {
-        className: "why",
-        // The reason is shown, not hidden: a user whose analysis script does not
-        // come out should see why before they commit, not wonder afterwards.
-        textContent: file.exportable ? size(file.size) : file.reason ?? "",
-      }),
-    ]);
-    list.append(el("li", {}, [label]));
-  }
-
-  const total = el("p", { className: "total" });
-  const saveBtn = el("button", { className: "btn", textContent: "Save" }) as HTMLButtonElement;
-  const cancel = el("button", { className: "btn--link", textContent: "Cancel" });
-
-  const close = openSheet(
-    "Save to my computer",
-    [
-      el("p", { className: "sub", textContent: `Choose what to save into ${listing.dir}.` }),
-      listing.files.length === 0
-        ? el("p", { className: "empty", textContent: "This Project has no files yet." })
-        : list,
-      total,
-    ],
-    [cancel, saveBtn],
-  );
-
-  const selection = () => boxes.filter((b) => b.checked);
-  const refresh = () => {
-    const picked = selection();
-    const bytes = picked.reduce((sum, b) => sum + Number(b.dataset.size), 0);
-    const over = bytes > listing.capBytes;
-    total.textContent = over
-      ? `${picked.length} file(s), ${size(bytes)} — over the ${size(listing.capBytes)} limit. Untick something to save.`
-      : `${picked.length} file(s), ${size(bytes)} of ${size(listing.capBytes)}.`;
-    total.className = over ? "total over" : "total";
-    saveBtn.disabled = over || picked.length === 0;
-  };
-  for (const b of boxes) b.addEventListener("change", refresh);
-  refresh();
-
-  cancel.addEventListener("click", close); // cancelling writes nothing
-
-  saveBtn.addEventListener("click", () =>
-    void runOperation({
-      button: saveBtn,
-      busyLabel: "Saving…",
-      close,
-      run: () => cb.saveToComputer(project.slug, selection().map((b) => b.dataset.path!)),
-      done: (res) =>
-        flash(
-          res.overCap
-            ? `Too big to save: ${size(res.totalBytes)}, and the limit is ${size(res.capBytes)}. Nothing was saved.`
-            : saved(res),
-        ),
-      failed: "Couldn't save",
-    }),
-  );
-}
-
-/**
  * What one Export did. Files that landed without the host's untrusted mark
  * (#12) are named rather than folded into the count: the mark is what puts them
  * in "the risk class of an email attachment" (ADR 0003), so its absence is
@@ -953,13 +1297,17 @@ function size(bytes: number): string {
   return `${Math.round(bytes / 1024)} KB`;
 }
 
-/** "just now" / a local date — the Sandbox User only needs the gist. */
+/**
+ * "just now" / a local date — the Sandbox User only needs the gist. The date
+ * alone, not the second: this now sits on every Project row on the home screen,
+ * where "7/24/2026, 6:49:47 PM" is precision nobody asked for in a subtitle.
+ */
 function when(epochMs?: number): string {
   if (!epochMs) return "recently";
   const minutes = Math.round((Date.now() - epochMs) / 60000);
   if (minutes < 1) return "just now";
   if (minutes < 60) return `${minutes} minute(s) ago`;
-  return new Date(epochMs).toLocaleString();
+  return new Date(epochMs).toLocaleDateString();
 }
 
 /**

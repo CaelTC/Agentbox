@@ -25,6 +25,7 @@ import {
   boxListProjects,
   boxPlanImport,
   boxUpload,
+  withLastSaved,
 } from "./workspace";
 
 /**
@@ -183,7 +184,14 @@ export function registerIpc(homeWindow: () => BrowserWindow | undefined): void {
   routeViaBox(IPC.listProjects, async () => {
     const projects = await boxListProjects();
     homeHasItsProjects(); // still inside the gate — see `homeListedProjects`
-    return projects;
+    // The home screen shows each Project's last save. Host-side filesystem work
+    // only — no Box call — plus, on the first render after upgrade, one stamp
+    // write per landing folder an earlier build Exported into. A stamped folder
+    // is a single stat from then on, so the write is once per folder when it
+    // succeeds; a folder that has no stamp and cannot be given one — the host
+    // refuses the write, or an Export failed before its first file and left the
+    // folder empty — is re-probed on every render instead.
+    return withLastSaved(projects, exportRoot());
   });
   routeViaBox(IPC.createProject, (name: string) => boxCreateProject(name));
   routeViaBox(IPC.openSession, (slug: string) => openProjectSession(slug));
@@ -213,12 +221,9 @@ export function registerIpc(homeWindow: () => BrowserWindow | undefined): void {
   // Needs the Box for the landing folder's name, which lives in metadata inside it.
   routeViaBox(IPC.showSavedFiles, async (slug: string): Promise<SavedFolder> => {
     const dir = await boxExportDir(slug, exportRoot());
-    const stat = statSync(dir, { throwIfNoEntry: false });
-    if (!stat) return { dir, opened: false }; // never saved — nothing to show yet
+    if (!statSync(dir, { throwIfNoEntry: false })) return { dir, opened: false }; // nothing to show yet
     await shell.openPath(dir);
-    // ponytail: "last saved" is the folder's mtime, which Finder also bumps when
-    // it drops a .DS_Store in. Write a stamp file if the drift ever matters.
-    return { dir, opened: true, lastSaved: stat.mtimeMs };
+    return { dir, opened: true };
   });
 
   // Import's trust boundary: the only folder that may ever cross into the Box
