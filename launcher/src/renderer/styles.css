@@ -107,11 +107,12 @@ h1, h2, h3 {
   padding-inline: var(--container-pad);
 }
 
-/* Alternating full-bleed bands carry the page: dark, light, dark. */
+/* Full-bleed bands still carry the page dark, light, dark — but the dark ends are
+   the brand bar and the footer now, so the working screens are one band deep and
+   `--light` is the only kind of `.section` left. Adding a second kind back means
+   its own `.eyebrow` colour too (see the hero's, below). */
 .section { padding-block: var(--space-block); }
 .section--light { background: var(--color-bg); color: var(--color-text); }
-.section--forest { background: var(--color-surface-dark); color: var(--color-text-inverse); }
-.section--water { background: var(--color-surface-dark2); color: var(--color-text-inverse); }
 
 .eyebrow {
   margin: 0 0 var(--radius-lg);
@@ -120,9 +121,7 @@ h1, h2, h3 {
   letter-spacing: var(--tracking-eyebrow);
   text-transform: uppercase;
 }
-/* On dark bands the eyebrow reads in Steam; on light bands it inherits Evergreen. */
-.section--forest .eyebrow,
-.section--water .eyebrow,
+/* On the dark hero the eyebrow reads in Steam; on light bands it inherits Evergreen. */
 .hero .eyebrow { color: var(--nootka-steam); }
 
 .lead { margin: 0; font-size: var(--text-lead); max-width: 34ch; }
@@ -145,7 +144,6 @@ h1, h2, h3 {
   font-variant-numeric: tabular-nums;
   opacity: 0.7;
 }
-.meta { font-size: var(--text-meta); opacity: 0.75; }
 
 /* ------------------------------------------------------------------ hero ---- */
 
@@ -216,7 +214,12 @@ h1, h2, h3 {
 /* The lead is the brand's one sentence, and the first thing to go when the bar
    runs out of room — the projects under it are the screen's real subject. */
 .brandbar__lead { margin: 0 0 0 auto; font-size: var(--text-meta); opacity: 0.8; }
+/* `min-width: 0` is what makes the ellipsis engage: a flex item floors at its
+   min-content width by default, so an unbounded Project name would push the tabs
+   and the session button off the end of the bar instead of truncating. This is
+   the only element in the bar allowed to shrink. */
 .brandbar__project {
+  min-width: 0;
   font-size: var(--text-lead);
   overflow: hidden;
   text-overflow: ellipsis;

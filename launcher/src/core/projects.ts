@@ -13,9 +13,10 @@ export interface Project {
   readonly dir: string;
   /**
    * Epoch ms of the last Export, absent if this Project has never been saved
-   * out. Filled host-side from the landing folder's own mtime (main/workspace.ts)
-   * — it costs no Box call, which is why the home screen can say it for every
-   * Project at once. Absent from a Project the Box just created.
+   * out. Filled host-side from the Export stamp in the landing folder
+   * (`SAVED_STAMP`, main/workspace.ts) — it costs no Box call, which is why the
+   * home screen can say it for every Project at once. Absent from a Project the
+   * Box just created.
    */
   readonly lastSaved?: number;
 }

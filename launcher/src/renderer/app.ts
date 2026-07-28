@@ -439,13 +439,19 @@ function renderNewProjectSheet(): void {
 
   cancel.addEventListener("click", close); // cancelling creates nothing
 
+  // Closed from `done` rather than by handing `close` to the operation, which
+  // would dismiss the sheet on either outcome: the other sheets that do that are
+  // confirmations with nothing to retype, and this one holds a typed name. A
+  // refused create leaves the sheet up with the name still in the field.
   createBtn.addEventListener("click", () =>
     void runOperation({
       button: createBtn,
       busyLabel: "Creating…",
-      close,
       run: () => cb.createProject(nameInput.value.trim()),
-      done: (project) => openProject(project),
+      done: (project) => {
+        close();
+        return openProject(project);
+      },
       failed: "Couldn't create that project",
     }),
   );
@@ -605,15 +611,25 @@ async function openProject(project: Project): Promise<void> {
       }),
   );
 
-  const sessionTab = el("button", { className: "tab tab--on", textContent: "Session" }) as HTMLButtonElement;
-  const filesTab = el("button", { className: "tab", textContent: "Files" }) as HTMLButtonElement;
+  const sessionTab = el("button", { className: "tab tab--on", role: "tab", textContent: "Session" }) as HTMLButtonElement;
+  const filesTab = el("button", { className: "tab", role: "tab", textContent: "Files" }) as HTMLButtonElement;
 
   // One region under the bar, swapped in place. The tabs are the only navigation
   // in the app that isn't a whole screen, so they change as little as possible:
   // the bar, the Project's name and the way out all stay where they were.
-  const body = el("div", { className: "tabbed" });
+  //
+  // `showing` counts the swaps, and a read that lands after one has happened is
+  // stale: only the button a read was started FROM is disabled while it runs, so
+  // the Sandbox User can click Session mid-read — and a listing that then took
+  // the screen back would yank them out of the panel they had just chosen.
+  const body = el("div", { className: "tabbed", role: "tabpanel" });
+  let showing = 0;
   const select = (tab: HTMLButtonElement, content: Node): void => {
-    for (const t of [sessionTab, filesTab]) t.className = t === tab ? "tab tab--on" : "tab";
+    for (const t of [sessionTab, filesTab]) {
+      t.className = t === tab ? "tab tab--on" : "tab";
+      t.ariaSelected = String(t === tab);
+    }
+    showing += 1;
     body.replaceChildren(content);
   };
 
@@ -621,13 +637,27 @@ async function openProject(project: Project): Promise<void> {
   // the Sandbox User asks for it (Refresh) or changes what is there (Add files…).
   // Nothing here is on a timer: every read takes the Box Gate, which is not
   // re-entrant, so a poll would sit on the lock the session itself needs.
-  const loadFiles = (button: HTMLButtonElement): void =>
+  //
+  // A failed read is caught HERE rather than left to `runOperation`, because the
+  // panel still has to appear: "Add files…" is the only way into a Project, and
+  // it opens a host picker that owes the listing nothing. The sentence is the
+  // same one either way — `fail` composes every failure in this file.
+  const cantRead = `Couldn't read the files in ${project.name}`;
+  const loadFiles = (button: HTMLButtonElement): void => {
+    const startedAt = showing;
     void runOperation({
       button,
-      run: () => cb.listExportFiles(project.slug),
-      done: (listing) => select(filesTab, filesPanel(project, listing, loadFiles)),
-      failed: `Couldn't read the files in ${project.name}`,
+      run: (): Promise<ExportListing | undefined> =>
+        cb.listExportFiles(project.slug).catch((err: unknown) => {
+          flash(fail(cantRead, err));
+          return undefined;
+        }),
+      done: (listing) => {
+        if (showing === startedAt) select(filesTab, filesPanel(project, listing, loadFiles));
+      },
+      failed: cantRead,
     });
+  };
 
   sessionTab.addEventListener("click", () => select(sessionTab, sessionPanel(project)));
   filesTab.addEventListener("click", () => loadFiles(filesTab));
@@ -636,7 +666,10 @@ async function openProject(project: Project): Promise<void> {
     brandBar([
       back,
       el("h1", { className: "brandbar__project", textContent: project.name }),
-      el("nav", { className: "tabs" }, [sessionTab, filesTab]),
+      el("nav", { className: "tabs", role: "tablist", ariaLabel: `${project.name} panels` }, [
+        sessionTab,
+        filesTab,
+      ]),
       openSession,
     ]),
   );
@@ -723,16 +756,23 @@ function sessionPanel(project: Project): HTMLElement {
  * Refused files are listed, greyed, with the reason `core/export.ts` gave beside
  * them. Hiding them would be the kinder-looking bug: a user whose analysis script
  * doesn't come out should read why here, not wonder about it afterwards.
+ *
+ * `listing` is absent when the read failed, and the panel is still built: "Add
+ * files…" is the ONLY way into a Project, it opens a picker on the host, and it
+ * must not be reachable only through a Box read that can fail. What a failed read
+ * costs is what the Launcher genuinely doesn't know — the list, the totals, and
+ * the landing folder's name — never the way in or the way to try again.
  */
 function filesPanel(
   project: Project,
-  listing: ExportListing,
+  listing: ExportListing | undefined,
   reload: (button: HTMLButtonElement) => void,
 ): HTMLElement {
-  const paths = listing.files.map((f) => f.path);
+  const files = listing?.files ?? [];
+  const paths = files.map((f) => f.path);
   // Exportable files start ticked, so "save all of it" is still one click — the
   // default the sheet this replaced had.
-  const selected = new Set(listing.files.filter((f) => f.exportable).map((f) => f.path));
+  const selected = new Set(files.filter((f) => f.exportable).map((f) => f.path));
   let folder = ""; // the whole Project
   let query = "";
 
@@ -742,6 +782,7 @@ function filesPanel(
   const filter = el("input", {
     type: "search",
     placeholder: "Filter files…",
+    ariaLabel: "Filter files",
     autocomplete: "off",
   }) as HTMLInputElement;
   const add = el("button", { className: "btn--link", textContent: "Add files…" }) as HTMLButtonElement;
@@ -768,7 +809,7 @@ function filesPanel(
   }
 
   function drawFiles(): void {
-    const shown = listing.files.filter((f) => inFolder(f.path, folder) && matchesFilter(f.path, query));
+    const shown = files.filter((f) => inFolder(f.path, folder) && matchesFilter(f.path, query));
     list.replaceChildren();
     for (const file of shown) {
       const check = el("input", {
@@ -805,7 +846,11 @@ function filesPanel(
         el("li", {}, [
           el("p", {
             className: "empty",
-            textContent: query ? "Nothing here matches that." : "Nothing in this folder yet.",
+            textContent: !listing
+              ? "Couldn't read what's in this project. Refresh to try again — you can still add files."
+              : query
+                ? "Nothing here matches that."
+                : "Nothing in this folder yet.",
           }),
         ]),
       );
@@ -818,7 +863,8 @@ function filesPanel(
   // Selection survives switching folders and filtering: ticking things in two
   // folders and saving both is the whole point of keeping it in one place.
   function drawTotal(): void {
-    const picked = selectionTotal(listing.files, selected, listing.capBytes);
+    if (!listing) return; // no cap to measure against, and no action bar on screen
+    const picked = selectionTotal(files, selected, listing.capBytes);
     total.textContent = picked.over
       ? `${size(picked.bytes)} — over the ${size(listing.capBytes)} limit. Untick something.`
       : `${size(picked.bytes)} of ${size(listing.capBytes)}`;
@@ -888,15 +934,23 @@ function filesPanel(
       el("div", {}, [
         el("div", { className: "tools" }, [filter, add, refresh]),
         list,
-        el("div", { className: "bar" }, [saveBtn, total]),
+        // Saving needs a selection and a cap to measure it against; both come
+        // from the listing, so a failed read leaves the bar off rather than
+        // offering a button that could only refuse.
+        ...(listing ? [el("div", { className: "bar" }, [saveBtn, total])] : []),
       ]),
     ]),
     // "Show saved files" was a card that answered a question with a toast. The
-    // answer is on screen now, and the button only opens the folder.
-    el("div", { className: "saved" }, [
-      el("span", { textContent: `Saved copies land in ${listing.dir}.` }),
-      openSaved,
-    ]),
+    // answer is on screen now, and the button only opens the folder. The folder's
+    // name is the Box's to tell, so this line waits for a listing too.
+    ...(listing
+      ? [
+          el("div", { className: "saved" }, [
+            el("span", { textContent: `Saved copies land in ${listing.dir}.` }),
+            openSaved,
+          ]),
+        ]
+      : []),
   ]);
 }
 

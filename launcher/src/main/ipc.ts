@@ -25,6 +25,7 @@ import {
   boxListProjects,
   boxPlanImport,
   boxUpload,
+  lastSavedAt,
   withLastSaved,
 } from "./workspace";
 
@@ -216,12 +217,13 @@ export function registerIpc(homeWindow: () => BrowserWindow | undefined): void {
   // Needs the Box for the landing folder's name, which lives in metadata inside it.
   routeViaBox(IPC.showSavedFiles, async (slug: string): Promise<SavedFolder> => {
     const dir = await boxExportDir(slug, exportRoot());
-    const stat = statSync(dir, { throwIfNoEntry: false });
-    if (!stat) return { dir, opened: false }; // never saved — nothing to show yet
+    if (!statSync(dir, { throwIfNoEntry: false })) return { dir, opened: false }; // nothing to show yet
     await shell.openPath(dir);
-    // ponytail: "last saved" is the folder's mtime, which Finder also bumps when
-    // it drops a .DS_Store in. Write a stamp file if the drift ever matters.
-    return { dir, opened: true, lastSaved: stat.mtimeMs };
+    // The stamp, not the folder's mtime: opening the folder is the very thing
+    // that has Finder write a .DS_Store into it, so the old reading was bumped by
+    // this handler's own success (core/export.ts).
+    const lastSaved = lastSavedAt(dir);
+    return { dir, opened: true, ...(lastSaved === undefined ? {} : { lastSaved }) };
   });
 
   // Import's trust boundary: the only folder that may ever cross into the Box

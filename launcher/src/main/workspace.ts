@@ -5,13 +5,13 @@ import {
   mkdirSync,
   readdirSync,
   statSync,
-  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { BOX_USER, WORKSPACE_DIR } from "../core/config";
 import { size } from "../core/format";
 import {
+  SAVED_STAMP,
   parseBoxFileListing,
   planExport,
   resolveExportDir,
@@ -179,15 +179,26 @@ export async function boxDeleteListing(
     boxProjectUsage(slug, box),
     boxExportDir(slug, exportRoot, box),
   ]);
-  const saved = statSync(exportDir, { throwIfNoEntry: false });
+  const saved = lastSavedAt(exportDir);
 
   return {
     slug,
     name: project.name,
     ...usage,
     exportDir,
-    ...(saved ? { lastSaved: saved.mtimeMs } : {}),
+    ...(saved === undefined ? {} : { lastSaved: saved }),
   };
+}
+
+/**
+ * When an Export last landed in this folder — the stamp `boxExport` writes, never
+ * the folder's own mtime (core/export.ts says why). Absent is the honest answer
+ * for a folder nothing has been saved into: on the delete sheet it is the
+ * difference between "your copies stay where they are" and "once it's deleted,
+ * it's gone", and that sentence has to be true rather than reassuring.
+ */
+export function lastSavedAt(exportDir: string): number | undefined {
+  return statSync(join(exportDir, SAVED_STAMP), { throwIfNoEntry: false })?.mtimeMs;
 }
 
 /**
@@ -353,22 +364,26 @@ export async function boxExportDir(
 }
 
 /**
- * When each Project was last saved onto this computer, read from the landing
- * folder's own mtime. Purely host-side: no Box call, no new IPC channel, and the
- * home screen gets one true thing to say about every Project at once.
+ * When each Project was last saved onto this computer, read from the Export
+ * stamp. Purely host-side: no Box call, no new IPC channel, and the home screen
+ * gets one true thing to say about every Project at once.
  *
- * Per-Project try/catch because this is decoration, not an answer: a name that
- * `resolveExportDir` refuses, or a folder that vanished mid-listing, must cost
- * that row its subtitle and nothing else. The home screen already fails loudly
- * when the Box can't be read; it must not fail at all over a mtime.
+ * Never saved is the ORDINARY case and is not an exception: `lastSavedAt` reports
+ * it as `undefined`, so the common path no longer throws once per Project per
+ * render. The try/catch that remains is for the two calls that genuinely can
+ * fail — a friendly name `resolveExportDir` refuses, an unreadable Export root —
+ * because this is decoration, not an answer. The home screen already fails loudly
+ * when the Box can't be read; it must not fail at all over a timestamp.
  */
 export function withLastSaved(projects: readonly Project[], exportRoot: string): Project[] {
   return projects.map((project) => {
+    let lastSaved: number | undefined;
     try {
-      return { ...project, lastSaved: statSync(resolveExportDir(exportRoot, project, projects)).mtimeMs };
+      lastSaved = lastSavedAt(resolveExportDir(exportRoot, project, projects));
     } catch {
-      return { ...project };
+      return project; // that row loses its subtitle, and nothing else changes
     }
+    return lastSaved === undefined ? project : { ...project, lastSaved };
   });
 }
 
@@ -443,15 +458,16 @@ export async function boxExport(
     }
   } finally {
     // Stamped even when a copy failed part-way, because "last saved" is what
-    // Show saved files and the delete sheet report, and files that landed before
-    // the failure are on the Sandbox User's disk whatever this call did next.
-    // Overwriting files that were already there does not touch the folder's own
-    // mtime, so without this a second, half-failing Export would report the
-    // FIRST one's time over work that had just landed.
-    if (landed > 0) {
-      const now = new Date();
-      utimesSync(dir, now, now);
-    }
+    // Show saved files, the delete sheet and every home screen row report, and
+    // files that landed before the failure are on the Sandbox User's disk
+    // whatever this call did next.
+    //
+    // A file of its own rather than the folder's mtime: writing into a folder is
+    // not the only thing that moves that mtime — Finder does it by opening the
+    // folder — and this is the only write that means an Export happened. The
+    // mtime of the stamp is the record; the line inside it is for whoever finds
+    // the file and wonders.
+    if (landed > 0) writeFileSync(join(dir, SAVED_STAMP), `${new Date().toISOString()}\n`);
   }
   return { ...result, unmarked };
 }

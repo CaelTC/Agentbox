@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, statSync, utimesSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { SAVED_STAMP } from "../src/core/export";
 import { importTarArgs, importTarInput } from "../src/core/import";
 import { run, type RunResult } from "../src/main/exec";
 import {
@@ -12,6 +13,7 @@ import {
   boxImportFolder,
   boxListProjects,
   boxUpload,
+  lastSavedAt,
 } from "../src/main/workspace";
 import { fakeBox, type Op } from "./fake-box";
 
@@ -255,8 +257,18 @@ describe("boxDeleteListing — the sheet between a click and permanent loss", ()
     expect((await boxDeleteListing("demo", root, box("1\n1\n"))).lastSaved).toBeUndefined();
   });
 
+  // A landing folder can exist without an Export ever having landed in it, and
+  // this sheet is the one place where the difference is load-bearing: it must
+  // not promise surviving copies over a folder that only Finder ever touched.
+  it("has no lastSaved when the folder is there but nothing was ever saved into it", async () => {
+    mkdirSync(join(root, "My Site"), { recursive: true });
+
+    expect((await boxDeleteListing("demo", root, box("1\n1\n"))).lastSaved).toBeUndefined();
+  });
+
   it("reports when the Exported copies that SURVIVE this delete last landed", async () => {
     mkdirSync(join(root, "My Site"), { recursive: true });
+    writeFileSync(join(root, "My Site", SAVED_STAMP), "2026-07-01T00:00:00.000Z\n");
 
     expect((await boxDeleteListing("demo", root, box("1\n1\n"))).lastSaved).toBeGreaterThan(0);
   });
@@ -334,9 +346,9 @@ describe("boxExport — `saved: N` is a promise about files on the disk", () => 
   });
 
   // Files that landed before a mid-loop failure are on the user's disk, and
-  // "last saved" is what Show saved files and the delete sheet report about
-  // them. Overwriting existing files does not move the folder's own mtime, so
-  // without the stamp a second, half-failing Export reports the first one's time.
+  // "last saved" is what Show saved files, the delete sheet and the home screen
+  // report about them. The stamp is a file of its own rather than the folder's
+  // mtime, which anything writing into the folder — Finder included — bumps.
   it("stamps 'last saved' when a copy fails part-way, for the files that landed", async () => {
     const box = fakeBox((op, argv) => {
       if (isSlugListing(argv)) return "demo\n";
@@ -350,13 +362,37 @@ describe("boxExport — `saved: N` is a promise about files on the disk", () => 
 
     const before = Date.now() - 60_000;
     const dir = join(root, "demo");
+    const stamp = join(dir, SAVED_STAMP);
     mkdirSync(dir, { recursive: true });
-    utimesSync(dir, new Date(before), new Date(before));
+    writeFileSync(stamp, "old\n");
+    utimesSync(stamp, new Date(before), new Date(before));
 
     await expect(boxExport("demo", root, ["notes.md", "report.md"], box)).rejects.toThrow(
       /no such file/,
     );
-    expect(statSync(dir).mtimeMs).toBeGreaterThan(before);
+    expect(statSync(stamp).mtimeMs).toBeGreaterThan(before);
+  });
+
+  // The folder's own mtime is what this stamp exists NOT to be: Finder bumps it
+  // by opening the folder, and "Saved just now" is then a claim about a
+  // months-old Export that nothing in the app can tell apart from a real one.
+  it("records the save in a file of its own, not in the landing folder's mtime", async () => {
+    const box = fakeBox((op, argv) => {
+      if (isSlugListing(argv)) return "demo\n";
+      if (isFileListing(argv)) return "100644\t12\tnotes.md\n";
+      if (op === "copyOut") writeFileSync(argv[1]!, "hello");
+      return "";
+    });
+
+    const dir = join(root, "demo");
+    await boxExport("demo", root, ["notes.md"], box);
+
+    const saved = statSync(join(dir, SAVED_STAMP)).mtimeMs;
+    // Anything at all landing in the folder afterwards — a .DS_Store is the one
+    // that happens in the wild — moves the folder on and leaves the stamp alone.
+    writeFileSync(join(dir, ".DS_Store"), "finder");
+    expect(statSync(join(dir, SAVED_STAMP)).mtimeMs).toBe(saved);
+    expect(lastSavedAt(dir)).toBe(saved);
   });
 });
 
