@@ -1,9 +1,9 @@
 /**
  * The home screen (ticket 05) and the in-Project session view (tickets 04/06/07/08).
- * Pure DOM against the narrow `window.claudebox` bridge — no Node, Docker, or
+ * Pure DOM against the narrow `window.agentbox` bridge — no Node, Docker, or
  * shell access here.
  */
-const cb = window.claudebox;
+const cb = window.agentbox;
 
 const app = () => document.getElementById("app")!;
 
@@ -48,7 +48,7 @@ function fail(prefix: string, err: unknown): string {
 }
 
 /**
- * Every modal in Claudebox is this sheet: a backdrop, one panel, a title, the
+ * Every modal in Agentbox is this sheet: a backdrop, one panel, a title, the
  * caller's own contents, and a row of actions along the bottom. Four of them
  * opened with the same seven lines and closed with the same four before this
  * existed, and only the Delete sheet's `focus()` ever differed — so that stays
@@ -91,7 +91,7 @@ type Operation<T> = {
 /**
  * The one operation the renderer will run at a time.
  *
- * Every operation below mutates the Box, and "Update Claudebox" recreates the
+ * Every operation below mutates the Box, and "Update Agentbox" recreates the
  * container outright — so a second one started while the first is in flight can
  * `docker rm -f` the Box out from under it, from a screen the first one never
  * sees (Update lives on the home screen; an Export runs from inside a Project).
@@ -113,7 +113,7 @@ let operationInFlight = false;
 
 async function runOperation<T>(op: Operation<T>): Promise<void> {
   if (operationInFlight) {
-    flash("Claudebox is already busy with something else. Let that finish first.");
+    flash("Agentbox is already busy with something else. Let that finish first.");
     return;
   }
   operationInFlight = true;
@@ -330,7 +330,7 @@ function noticeStrip(message: string): HTMLElement {
 
 /**
  * Place-anchored, and the same on every screen — plus, on the home screen, the
- * housekeeping. GitHub and "Claudebox itself" used to be two consecutive light
+ * housekeeping. GitHub and "Agentbox itself" used to be two consecutive light
  * bands with full section weight, which between them took more of the home
  * screen than the Projects did. They are the same two controls here, at the size
  * of what they are: things you touch once a month, at the bottom, on one line.
@@ -338,7 +338,7 @@ function noticeStrip(message: string): HTMLElement {
 function footer(utilities: Node[] = []): HTMLElement {
   return el("footer", { className: "footer" }, [
     el("div", { className: "container footer__row" }, [
-      el("span", { textContent: "Claudebox runs on your computer. Built in British Columbia." }),
+      el("span", { textContent: "Agentbox runs on your computer. Built in British Columbia." }),
       ...utilities,
     ]),
   ]);
@@ -373,7 +373,7 @@ async function renderHome(notice?: string): Promise<void> {
   root.append(
     brandBar([
       brandMark(),
-      el("strong", { className: "brandbar__name", textContent: "Claudebox" }),
+      el("strong", { className: "brandbar__name", textContent: "Agentbox" }),
       el("p", {
         className: "brandbar__lead",
         textContent: "A sealed room. Nothing leaves it unless you carry it out.",
@@ -385,7 +385,7 @@ async function renderHome(notice?: string): Promise<void> {
 
   // The Projects (ticket 05) are the home screen now, first and at full width:
   // resuming yesterday's work is what the Launcher is opened for, and it used to
-  // sit two bands down, behind a statement of what Claudebox is.
+  // sit two bands down, behind a statement of what Agentbox is.
   //
   // Starting something new is the first tile rather than a band of its own —
   // both ways in (blank, or a folder from the computer) are the same intent, and
@@ -520,7 +520,7 @@ function renderNewProjectSheet(): void {
 }
 
 /**
- * "Update Claudebox" — Refresh on Launch (ADR 0002) on a button, for the gap it
+ * "Update Agentbox" — Refresh on Launch (ADR 0002) on a button, for the gap it
  * leaves: a fix ships, and a Sandbox User who never quits the Launcher stays on
  * last week's Box with no way to ask for the new one.
  *
@@ -530,7 +530,7 @@ function renderNewProjectSheet(): void {
  * opening the Launcher.
  */
 function updateLink(): HTMLButtonElement {
-  const update = el("button", { className: "btn--link", textContent: "Update Claudebox" }) as HTMLButtonElement;
+  const update = el("button", { className: "btn--link", textContent: "Update Agentbox" }) as HTMLButtonElement;
 
   update.addEventListener("click", () =>
     void runOperation({
@@ -542,7 +542,7 @@ function updateLink(): HTMLButtonElement {
       done: (message) => {
         if (message) flash(message);
       },
-      failed: "Couldn't update Claudebox",
+      failed: "Couldn't update Agentbox",
     }),
   );
 
@@ -778,7 +778,7 @@ function sessionPanel(project: Project): HTMLElement {
 
   // Delete sits OUTSIDE the action grid, not as another card in it. The two
   // above are things you can undo by doing them again; this one is the only
-  // control in Claudebox that destroys work, and putting it in the same row of
+  // control in Agentbox that destroys work, and putting it in the same row of
   // identical cards would make it a misclick away from the one beside it.
   const destroy = el("button", {
     className: "btn--link destroy",
@@ -1385,7 +1385,7 @@ async function startPublish(project: Project, card: HTMLButtonElement): Promise<
   }
 
   if (!status.configured) {
-    flash("This copy of Claudebox has no GitHub sign-in configured, so it can't save there yet.");
+    flash("This copy of Agentbox has no GitHub sign-in configured, so it can't save there yet.");
     return;
   }
   if (!status.connected) {
@@ -1405,7 +1405,7 @@ function publish(project: Project, card: HTMLButtonElement): Promise<void> {
     run: () => (flash(`Saving ${project.name} to GitHub…`), cb.saveToGithub(project.slug)),
     // Naming the branch matters: it is whatever was checked out in the Box, and
     // on a feature branch the repo's front page will not show what was just
-    // saved. "(private)" only when Claudebox made the repo — a Project that came
+    // saved. "(private)" only when Agentbox made the repo — a Project that came
     // in with its own remote publishes back to it, whatever that repo already is.
     done: (res) =>
       flash(
@@ -1420,7 +1420,7 @@ function publish(project: Project, card: HTMLButtonElement): Promise<void> {
 /**
  * The GitHub device-flow sheet. Shows the code to type at github.com/login/device
  * and — plainly, because it is the whole cost of this feature — what the sign-in
- * lets Claudebox reach.
+ * lets Agentbox reach.
  */
 function renderGithubConnect(project: Project, card: HTMLButtonElement): void {
   const step = el("p", { className: "sub", textContent: "Asking GitHub for a code…" });
@@ -1435,7 +1435,7 @@ function renderGithubConnect(project: Project, card: HTMLButtonElement): void {
       el("p", {
         className: "sub",
         textContent:
-          "Claudebox asks for access to your repositories so it can create a private one and save this project into it. " +
+          "Agentbox asks for access to your repositories so it can create a private one and save this project into it. " +
           "The sign-in is kept by this launcher and is never given to Claude.",
       }),
       // The switching trap: the code is approved by whoever is signed in at
@@ -1643,7 +1643,7 @@ function renderImportSheet(listing: ImportListing): void {
 function saved(res: ExportResult): string {
   const done = `Saved ${res.saved} file(s) to ${res.dir}.`;
   if (res.unmarked === 0) return done;
-  return `${done} ${res.unmarked} couldn't be marked as coming from Claudebox — open those with the same care as an email attachment.`;
+  return `${done} ${res.unmarked} couldn't be marked as coming from Agentbox — open those with the same care as an email attachment.`;
 }
 
 /**
@@ -1696,7 +1696,7 @@ function renderStarting(message: string): void {
   startingClock = setInterval(() => (elapsed.textContent = clock(Date.now() - startedAt)), 1000);
   app().replaceChildren(
     hero([
-      el("p", { className: "eyebrow", textContent: "Claudebox" }),
+      el("p", { className: "eyebrow", textContent: "Agentbox" }),
       el("h1", { className: "hero__title", textContent: "Warming the room." }),
       step,
       elapsed,
@@ -1718,7 +1718,7 @@ function stopStarting(): void {
 function renderBootstrapError(message: string): void {
   app().replaceChildren(
     hero([
-      el("p", { className: "eyebrow", textContent: "Claudebox" }),
+      el("p", { className: "eyebrow", textContent: "Agentbox" }),
       el("h1", { className: "hero__title", textContent: "The room stayed cold." }),
       el("p", { className: "error", textContent: message }),
     ]),
@@ -1738,7 +1738,7 @@ document.addEventListener("keydown", (e) => {
 // Wait for the Engine + Box to be ready before the home screen queries Projects
 // (they live on a named volume reached through the running Box).
 renderStarting("Getting the sandbox ready…");
-window.claudebox.onBootstrap((status) => {
+window.agentbox.onBootstrap((status) => {
   // `working` is the sub-line of the screen already up, and arrives as often as
   // the launch has something new to say; the two terminal statuses each arrive
   // once and are what take the screen down.

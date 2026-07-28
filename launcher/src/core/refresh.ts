@@ -74,7 +74,7 @@ export function refreshDecision(inputs: RefreshInputs): RefreshOutcome {
     if (previousHash === undefined) {
       return {
         action: "error",
-        reason: "Offline and no Box image has ever been built — connect once to set up Claudebox.",
+        reason: "Offline and no Box image has ever been built — connect once to set up Agentbox.",
       };
     }
     return { action: "start", reason: "Offline; starting the last-built Box image." };
@@ -109,7 +109,7 @@ export function buildMessage(firstBuild: boolean): string {
 /**
  * What one run of the refresh actually did. Reported to the renderer as well as
  * to the console, because Refresh is no longer only a launch step: "Update
- * Claudebox" runs the same thing on a button, and then someone is waiting to be
+ * Agentbox" runs the same thing on a button, and then someone is waiting to be
  * told whether they got the new version.
  */
 export interface RefreshResult {
@@ -133,7 +133,7 @@ export interface RefreshResult {
 }
 
 /**
- * The sentence the Sandbox User sees after clicking "Update Claudebox". The
+ * The sentence the Sandbox User sees after clicking "Update Agentbox". The
  * `reason` strings above are written for a launch log ("starting quickly"), which
  * is the wrong voice for someone who just asked a question and wants the answer.
  * A refusal is the exception: it is passed through verbatim, because a gate that
@@ -143,17 +143,17 @@ export function updateMessage(result: RefreshResult): string {
   switch (result.action) {
     case "rebuilt":
       return result.unpinned
-        ? "Claudebox is up to date. The sandbox restarted on the new version. " +
+        ? "Agentbox is up to date. The sandbox restarted on the new version. " +
             "Warning: this build is UNPINNED — no reviewed commit is configured, so the " +
             "sandbox was built from whatever the definition repo currently serves."
-        : "Claudebox is up to date. The sandbox restarted on the new version.";
+        : "Agentbox is up to date. The sandbox restarted on the new version.";
     case "blocked":
       return result.reason;
     case "error":
-      return `Couldn't update Claudebox: ${result.reason}`;
+      return `Couldn't update Agentbox: ${result.reason}`;
     case "started":
       return result.online
-        ? "Claudebox is already up to date."
-        : "Couldn't fetch the latest Claudebox, so it's still on the version it had.";
+        ? "Agentbox is already up to date."
+        : "Couldn't fetch the latest Agentbox, so it's still on the version it had.";
   }
 }

@@ -3,11 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFINITION_REPO } from "../src/core/config";
 import type { RefreshResult } from "../src/core/refresh";
 import { run } from "../src/main/exec";
-import { refreshOnLaunch, updateClaudebox, type UpdateSteps } from "../src/main/refresh-runner";
+import { refreshOnLaunch, updateAgentbox, type UpdateSteps } from "../src/main/refresh-runner";
 
 /**
  * The definition has to be ON the host before it can be pulled. Every install
- * path that isn't the Install Script leaves `~/.claudebox/definition` missing —
+ * path that isn't the Install Script leaves `~/.agentbox/definition` missing —
  * a repo checkout, a copied .app, a deleted folder — and `git -C <missing> pull`
  * then fails on EVERY launch, is read as "offline", and Refresh on Launch (the
  * sole update mechanism, ADR 0002) silently never runs again.
@@ -27,7 +27,7 @@ vi.mock("node:fs", async (importOriginal) => ({
   writeFileSync: vi.fn(),
 }));
 
-const HOME = "/tmp/claudebox-test-home";
+const HOME = "/tmp/agentbox-test-home";
 const DEFINITION = `${HOME}/definition`;
 const ok = { code: 0, stdout: "", stderr: "" };
 
@@ -36,12 +36,12 @@ const calls = () => vi.mocked(run).mock.calls.map(([c, a]) => `${c} ${a.join(" "
 
 beforeEach(() => {
   vi.clearAllMocks();
-  process.env.CLAUDEBOX_HOME = HOME;
+  process.env.AGENTBOX_HOME = HOME;
   vi.mocked(run).mockResolvedValue(ok);
 });
 
 afterEach(() => {
-  delete process.env.CLAUDEBOX_HOME;
+  delete process.env.AGENTBOX_HOME;
 });
 
 describe("fetchDefinition (via refreshOnLaunch)", () => {
@@ -96,12 +96,12 @@ describe("fetchDefinition (via refreshOnLaunch)", () => {
 });
 
 /**
- * "Update Claudebox" on the home screen. This used to live inside the IPC
+ * "Update Agentbox" on the home screen. This used to live inside the IPC
  * handler, closed over the BrowserWindow, so the one thing it must get right —
  * only a REBUILT definition may end an open Claude session — could not be
  * asserted at all. The lifecycle is an argument now, so it can be.
  */
-describe("updateClaudebox", () => {
+describe("updateAgentbox", () => {
   const rebuilt: RefreshResult = { action: "rebuilt", reason: "changed upstream", online: true };
 
   interface Recorded extends UpdateSteps {
@@ -127,7 +127,7 @@ describe("updateClaudebox", () => {
   it("recreates the Box on the new image and re-updates Claude, in that order", async () => {
     const steps = fakeSteps(rebuilt);
 
-    const message = await updateClaudebox(steps);
+    const message = await updateAgentbox(steps);
 
     expect(steps.calls).toEqual([
       "ensureEngine", // the build needs the Engine, exactly as at launch
@@ -144,16 +144,16 @@ describe("updateClaudebox", () => {
   it("restarts NOTHING when there was nothing new to build", async () => {
     const steps = fakeSteps({ action: "started", reason: "unchanged", online: true });
 
-    const message = await updateClaudebox(steps);
+    const message = await updateAgentbox(steps);
 
     expect(steps.calls).toEqual(["ensureEngine", "refresh"]);
-    expect(message).toBe("Claudebox is already up to date.");
+    expect(message).toBe("Agentbox is already up to date.");
   });
 
   it("passes the integrity gate's own words through when it refuses to build", async () => {
     const steps = fakeSteps({ action: "blocked", reason: "origin is not the public repo", online: true });
 
-    expect(await updateClaudebox(steps)).toBe("origin is not the public repo");
+    expect(await updateAgentbox(steps)).toBe("origin is not the public repo");
     expect(steps.calls).not.toContain("removeBoxContainer");
   });
 
@@ -162,7 +162,7 @@ describe("updateClaudebox", () => {
   it("still reports the update when the Claude Code refresh could not run", async () => {
     const steps = fakeSteps(rebuilt, false);
 
-    expect(await updateClaudebox(steps)).toMatch(/up to date/);
+    expect(await updateAgentbox(steps)).toMatch(/up to date/);
     expect(steps.calls).toContain("updateClaudeCode");
   });
 });

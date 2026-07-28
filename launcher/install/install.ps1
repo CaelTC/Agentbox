@@ -1,6 +1,6 @@
 #Requires -Version 5.1
 <#
-install.ps1 - the one-time Install Script for Claudebox on Windows (issue #11).
+install.ps1 - the one-time Install Script for Agentbox on Windows (issue #11).
 
 The sibling of install.sh, with the same contract: run by whoever provisions the
 laptop (NOT the Sandbox User). Installs the Engine (podman + its WSL2 machine)
@@ -33,27 +33,27 @@ $ErrorActionPreference = 'Stop'
 # The public definition repo. HTTPS, no auth. A copy of DEFINITION_REPO in
 # launcher/src/core/config.ts - as are $PodmanMachine, $BoxImage and the Cap
 # below. launcher/test/config.test.ts fails if any of them drifts.
-$DefinitionRepo = 'https://github.com/CaelTC/Claudebox.git'
+$DefinitionRepo = 'https://github.com/CaelTC/Agentbox.git'
 
-$ClaudeboxHome = if ($env:CLAUDEBOX_HOME) { $env:CLAUDEBOX_HOME }
-                 else { Join-Path $env:USERPROFILE '.claudebox' }
-$DefinitionDir = Join-Path $ClaudeboxHome 'definition'
+$AgentboxHome = if ($env:AGENTBOX_HOME) { $env:AGENTBOX_HOME }
+                 else { Join-Path $env:USERPROFILE '.agentbox' }
+$DefinitionDir = Join-Path $AgentboxHome 'definition'
 
 # Where the Launcher lands. Per-user, like /Applications is per-Mac: see the NOTE
 # in Install-Launcher about which account should run this script.
-$ProgramsDir = if ($env:CLAUDEBOX_PROGRAMS) { $env:CLAUDEBOX_PROGRAMS }
-               else { Join-Path (Join-Path $env:LOCALAPPDATA 'Programs') 'Claudebox' }
+$ProgramsDir = if ($env:AGENTBOX_PROGRAMS) { $env:AGENTBOX_PROGRAMS }
+               else { Join-Path (Join-Path $env:LOCALAPPDATA 'Programs') 'Agentbox' }
 
 # What `npm run package:win` emits into launcher/release - the mirror of
-# install.sh's Claudebox.app. Built here, on this machine, by Build-Launcher.
+# install.sh's Agentbox.app. Built here, on this machine, by Build-Launcher.
 $LauncherSrc = Join-Path $DefinitionDir 'launcher'
-$LauncherFolder = 'Claudebox-win32-x64'
-$LauncherExe = 'Claudebox.exe'
+$LauncherFolder = 'Agentbox-win32-x64'
+$LauncherExe = 'Agentbox.exe'
 
 # The Engine. ENGINE_PROFILE and BOX_IMAGE from launcher/src/core/config.ts; the
 # init flags mirror main/podman.ts.
-$PodmanMachine = 'claudebox'
-$BoxImage = 'claudebox:latest'
+$PodmanMachine = 'agentbox'
+$BoxImage = 'agentbox:latest'
 
 # The Resource Cap (CONTEXT.md), the same numbers as RESOURCE_CAP in
 # launcher/src/core/config.ts. See Write-WslConfig for what Windows can and
@@ -128,7 +128,7 @@ function Update-SessionPath {
 # --- 1. Require Administrator - the mirror of require_macos -------------------
 function Require-Administrator {
   if ($env:OS -ne 'Windows_NT') {
-    throw 'This installer is the Windows half of Claudebox. On a Mac, run install.sh.'
+    throw 'This installer is the Windows half of Agentbox. On a Mac, run install.sh.'
   }
   $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
   $principal = New-Object Security.Principal.WindowsPrincipal($identity)
@@ -212,7 +212,7 @@ Installer" - install that from the Microsoft Store and run this script again.
 # limit is recorded in launcher/src/main/podman.ts, and in ADR 0004, issue 3/3).
 function Write-WslConfig {
   $path = Join-Path $env:USERPROFILE '.wslconfig'
-  $marker = '# Written by Claudebox install.ps1 - the Resource Cap (CONTEXT.md).'
+  $marker = '# Written by Agentbox install.ps1 - the Resource Cap (CONTEXT.md).'
   $desired = @(
     $marker,
     '# NOTE: these limits apply to EVERY WSL distro on this machine, and there is',
@@ -230,7 +230,7 @@ function Write-WslConfig {
     }
     if ($existing -notmatch [regex]::Escape($marker)) {
       # Someone else's file. Never silently discard it.
-      $backup = "$path.claudebox-backup"
+      $backup = "$path.agentbox-backup"
       Copy-Item -Path $path -Destination $backup -Force
       Write-Log "NOTE: an existing .wslconfig was backed up to $backup before writing the Resource Cap."
     }
@@ -249,7 +249,7 @@ function Get-Definition {
   # Belt and braces on ADR 0002: even if this machine has a credential helper
   # configured, git must never be able to prompt for or attach one here.
   $env:GIT_TERMINAL_PROMPT = '0'
-  New-Item -ItemType Directory -Force -Path $ClaudeboxHome | Out-Null
+  New-Item -ItemType Directory -Force -Path $AgentboxHome | Out-Null
   if (Test-Path (Join-Path $DefinitionDir '.git')) {
     Invoke-Checked { git -C $DefinitionDir pull --ff-only }
   }
@@ -375,10 +375,10 @@ function Install-Launcher {
   New-Item -ItemType Directory -Force -Path $startMenu | Out-Null
 
   $shell = New-Object -ComObject WScript.Shell
-  $shortcut = $shell.CreateShortcut((Join-Path $startMenu 'Claudebox.lnk'))
+  $shortcut = $shell.CreateShortcut((Join-Path $startMenu 'Agentbox.lnk'))
   $shortcut.TargetPath = $target
   $shortcut.WorkingDirectory = $ProgramsDir
-  $shortcut.Description = 'Claudebox - a safe sandbox for practising with Claude Code.'
+  $shortcut.Description = 'Agentbox - a safe sandbox for practising with Claude Code.'
   $shortcut.Save()
 
   Write-Log 'Start Menu entry created.'
@@ -398,7 +398,7 @@ function Main {
   Test-Egress
   Build-Launcher
   Install-Launcher
-  Write-Log 'Done. The Sandbox User can now open Claudebox from the Start Menu.'
+  Write-Log 'Done. The Sandbox User can now open Agentbox from the Start Menu.'
 }
 
 try {

@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 #
-# The Box — the Docker image that is Claudebox at runtime (CONTEXT.md: "The Box").
+# The Box — the Docker image that is Agentbox at runtime (CONTEXT.md: "The Box").
 # This file is intentionally PUBLIC and contains no secrets (ADR 0002).
 #
 # Ticket 01 (walking skeleton): a base image with Claude Code installed.
@@ -71,11 +71,11 @@ COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY start-terminal.sh /usr/local/bin/start-terminal.sh
 # The single funnel that turns a Project slug into its Claude session (ticket 02).
 # Both the console and the Launcher launch a Project only through this program.
-COPY bin/claudebox-session /usr/local/bin/claudebox-session
+COPY bin/agentbox-session /usr/local/bin/agentbox-session
 COPY terminal/ /opt/terminal/
 RUN chmod +x /usr/local/bin/apply-egress.sh /usr/local/bin/verify-egress.sh \
       /usr/local/bin/entrypoint.sh /usr/local/bin/start-terminal.sh \
-      /usr/local/bin/claudebox-session
+      /usr/local/bin/agentbox-session
 
 # The Workspace mounts here as a named volume. Owning it as `sandbox` before the
 # volume is created means the fresh named volume inherits that ownership, so

@@ -10,13 +10,13 @@ import { ensureBoxReady, ensureEngine, removeBoxContainer, updateClaudeCode } fr
 /**
  * Getting the Engine and the Box running BEFORE the home screen queries
  * Projects. In its own module, and behind an injectable seam, for the same
- * reason `updateClaudebox` is: what matters here is a SEQUENCE — which turn at
+ * reason `updateAgentbox` is: what matters here is a SEQUENCE — which turn at
  * the gate, which status, in what order — and none of that is assertable while
  * it lives inside an `app.whenReady()` closure over a BrowserWindow.
  */
 export interface BootstrapSteps {
   ensureEngine(onStep: OnStep): Promise<void>;
-  /** The same pull + integrity gate + conditional build as Update Claudebox. */
+  /** The same pull + integrity gate + conditional build as Update Agentbox. */
   refresh(onStep: OnStep): Promise<RefreshResult>;
   removeBoxContainer(): Promise<void>;
   ensureBoxReady(onStep: OnStep): Promise<void>;
@@ -42,10 +42,10 @@ const HOME_LISTING_GRACE_MS = 5_000;
  * the Box must be running before Projects (which live on the named volume) can
  * be listed or created. Status is reported to the renderer, not swallowed.
  *
- * Held under the Box Gate, because Refresh on Launch is an Update Claudebox that
+ * Held under the Box Gate, because Refresh on Launch is an Update Agentbox that
  * nobody pressed: the home screen is already loaded and clickable while this
  * runs (that is what `did-finish-load` means), and its first `listProjects` —
- * or an impatient "Update Claudebox" — would otherwise reach a container this
+ * or an impatient "Update Agentbox" — would otherwise reach a container this
  * is in the middle of removing and recreating. Taking the gate turns that race
  * into a queue. Nothing in here goes back through the router, so there is no
  * way for the gate to wait on itself.
@@ -90,7 +90,7 @@ export async function bootstrap(
     // as a `notice` rather than a second status, because it changes nothing
     // about what to draw; the update reports itself to the console instead,
     // which is all a best-effort step that changes nothing on screen has to say.
-    send({ ok: true, message: "Claudebox is ready.", notice: launchNotice(refresh) });
+    send({ ok: true, message: "Agentbox is ready.", notice: launchNotice(refresh) });
     // Behind the home screen's own first listing, never in front of it (see
     // `homeListedProjects`); capped, so a window that never asks for its
     // Projects doesn't skip the update for the whole launch. Still before any
@@ -109,7 +109,7 @@ export async function bootstrap(
     // The message, not the Error: the renderer puts this straight on screen
     // under "The room stayed cold.", and `String(error)` prefixes it with a
     // second "Error:" the Sandbox User can do nothing with.
-    send({ ok: false, message: `Couldn't start Claudebox: ${(error as Error).message}` });
+    send({ ok: false, message: `Couldn't start Agentbox: ${(error as Error).message}` });
   }
 }
 
@@ -119,7 +119,7 @@ export async function bootstrap(
  * reviewed commit pinned. All three used to reach `console.warn` alone, and this
  * app ships with no log file and no devtools, so "logged" meant "gone".
  *
- * `updateMessage` composes all three already, for the Update Claudebox button.
+ * `updateMessage` composes all three already, for the Update Agentbox button.
  * Its wording is written for someone who just pressed that button ("The sandbox
  * restarted on the new version") and is inherited here rather than forked — a
  * launch-specific voice is a copy pass, not a reason to leave the security gate

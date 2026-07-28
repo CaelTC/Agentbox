@@ -9,7 +9,7 @@ it first. This file is only the sharp edges of working in the code.
 module: an `import` or `export` anywhere in it makes tsc emit CommonJS the
 browser cannot run, and the screen comes up blank with no build error. Anything
 the renderer needs is either declared in that file or reached through
-`window.claudebox`.
+`window.agentbox`.
 
 ## The machinery region is the only renderer test seam
 

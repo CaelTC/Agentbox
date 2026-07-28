@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# install.sh — the one-time Install Script for Claudebox (ticket 09 / ADR 0002).
+# install.sh — the one-time Install Script for Agentbox (ticket 09 / ADR 0002).
 #
 # Run by whoever provisions the MacBook (NOT the Sandbox User). Installs the
 # Engine (Colima) and the Launcher, and prepares the initial Box image by
@@ -12,16 +12,16 @@ set -euo pipefail
 # The public definition repo. HTTPS, no auth. This, the Resource Cap in
 # prepare_image() and the image tag it builds are copies of core/config.ts —
 # launcher/test/config.test.ts fails if any of them drifts.
-DEFINITION_REPO="https://github.com/CaelTC/Claudebox.git"
-CLAUDEBOX_HOME="${CLAUDEBOX_HOME:-$HOME/.claudebox}"
+DEFINITION_REPO="https://github.com/CaelTC/Agentbox.git"
+AGENTBOX_HOME="${AGENTBOX_HOME:-$HOME/.agentbox}"
 APPLICATIONS_DIR="${APPLICATIONS_DIR:-/Applications}"
-LAUNCHER_SRC="$CLAUDEBOX_HOME/definition/launcher"
+LAUNCHER_SRC="$AGENTBOX_HOME/definition/launcher"
 
 log() { printf '\033[36m[install]\033[0m %s\n' "$*"; }
 
 require_macos() {
   if [[ "$(uname -s)" != "Darwin" ]]; then
-    echo "Claudebox targets macOS. This installer must run on a Mac." >&2
+    echo "Agentbox targets macOS. This installer must run on a Mac." >&2
     exit 1
   fi
 }
@@ -47,20 +47,20 @@ install_engine() {
 # --- 2. Fetch the public Box definition (no credentials) ---------------------
 fetch_definition() {
   log "Fetching the Box definition from the public repo…"
-  mkdir -p "$CLAUDEBOX_HOME"
-  if [[ -d "$CLAUDEBOX_HOME/definition/.git" ]]; then
-    git -C "$CLAUDEBOX_HOME/definition" pull --ff-only
+  mkdir -p "$AGENTBOX_HOME"
+  if [[ -d "$AGENTBOX_HOME/definition/.git" ]]; then
+    git -C "$AGENTBOX_HOME/definition" pull --ff-only
   else
     # Public HTTPS clone. No SSH key, no token, no credential helper.
-    git clone --depth 1 "$DEFINITION_REPO" "$CLAUDEBOX_HOME/definition"
+    git clone --depth 1 "$DEFINITION_REPO" "$AGENTBOX_HOME/definition"
   fi
 }
 
 # --- 3. Prepare the initial Box image ----------------------------------------
 prepare_image() {
   log "Preparing the initial Box image…"
-  colima start --profile claudebox --cpu 4 --memory 6 --disk 25
-  docker build -t claudebox:latest "$CLAUDEBOX_HOME/definition/box"
+  colima start --profile agentbox --cpu 4 --memory 6 --disk 25
+  docker build -t agentbox:latest "$AGENTBOX_HOME/definition/box"
 }
 
 # --- 4. Build the Launcher from the definition we just fetched ---------------
@@ -80,7 +80,7 @@ install_launcher() {
   # than globbing release/, where a stale folder from a previous arch could
   # shadow the build that just happened.
   local built
-  built="$LAUNCHER_SRC/release/Claudebox-darwin-$(node -p process.arch)/Claudebox.app"
+  built="$LAUNCHER_SRC/release/Agentbox-darwin-$(node -p process.arch)/Agentbox.app"
   if [[ ! -d "$built" ]]; then
     echo "The Launcher did not build — $built is missing, so there is nothing to install." >&2
     exit 1
@@ -89,7 +89,7 @@ install_launcher() {
   log "Installing the Launcher into ${APPLICATIONS_DIR}…"
   # Replaced, not merged: `cp -R` over a live bundle leaves the previous version's
   # files behind inside it, and a half-old .app is worse than no .app.
-  rm -rf "${APPLICATIONS_DIR:?}/Claudebox.app"
+  rm -rf "${APPLICATIONS_DIR:?}/Agentbox.app"
   cp -R "$built" "$APPLICATIONS_DIR/"
 }
 
@@ -101,7 +101,7 @@ main() {
   prepare_image
   build_launcher
   install_launcher
-  log "Done. The Sandbox User can now open Claudebox from Applications."
+  log "Done. The Sandbox User can now open Agentbox from Applications."
 }
 
 main "$@"

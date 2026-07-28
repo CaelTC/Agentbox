@@ -6,7 +6,7 @@ accepted
 
 ## Context
 
-Claudebox was built for MacBooks: Colima gives it a headless, licence-free
+Agentbox was built for MacBooks: Colima gives it a headless, licence-free
 container runtime and a **Resource Cap** — `colima start --cpu 4 --memory 6
 --disk 25` — that bounds the Box at a known ceiling on the host. ADR 0001 leans
 on that cap for threat A: the Box can damage the laptop neither by reaching its
@@ -20,7 +20,7 @@ what Colima gives us for free:
 - **WSL** (the default, and the only one on Windows Home) does not own its VM's
   resources. CPU and memory come from `%USERPROFILE%\.wslconfig`, which is
   **global to every WSL distribution on the machine** — it is the user's setting,
-  not Claudebox's — and disk is a dynamically-growing VHDX with no ceiling we
+  not Agentbox's — and disk is a dynamically-growing VHDX with no ceiling we
   set. `podman machine set --cpus/--memory/--disk-size` is not honoured there.
 - **Hyper-V** does honour those flags per machine, but Hyper-V is absent from
   Windows Home, which is what a colleague's own laptop usually runs.

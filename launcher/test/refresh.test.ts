@@ -90,7 +90,7 @@ describe("refreshDecision", () => {
 });
 
 /**
- * What "Update Claudebox" says afterwards. The failure that matters here is
+ * What "Update Agentbox" says afterwards. The failure that matters here is
  * silent-success: an offline check, or an integrity refusal, must never come
  * back reading as "you're up to date".
  */
@@ -130,7 +130,7 @@ describe("updateMessage", () => {
 
   it("reports a failure as a failure", () => {
     expect(updateMessage({ action: "error", reason: "Box rebuild failed: boom", online: true })).toMatch(
-      /^Couldn't update Claudebox: /,
+      /^Couldn't update Agentbox: /,
     );
   });
 });

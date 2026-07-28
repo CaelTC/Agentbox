@@ -7,7 +7,7 @@ import {
 } from "../src/main/podman";
 
 describe("podmanMachineInitArgs", () => {
-  it("creates the claudebox machine at the Resource Cap", () => {
+  it("creates the agentbox machine at the Resource Cap", () => {
     expect(podmanMachineInitArgs()).toEqual([
       "machine",
       "init",
@@ -17,7 +17,7 @@ describe("podmanMachineInitArgs", () => {
       "6144",
       "--disk-size",
       "25",
-      "claudebox",
+      "agentbox",
     ]);
   });
 
@@ -35,13 +35,13 @@ describe("podmanMachineInitArgs", () => {
   });
 
   it("names the machine last, so it is the positional arg and not a flag value", () => {
-    expect(podmanMachineInitArgs().at(-1)).toBe("claudebox");
+    expect(podmanMachineInitArgs().at(-1)).toBe("agentbox");
   });
 });
 
 describe("podmanMachineStartArgs / podmanMachineInspectArgs", () => {
-  it("start addresses the claudebox machine", () => {
-    expect(podmanMachineStartArgs()).toEqual(["machine", "start", "claudebox"]);
+  it("start addresses the agentbox machine", () => {
+    expect(podmanMachineStartArgs()).toEqual(["machine", "start", "agentbox"]);
   });
 
   it("inspect asks podman for the State alone, so nothing here parses its JSON", () => {
@@ -50,7 +50,7 @@ describe("podmanMachineStartArgs / podmanMachineInspectArgs", () => {
       "inspect",
       "--format",
       "{{.State}}",
-      "claudebox",
+      "agentbox",
     ]);
   });
 });
@@ -61,7 +61,7 @@ describe("podmanMachineSetRootfulArgs", () => {
       "machine",
       "set",
       "--rootful",
-      "claudebox",
+      "agentbox",
     ]);
   });
 });

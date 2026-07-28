@@ -19,7 +19,7 @@ import { repoFile } from "./repo-file";
  * file. Drift means an installer that provisions a differently-named machine, a
  * different image tag, or a Box outside the Resource Cap (CONTEXT.md).
  */
-const SKELETON = repoFile("scripts", "claudebox.sh");
+const SKELETON = repoFile("scripts", "agentbox.sh");
 const INSTALL_SH = repoFile("launcher", "install", "install.sh");
 const INSTALL_PS1 = repoFile("launcher", "install", "install.ps1");
 
@@ -55,7 +55,7 @@ function command(script: string, pattern: RegExp, what: string): string {
   return found![0];
 }
 
-describe("scripts/claudebox.sh (the walking skeleton) against the core", () => {
+describe("scripts/agentbox.sh (the walking skeleton) against the core", () => {
   const vars = assignments(SKELETON);
 
   it("runs the Box with exactly boxRunArgs(): name, volumes, image, and every published port in order", () => {
@@ -89,11 +89,11 @@ describe("scripts/claudebox.sh (the walking skeleton) against the core", () => {
 
   it("greps colima status for a line a NAMED profile actually prints", () => {
     // The bug this pins: `grep -qi "colima is running"` never matches, because
-    // with --profile the line reads `colima [profile=claudebox] is running`. The
+    // with --profile the line reads `colima [profile=agentbox] is running`. The
     // script then rebuilt and re-ran on every launch. main/colima.ts's
     // isColimaRunning documents the same fix; both must agree on both lines.
     const grep = SKELETON.match(/colima status[^\n]*grep -qi "([^"]+)"/);
-    expect(grep, "claudebox.sh no longer greps `colima status`").not.toBeNull();
+    expect(grep, "agentbox.sh no longer greps `colima status`").not.toBeNull();
     const pattern = grep![1].toLowerCase();
     const up = `time="..." level=info msg="colima [profile=${ENGINE_PROFILE}] is running"`;
     const down = `time="..." level=info msg="colima [profile=${ENGINE_PROFILE}] is not running"`;

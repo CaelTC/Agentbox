@@ -2,7 +2,7 @@
 
 A single-Project console: one Project's Claude session (an xterm.js page bridged
 to tmux over a WebSocket) plus a read-only Files view of the Workspace. Every
-session is a Project reached through the `claudebox-session` funnel, so the
+session is a Project reached through the `agentbox-session` funnel, so the
 console never creates or switches free-form sessions — that lives in the
 Launcher. No auth — single-user and loopback-only, the Launcher forwards this
 port to the Mac's loopback ONLY (ADR 0001). This runs INSIDE the Box, so it
@@ -29,14 +29,14 @@ from starlette.websockets import WebSocket, WebSocketDisconnect
 from paths import is_valid_slug, safe_path
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-WORKSPACE = os.environ.get("CLAUDEBOX_WORKSPACE", "/workspace")
+WORKSPACE = os.environ.get("AGENTBOX_WORKSPACE", "/workspace")
 templates = Jinja2Templates(directory=os.path.join(_HERE, "templates"))
 
 
 def project_exists(slug: str) -> bool:
     """A slug names a real Project only if its metadata file is on the volume."""
     return is_valid_slug(slug) and os.path.isfile(
-        os.path.join(WORKSPACE, slug, ".claudebox", "project.json")
+        os.path.join(WORKSPACE, slug, ".agentbox", "project.json")
     )
 
 
@@ -46,7 +46,7 @@ def _ctx(sid: str, tab: str, **extra) -> dict:
 
 async def index(request: Request) -> Response:
     # No auto-select, no auto-create: Projects are opened from the Launcher.
-    return PlainTextResponse("Open a Project from Claudebox to start a Claude session.")
+    return PlainTextResponse("Open a Project from Agentbox to start a Claude session.")
 
 
 async def session_detail(request: Request) -> Response:
@@ -124,9 +124,9 @@ async def terminal_ws(ws: WebSocket) -> None:
     master, slave = os.openpty()
     env = {**os.environ, "TERM": "xterm-256color"}
     # Launch the Project through the ONE funnel — never a bare tmux/shell. Stdout
-    # is a tty here, so claudebox-session attaches (creating + seeding on first open).
+    # is a tty here, so agentbox-session attaches (creating + seeding on first open).
     proc = subprocess.Popen(
-        ["claudebox-session", sid],
+        ["agentbox-session", sid],
         stdin=slave,
         stdout=slave,
         stderr=slave,

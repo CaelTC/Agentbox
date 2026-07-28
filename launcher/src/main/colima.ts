@@ -35,7 +35,7 @@ export function colimaStatusArgs(profile: string = ENGINE_PROFILE): string[] {
 
 /**
  * Colima prints "... is running" on the status stream when the VM is up. With a
- * named profile the line is `colima [profile=claudebox] is running`, so match on
+ * named profile the line is `colima [profile=agentbox] is running`, so match on
  * "is running" rather than "colima is running" — and NOT the "is not running"
  * that colima prints when down.
  */

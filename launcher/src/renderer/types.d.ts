@@ -1,5 +1,5 @@
 interface Window {
-  claudebox: import("../shared/api").ClaudeboxApi;
+  agentbox: import("../shared/api").AgentboxApi;
 }
 
 // Global type aliases (inline import() keeps this a global .d.ts, no top-level

@@ -57,7 +57,7 @@ const KILL_GRACE_MS = 2_000;
  * `timeoutMs` bounds how long the child may live. Without it a command that
  * never exits never settles — and a `docker exec` into a Box whose tmux server
  * Claude has just SIGSTOPped does exactly that, taking the Box Gate down with it
- * for the life of the process: every Box-touching channel, Update Claudebox
+ * for the life of the process: every Box-touching channel, Update Agentbox
  * included, queues behind a promise that will never resolve. A timeout is
  * SIGTERM, then SIGKILL after a grace, and resolves like any other failure —
  * non-zero, with the deadline named in `stderr`, so callers need no new branch.

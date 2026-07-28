@@ -392,7 +392,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   background: var(--color-surface-dark);
   color: var(--nootka-steam);
 }
-/* The housekeeping lives on this line: the GitHub Account and "Update Claudebox"
+/* The housekeeping lives on this line: the GitHub Account and "Update Agentbox"
    were two full light bands, which gave maintenance the same weight as the work.
    One row, at the bottom, at the size of things you touch once a month. */
 .footer__row {

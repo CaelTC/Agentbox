@@ -7,7 +7,7 @@
 export interface BoxState {
   engineRunning: boolean;
   imageBuilt: boolean;
-  /** A container named `claudebox` exists (running OR stopped). */
+  /** A container named `agentbox` exists (running OR stopped). */
   containerExists: boolean;
   /** That container is currently running. */
   containerRunning: boolean;
@@ -18,7 +18,7 @@ export type StartupStep = "start-engine" | "build-image" | "run-box" | "start-bo
 /**
  * How a slow step announces itself while it runs. Optional everywhere it is
  * threaded, so a caller that has no screen to draw on — every test, and
- * `updateClaudebox` — passes nothing and is unchanged.
+ * `updateAgentbox` — passes nothing and is unchanged.
  */
 export type OnStep = (message: string) => void;
 

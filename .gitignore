@@ -10,10 +10,10 @@ release/
 # commit them as embedded gitlinks.
 .claude/worktrees/
 
-# Project metadata written by Claudebox itself, when this repo is brought into a
-# Box as a Project (Import writes it; `claudebox-session` reads it). It names one
+# Project metadata written by Agentbox itself, when this repo is brought into a
+# Box as a Project (Import writes it; `agentbox-session` reads it). It names one
 # Sandbox User's Workspace slug and seed prompt — local to that Box, not source.
-.claudebox/
+.agentbox/
 
 # Python bytecode
 __pycache__/

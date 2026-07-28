@@ -14,13 +14,13 @@ function createWindow(): BrowserWindow {
   const window = new BrowserWindow({
     width: 960,
     height: 680,
-    title: "Claudebox",
+    title: "Agentbox",
     webPreferences: {
       preload: join(__dirname, "..", "preload.js"),
       contextIsolation: true,
       // The preload require()s local modules (./shared/api) for the IPC contract;
       // a sandboxed preload can only require("electron"), so it would fail to load
-      // and window.claudebox would never be exposed. contextIsolation still walls
+      // and window.agentbox would never be exposed. contextIsolation still walls
       // the renderer off from Node — the threat model is the Box, not this local UI.
       sandbox: false,
     },
@@ -84,11 +84,11 @@ app.on("before-quit", (event) => {
   if (quitConfirmed) return; // already waiting at the gate; don't ask twice
   const choice = dialog.showMessageBoxSync({
     type: "question",
-    buttons: ["Quit Claudebox", "Cancel"],
+    buttons: ["Quit Agentbox", "Cancel"],
     defaultId: 0,
     cancelId: 1,
-    message: "Quit Claudebox?",
-    detail: "This closes your Claudebox and any open Claude session. Your projects are saved.",
+    message: "Quit Agentbox?",
+    detail: "This closes your Agentbox and any open Claude session. Your projects are saved.",
   });
   if (choice !== 0) return; // cancelled — the quit is already prevented
   quitConfirmed = true;

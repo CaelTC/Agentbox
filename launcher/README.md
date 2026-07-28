@@ -1,7 +1,7 @@
-# Claudebox Launcher
+# Agentbox Launcher
 
 The double-clickable macOS app that is a Sandbox User's entire interface to
-Claudebox (CONTEXT.md → "Launcher"). It hides Docker/Colima: it refreshes and
+Agentbox (CONTEXT.md → "Launcher"). It hides Docker/Colima: it refreshes and
 starts the Box, shows the Project home screen, drops the user into a Claude Code
 session, and brokers Uploads and Web Preview.
 
@@ -30,8 +30,8 @@ src/
   renderer/    The home screen + per-Project control panel. The Claude session
                itself opens in a separate window, not in here — and only when
                the user clicks Open session.
-  shared/      The typed IPC contract (ClaudeboxApi) between main and renderer.
-  preload.ts   contextBridge exposing only ClaudeboxApi to the renderer.
+  shared/      The typed IPC contract (AgentboxApi) between main and renderer.
+  preload.ts   contextBridge exposing only AgentboxApi to the renderer.
   types/       Ambient Electron declaration (see "The Electron shim" below).
 test/          Vitest unit tests for every core module + pure main helpers.
 install/       The one-time Install Script — install.sh (macOS, ticket 09) and
@@ -79,8 +79,8 @@ through the Box's loopback-forwarded web console, so no `node-pty`/`xterm`.
 ## Packaging
 
 ```bash
-npm run package        # → release/Claudebox-darwin-<arch>/Claudebox.app
-npm run package:win    # → release/Claudebox-win32-x64/Claudebox.exe
+npm run package        # → release/Agentbox-darwin-<arch>/Agentbox.app
+npm run package:win    # → release/Agentbox-win32-x64/Agentbox.exe
 ```
 
 No code signing is required to run either locally (ADR 0002) — and *locally* is

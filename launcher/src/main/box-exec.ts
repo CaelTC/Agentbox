@@ -5,8 +5,8 @@ import { failureMessage, run, spawnPath, type RunResult } from "./exec";
 /**
  * The Box-exec seam: every invocation of the Engine CLI against the RUNNING Box
  * — exec, exec-as-root, copy in, copy out, stop — goes through this one object.
- * Nothing else builds `docker exec claudebox …` argv or prefixes a path with
- * `claudebox:`, with ONE named exception: `boxUpdateClaudeArgs` (core/box.ts),
+ * Nothing else builds `docker exec agentbox …` argv or prefixes a path with
+ * `agentbox:`, with ONE named exception: `boxUpdateClaudeArgs` (core/box.ts),
  * which `main/session.ts` runs on every launch as root. It stays outside because
  * it is best-effort — every failure is one `false` — and because it carries its
  * own in-Box `timeout 180`, longer than this seam's deadline below. (The Box's
@@ -64,7 +64,7 @@ export function sh(script: string, ...values: readonly string[]): readonly strin
  * is meant to take two minutes, and a `docker exec` that does is wedged. The
  * gate is single-file, so an exec that never returns is not one dead operation
  * — it is every Box channel dead for the life of the Launcher, including the
- * Update Claudebox that would ship the fix.
+ * Update Agentbox that would ship the fix.
  */
 export const BOX_EXEC_TIMEOUT_MS = 120_000;
 
@@ -73,7 +73,7 @@ export interface BoxExec {
   /**
    * Run argv in the Box as the sandbox user; resolve its stdout, throw on a
    * non-zero exit. `what` is how that failure is named to the Sandbox User —
-   * pass it wherever "`docker exec claudebox df -kP …` failed" is not a sentence
+   * pass it wherever "`docker exec agentbox df -kP …` failed" is not a sentence
    * anyone should have to read; the argv itself is the default.
    */
   exec(argv: readonly string[], what?: string): Promise<string>;

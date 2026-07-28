@@ -75,7 +75,7 @@ export function parseDeviceCode(body: unknown): DeviceCode {
     // The one error a maintainer will actually hit, named so they can act on it.
     if (error === "device_flow_disabled") {
       throw new Error(
-        "This Claudebox build's GitHub App does not have Device Flow enabled. " +
+        "This Agentbox build's GitHub App does not have Device Flow enabled. " +
           "Tick 'Enable Device Flow' in its settings on GitHub.",
       );
     }
@@ -148,10 +148,10 @@ export const DEFAULT_BRANCH = "main";
  * because the Box image's entrypoint writes to stdout too, so "the last line" is
  * not a contract.
  */
-export const BRANCH_MARKER = "claudebox-branch";
+export const BRANCH_MARKER = "agentbox-branch";
 
 /** The same, for the Project's `origin` remote — absent when it has none. */
-export const ORIGIN_MARKER = "claudebox-origin";
+export const ORIGIN_MARKER = "agentbox-origin";
 
 function parseMarked(stdout: string, marker: string): string | undefined {
   for (const line of stdout.split("\n").reverse()) {
@@ -202,7 +202,7 @@ const BRANCH_RE = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/;
 export function assertValidBranch(branch: string): string {
   if (!BRANCH_RE.test(branch) || branch.includes("..") || branch.endsWith(".lock")) {
     throw new Error(
-      `Claudebox can't save the branch '${branch}' — rename it to letters, numbers, dots, dashes and slashes.`,
+      `Agentbox can't save the branch '${branch}' — rename it to letters, numbers, dots, dashes and slashes.`,
     );
   }
   return branch;
@@ -214,8 +214,8 @@ export function assertValidBranch(branch: string): string {
  * Two different reasons, and the second is the load-bearing one:
  *   - `node_modules` and friends would turn one `npm install` into a
  *     several-hundred-megabyte push;
- *   - a `.env` is where a Sandbox User's API keys live, and Claudebox pushing
- *     one to GitHub would be Claudebox exfiltrating a credential on their
+ *   - a `.env` is where a Sandbox User's API keys live, and Agentbox pushing
+ *     one to GitHub would be Agentbox exfiltrating a credential on their
  *     behalf. A Project with no `.gitignore` is the normal case here — most are
  *     created by Claude from a blank Project — so "their .gitignore will catch
  *     it" is not a defence that exists.
@@ -250,7 +250,7 @@ export function bundlePath(slug: string): string {
 }
 
 /** Where container A writes the exclude list, in its own filesystem, not the Project's. */
-const EXCLUDES_FILE = "/tmp/claudebox-excludes";
+const EXCLUDES_FILE = "/tmp/agentbox-excludes";
 
 /**
  * The GitHub repository name for a Project that has no remote of its own. The
@@ -302,8 +302,8 @@ export function bundleScript(slug: string): string {
     // Identity on the command line, never written into the Project's config. A
     // no-op commit exits 1, which is not an error here: the Sandbox User may
     // simply be re-publishing something unchanged.
-    "git -c user.name=Claudebox -c user.email=claudebox@localhost " +
-      "commit -q -m 'Saved from Claudebox' || true",
+    "git -c user.name=Agentbox -c user.email=agentbox@localhost " +
+      "commit -q -m 'Saved from Agentbox' || true",
     "git rev-parse -q --verify HEAD >/dev/null 2>&1 || exit 3",
     'branch=$(git symbolic-ref -q --short HEAD) || exit 4',
     `rm -f "${bundle}"`,

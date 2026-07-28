@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# claudebox.sh — the walking-skeleton launcher (ticket 01).
+# agentbox.sh — the walking-skeleton launcher (ticket 01).
 #
 # Starts Colima at the Resource Cap, builds & runs the Box (with the Workspace
 # on a named volume and NO host mounts), and drops you into a Claude Code
@@ -13,12 +13,12 @@
 # a value that drifts from the core fails a test rather than a launch.
 set -euo pipefail
 
-PROFILE="claudebox"
-IMAGE="claudebox:latest"
-CONTAINER="claudebox"
-VOLUME="claudebox-workspace"
+PROFILE="agentbox"
+IMAGE="agentbox:latest"
+CONTAINER="agentbox"
+VOLUME="agentbox-workspace"
 WORKSPACE_DIR="/workspace"
-HOME_VOLUME="claudebox-home"
+HOME_VOLUME="agentbox-home"
 HOME_DIR="/home/sandbox"
 BOX_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../box" && pwd)"
 
@@ -27,7 +27,7 @@ CPU=4
 MEMORY=6
 DISK=25
 
-log() { printf '\033[36m[claudebox]\033[0m %s\n' "$*"; }
+log() { printf '\033[36m[agentbox]\033[0m %s\n' "$*"; }
 
 require() {
   command -v "$1" >/dev/null 2>&1 || {

@@ -66,7 +66,7 @@ export interface DeleteResult {
  *
  * `assertValidSlug` already makes `..`, `/` and the empty string unrepresentable,
  * so the containment check below can never fire. It stays anyway: this is the one
- * string in Claudebox that becomes `rm -rf` as root, and a future caller that
+ * string in Agentbox that becomes `rm -rf` as root, and a future caller that
  * loosens the slug rule should hit an exception here rather than the Workspace
  * root.
  */
@@ -93,7 +93,7 @@ export function assertDeletableProjectPath(workspaceDir: string, slug: string): 
  * Refused, in order: an empty path (that is the Project itself, which has its
  * own delete and its own confirmation), an absolute path, and any segment that
  * is empty, `.` or `..`. Dot-prefixed segments go too, which is what makes
- * `.git` and the Project's own `.claudebox/` marker undeletable — the same
+ * `.git` and the Project's own `.agentbox/` marker undeletable — the same
  * prune the Box-side listing already applies, so nothing reachable is lost.
  */
 export function assertDeletableProjectFilePath(projectDir: string, relPath: string): string {

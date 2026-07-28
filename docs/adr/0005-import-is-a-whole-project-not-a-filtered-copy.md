@@ -25,7 +25,7 @@ A folder on the Sandbox User's computer *becomes* a Project. Concretely:
 
 1. **Whole-project entry, contents at the Project root.** The folder's
    contents land directly at the new Project's root, never nested one level
-   down, because `box/bin/claudebox-session` launches Claude with its cwd set
+   down, because `box/bin/agentbox-session` launches Claude with its cwd set
    to exactly that root. A nested folder would put the real work below cwd,
    and the project's own `CLAUDE.md` / `.claude/` would sit one level too deep
    for Claude Code to load them automatically.
@@ -48,7 +48,7 @@ A folder on the Sandbox User's computer *becomes* a Project. Concretely:
   doesn't apply, and refusing a `.py` file or a `.git` directory for not being
   document-shaped would refuse the project itself.
 - **Nest the folder one level inside the new Project**
-  (`<Project>/<folder-name>/…`) — rejected: `claudebox-session` always starts
+  (`<Project>/<folder-name>/…`) — rejected: `agentbox-session` always starts
   Claude at the Project root, so anything nested below it stops being the
   thing Claude opens into, and its `CLAUDE.md`/`.claude/` go unread.
 - **Drop `.git`, keep only the working tree** — rejected: this is presented to
@@ -67,7 +67,7 @@ A folder on the Sandbox User's computer *becomes* a Project. Concretely:
   exfiltration from here would leave over the *public* internet the design
   deliberately keeps open, from a container running Claude with
   `--dangerously-skip-permissions`. Once a private repo is in the Box,
-  Claudebox has no control that gets it back out of reach. The container
+  Agentbox has no control that gets it back out of reach. The container
   boundary (ADR 0001) protects the host *from* the Box; it does nothing for
   data carried *in*. The confirmation sheet Import shows before copying is
   informed consent, not a protection.
@@ -77,7 +77,7 @@ A folder on the Sandbox User's computer *becomes* a Project. Concretely:
   symlink — harmless, because the Box cannot reach the host filesystem it
   would have pointed at (ADR 0001).
 - The seed prompt is stored in the Project's own metadata and re-read every
-  time `claudebox-session` starts a fresh tmux session for that slug,
+  time `agentbox-session` starts a fresh tmux session for that slug,
   including after a Box restart — so a Sandbox User who restarts the Box
   before their first message sees the Import seed prompt again, not silence.
 - Getting a real folder into the Box needed its own fixes, live-discovered

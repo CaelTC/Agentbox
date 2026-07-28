@@ -7,7 +7,7 @@
 # (ADR 0001). Replaces ttyd.
 set -euo pipefail
 
-PORT="${CLAUDEBOX_TERMINAL_PORT:-7681}"
+PORT="${AGENTBOX_TERMINAL_PORT:-7681}"
 
 # Binds 0.0.0.0 INSIDE the Box; only the loopback forward is exposed to the Mac.
 # ponytail: no restart supervisor — if it dies the console is gone until the Box

@@ -67,7 +67,7 @@ export function assertRepoRelativePaths(paths: readonly string[]): readonly stri
  * says. The effects layer chowns the tree afterwards instead; see `boxImportFolder`.
  *
  * ponytail: `--no-mac-metadata` is bsdtar-only, which is what `/usr/bin/tar` is
- * on macOS — the only host Claudebox installs on today. Revisit with issue #10.
+ * on macOS — the only host Agentbox installs on today. Revisit with issue #10.
  */
 export function importTarArgs(folder: string, isGitRepo: boolean): readonly string[] {
   return [

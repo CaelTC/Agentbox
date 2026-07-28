@@ -28,7 +28,7 @@ export interface ProjectMeta {
   seedPrompt?: string;
 }
 
-export const META_DIR = ".claudebox";
+export const META_DIR = ".agentbox";
 export const META_FILE = "project.json";
 
 /** Relative path of a Project's metadata file, from the Project directory. */
@@ -70,7 +70,7 @@ export function sanitizeProjectName(raw: string): string {
 /**
  * The exact shape sanitizeProjectName produces: lowercase a–z / 0–9 / single
  * dashes. The Box enforces the same shape in Python, where this cannot be
- * imported (`box/bin/claudebox-session`, `box/terminal/paths.py`);
+ * imported (`box/bin/agentbox-session`, `box/terminal/paths.py`);
  * `test/projects.test.ts` compares all three patterns as text.
  */
 export const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;

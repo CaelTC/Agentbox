@@ -92,8 +92,8 @@ describe("boxCreateProject — a Project that isn't there is not a Project", () 
     const project = await boxCreateProject("My Site", undefined, box);
 
     expect(project).toMatchObject({ name: "My Site", slug: "my-site" });
-    expect(box.calls).toContain("exec mkdir -p /workspace/my-site/.claudebox");
-    expect(box.calls.some((c) => c.startsWith("writeFile /workspace/my-site/.claudebox"))).toBe(
+    expect(box.calls).toContain("exec mkdir -p /workspace/my-site/.agentbox");
+    expect(box.calls.some((c) => c.startsWith("writeFile /workspace/my-site/.agentbox"))).toBe(
       true,
     );
   });
@@ -128,7 +128,7 @@ describe("boxListProjects — an unreadable Workspace is not an empty one", () =
 
   it("throws rather than telling a Sandbox User they have no Projects", async () => {
     const box = fakeBox((_op, argv) =>
-      isSlugListing(argv) ? new Error("Error: No such container: claudebox") : "",
+      isSlugListing(argv) ? new Error("Error: No such container: agentbox") : "",
     );
     await expect(boxListProjects(box)).rejects.toThrow(/No such container/);
   });
@@ -286,7 +286,7 @@ describe("boxDeleteFiles", () => {
 
   it("cannot reach .git or the Project's marker, because the listing prunes them", async () => {
     const fake = filesBox();
-    const res = await boxDeleteFiles("demo", [".git", ".claudebox/project.json"], undefined, fake);
+    const res = await boxDeleteFiles("demo", [".git", ".agentbox/project.json"], undefined, fake);
 
     expect(res.deleted).toEqual([]);
     expect(res.failed).toHaveLength(2);
@@ -386,7 +386,7 @@ describe("boxDeleteFiles", () => {
 describe("boxDeleteListing — the sheet between a click and permanent loss", () => {
   let root: string;
   beforeEach(() => {
-    root = mkdtempSync(join(tmpdir(), "claudebox-delete-"));
+    root = mkdtempSync(join(tmpdir(), "agentbox-delete-"));
   });
 
   /** A Box holding one Project, "My Site", whose size probe answers `usage`. */
@@ -451,7 +451,7 @@ describe("lastSavedAt — the one-time backfill for Exports older than the stamp
   let dir: string;
   const anHourAgo = new Date(Date.now() - 3_600_000);
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), "claudebox-stamp-"));
+    dir = mkdtempSync(join(tmpdir(), "agentbox-stamp-"));
   });
 
   it("stamps a folder an earlier build Exported into, from the folder's own mtime", () => {
@@ -513,7 +513,7 @@ describe("lastSavedAt — the one-time backfill for Exports older than the stamp
 describe("boxExport — `saved: N` is a promise about files on the disk", () => {
   let root: string;
   beforeEach(() => {
-    root = mkdtempSync(join(tmpdir(), "claudebox-export-"));
+    root = mkdtempSync(join(tmpdir(), "agentbox-export-"));
   });
 
   const listing = (argv: readonly string[]): string | undefined => {
@@ -571,7 +571,7 @@ describe("boxExport — `saved: N` is a promise about files on the disk", () => 
     const box = fakeBox((_op, argv) => {
       if (isSlugListing(argv)) return "demo\n";
       if (isFileListing(argv)) {
-        return { code: 1, stdout: "", stderr: "Error: No such container: claudebox" };
+        return { code: 1, stdout: "", stderr: "Error: No such container: agentbox" };
       }
       return "";
     });
@@ -654,7 +654,7 @@ describe("boxImportFolder", () => {
   let folder: string;
 
   beforeEach(() => {
-    folder = mkdtempSync(join(tmpdir(), "claudebox-import-"));
+    folder = mkdtempSync(join(tmpdir(), "agentbox-import-"));
     writeFileSync(join(folder, "index.html"), "<h1>hi</h1>");
     // `isGitRepo` / `gitLsFilesRaw` are HOST `git` calls through exec.ts, not
     // Box calls — non-zero here means "not a repo", so the plain walk is used.

@@ -80,7 +80,7 @@ async function runStep(step: StartupStep, boxDefinitionDir: string): Promise<voi
  * opening — the version baked into the image keeps working.
  *
  * Hence the `catch`, spelled out here rather than hidden in a wrapper: bootstrap
- * calls this inside the try that reports "Couldn't start Claudebox", so a
+ * calls this inside the try that reports "Couldn't start Agentbox", so a
  * rejected spawn (no engine on a Finder-launched PATH) would turn a skippable
  * update into a fatal launch. Every way this can go wrong is one `false`.
  *

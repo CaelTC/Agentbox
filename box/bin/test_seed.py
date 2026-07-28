@@ -11,7 +11,7 @@ from importlib.machinery import SourceFileLoader
 
 # The funnel has no .py extension, so load it by path.
 session = SourceFileLoader(
-    "claudebox_session", os.path.join(os.path.dirname(os.path.abspath(__file__)), "claudebox-session")
+    "agentbox_session", os.path.join(os.path.dirname(os.path.abspath(__file__)), "agentbox-session")
 ).load_module()
 
 

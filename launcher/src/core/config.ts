@@ -1,11 +1,11 @@
 /**
- * Load-bearing constants for Claudebox. These encode the decisions from
+ * Load-bearing constants for Agentbox. These encode the decisions from
  * ADR 0001 (the container is the permission boundary) and the ticket
  * acceptance criteria. They are pure data so they can be asserted in tests.
  *
  * This file is the declared source of truth, but three scripts that run without
  * the Launcher must carry their own copies (`install/install.sh`,
- * `install/install.ps1`, `scripts/claudebox.sh`). `test/config.test.ts` reads
+ * `install/install.ps1`, `scripts/agentbox.sh`). `test/config.test.ts` reads
  * those scripts and fails on any value that drifts from what is declared here.
  */
 
@@ -27,10 +27,10 @@ export const RESOURCE_CAP: ResourceCap = {
 
 /**
  * Names the Colima profile on the Mac and the podman machine on Windows — one
- * host only ever runs one of them — so Claudebox is isolated from any other use
+ * host only ever runs one of them — so Agentbox is isolated from any other use
  * of either engine.
  */
-export const ENGINE_PROFILE = "claudebox";
+export const ENGINE_PROFILE = "agentbox";
 
 /**
  * The container engine's CLI (issue #10). The Mac drives Colima+Docker; Colima
@@ -48,8 +48,8 @@ export function engineCli(platform: NodeJS.Platform = process.platform): "docker
 export const ENGINE_CLI = engineCli();
 
 /** The Box image tag and the long-lived container name. */
-export const BOX_IMAGE = "claudebox:latest";
-export const BOX_CONTAINER = "claudebox";
+export const BOX_IMAGE = "agentbox:latest";
+export const BOX_CONTAINER = "agentbox";
 
 /** The unprivileged user everything in the Box runs as (`box/Dockerfile`). */
 export const BOX_USER = "sandbox";
@@ -69,7 +69,7 @@ export const BOX_ROOT_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:
  * cannot see a single real file on the laptop (ADR 0001, threat A) yet work
  * survives stop/start.
  */
-export const WORKSPACE_VOLUME = "claudebox-workspace";
+export const WORKSPACE_VOLUME = "agentbox-workspace";
 
 /** Absolute path the Workspace volume is mounted at inside the Box. */
 export const WORKSPACE_DIR = "/workspace";
@@ -79,7 +79,7 @@ export const WORKSPACE_DIR = "/workspace";
  * (and the pre-baked plugin) survive not just restarts but image rebuilds. It
  * holds only credentials that grant access to Claude itself (Credential Hygiene).
  */
-export const HOME_VOLUME = "claudebox-home";
+export const HOME_VOLUME = "agentbox-home";
 
 /** Where the home volume mounts — the sandbox user's home inside the Box. */
 export const HOME_DIR = "/home/sandbox";
@@ -91,13 +91,13 @@ export const HOME_DIR = "/home/sandbox";
  * never mounts the Workspace — that separation is the whole defence, and
  * `assertNoWorkspaceMount` enforces it.
  */
-export const GIT_SCRATCH_VOLUME = "claudebox-git";
+export const GIT_SCRATCH_VOLUME = "agentbox-git";
 
 /** Where the scratch volume mounts inside both ephemeral publish containers. */
 export const GIT_SCRATCH_DIR = "/scratch";
 
 /**
- * The Claudebox OAuth App's client id (ADR 0006). Public by design — a client id
+ * The Agentbox OAuth App's client id (ADR 0006). Public by design — a client id
  * is not a credential, and the device flow explicitly sends no client secret, so
  * this stays consistent with ADR 0002's "no keys anywhere".
  *
@@ -109,7 +109,7 @@ export const GIT_SCRATCH_DIR = "/scratch";
 export const GITHUB_CLIENT_ID = "Ov23limPFjpMgumhxfZI";
 
 /** Public GitHub repo the Box definition is refreshed from (ADR 0002). */
-export const DEFINITION_REPO = "https://github.com/CaelTC/Claudebox.git";
+export const DEFINITION_REPO = "https://github.com/CaelTC/Agentbox.git";
 
 /**
  * The reviewed Box-definition commit to build. The definition IS the security

@@ -50,8 +50,8 @@ The naive single-container version — mount the Workspace, hold the token, run
 
 Git has no "ignore repo-local config" switch, so no combination of `-c` flags
 closes this. The separation has to be structural. Publishing is two ephemeral
-containers off `claudebox:latest`, bridged by a scratch named volume
-(`claudebox-git`) that the long-lived Box never mounts:
+containers off `agentbox:latest`, bridged by a scratch named volume
+(`agentbox-git`) that the long-lived Box never mounts:
 
 1. **Container A — has the Workspace, has no token.** Commits the Project in its
    own repository (`git init -b main` if it has none), reads back the branch that
@@ -80,11 +80,11 @@ Supporting decisions:
   passed to the container as `-e NAME` with no value, so it appears in no
   process's argv on either side.
 - **At rest it is encrypted with the OS keystore** (`safeStorage`: Keychain on
-  macOS, DPAPI on Windows) in `~/.claudebox/github.json`. If no keystore is
+  macOS, DPAPI on Windows) in `~/.agentbox/github.json`. If no keystore is
   available the Launcher refuses to store it at all rather than writing a `repo`
   token in the clear.
-- **Push, never force.** A rejection is reported as "GitHub has changes Claudebox
-  doesn't"; discarding remote history is not Claudebox's call.
+- **Push, never force.** A rejection is reported as "GitHub has changes Agentbox
+  doesn't"; discarding remote history is not Agentbox's call.
 - **The branch name is untrusted input.** It is chosen inside the Box and ends up
   embedded in the one script that runs with the credential, so it is validated
   against `^[A-Za-z0-9][A-Za-z0-9._/-]*$` (no `..`, no `.lock`) before it crosses
@@ -135,7 +135,7 @@ Supporting decisions:
   Claude can write it, while the slug is `[a-z0-9-]` by construction and
   re-validated before it reaches any shell.
 - **Publishing writes into the Project's own git, on purpose.** Saving stages
-  whatever is in flight, writes a "Saved from Claudebox" commit onto the branch
+  whatever is in flight, writes a "Saved from Agentbox" commit onto the branch
   that is checked out, and advances it. That is what "normal git behaviour" costs
   and it is what was asked for: the history the Sandbox User sees in the Box is
   the history GitHub gets, an imported repo's real history included. A Project
@@ -150,8 +150,8 @@ Supporting decisions:
   only** — so nothing is written into the Project and git inside the Box behaves
   as before. `node_modules` and friends because one `npm install` would otherwise
   make this a several-hundred-megabyte push — and `.env`, `*.pem`, `id_rsa`
-  because that is where a Sandbox User's API keys live, and Claudebox pushing one
-  to GitHub would be Claudebox exfiltrating a credential on their behalf. Most
+  because that is where a Sandbox User's API keys live, and Agentbox pushing one
+  to GitHub would be Agentbox exfiltrating a credential on their behalf. Most
   Projects have no `.gitignore` of their own, so "their ignore rules will catch
   it" is not a defence that exists; theirs still apply on top. A file already
   *tracked* in their repo is unaffected, which is ordinary git: by then they
@@ -159,9 +159,9 @@ Supporting decisions:
   excluded: for a static site, that is the thing being saved.
 - Both publish containers keep `--cap-add NET_ADMIN` and the IPv6 sysctls, so the
   Egress Policy applies to the credentialed container too.
-- A branch changed on GitHub outside Claudebox stops publishing until someone
+- A branch changed on GitHub outside Agentbox stops publishing until someone
   resolves it by hand. Accepted: the alternative is `--force`.
-- Claudebox does not clone *in* from GitHub. Import (ADR 0005) is the way in, and
+- Agentbox does not clone *in* from GitHub. Import (ADR 0005) is the way in, and
   it needs no credential.
 - **One account at a time**, swappable from the home screen: connecting replaces
   whatever was stored, and every Project publishes to the account connected now.
@@ -170,6 +170,6 @@ Supporting decisions:
   Not built until someone actually needs two accounts. The device flow authorises
   whichever account is signed in to the browser, so switching means signing out
   of github.com first — the connect sheet says so.
-- One manual prerequisite per Claudebox build: a maintainer registers the OAuth
+- One manual prerequisite per Agentbox build: a maintainer registers the OAuth
   App with **Enable Device Flow** ticked (GitHub otherwise answers
   `device_flow_disabled`) and pastes its client id into `core/config.ts`.

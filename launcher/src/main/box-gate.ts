@@ -4,7 +4,7 @@
  *
  * The renderer already refuses a second operation while one is in flight, but
  * that is one window's advisory lock over the controls it happens to own.
- * "Update Claudebox" `docker rm -f`s the container, and a second window, a
+ * "Update Agentbox" `docker rm -f`s the container, and a second window, a
  * bootstrap, a quit, or any channel reached without a click at all gets to that
  * same container without passing it. What the Sandbox User gets when they cross
  * is the Engine's own words about a container that vanished mid-copy, about an

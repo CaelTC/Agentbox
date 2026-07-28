@@ -16,7 +16,7 @@ const record = (command: string, args: readonly string[]) => {
 
 const ok = { code: 0, stdout: "", stderr: "" };
 /** `podman machine inspect` on a machine that is not there. */
-const absent = { code: 125, stdout: "", stderr: "Error: claudebox: VM does not exist" };
+const absent = { code: 125, stdout: "", stderr: "Error: agentbox: VM does not exist" };
 
 beforeEach(() => {
   calls.length = 0;
@@ -35,7 +35,7 @@ describe("engineCli", () => {
 describe("Engine.start", () => {
   it("on the Mac runs exactly one `colima start` at the Resource Cap — unchanged", async () => {
     await engineFor("darwin").start();
-    expect(calls).toEqual(["colima start --profile claudebox --cpu 4 --memory 6 --disk 25"]);
+    expect(calls).toEqual(["colima start --profile agentbox --cpu 4 --memory 6 --disk 25"]);
   });
 
   it("never mentions podman on the Mac", async () => {
@@ -50,10 +50,10 @@ describe("Engine.start", () => {
     await engineFor("win32").start();
 
     expect(calls).toEqual([
-      "podman machine inspect --format {{.State}} claudebox",
-      "podman machine init --cpus 4 --memory 6144 --disk-size 25 claudebox",
-      "podman machine set --rootful claudebox",
-      "podman machine start claudebox",
+      "podman machine inspect --format {{.State}} agentbox",
+      "podman machine init --cpus 4 --memory 6144 --disk-size 25 agentbox",
+      "podman machine set --rootful agentbox",
+      "podman machine start agentbox",
     ]);
   });
 
@@ -61,9 +61,9 @@ describe("Engine.start", () => {
     await engineFor("win32").start(); // `run` defaults to exit 0 = machine present
 
     expect(calls).toEqual([
-      "podman machine inspect --format {{.State}} claudebox",
-      "podman machine set --rootful claudebox",
-      "podman machine start claudebox",
+      "podman machine inspect --format {{.State}} agentbox",
+      "podman machine set --rootful agentbox",
+      "podman machine start agentbox",
     ]);
   });
 
@@ -73,13 +73,13 @@ describe("Engine.start", () => {
     // branch it would never be attempted again and the Box would run rootless
     // forever — where boxRunArgs' NET_ADMIN and net.ipv6 sysctls are refused.
     await engineFor("win32").start();
-    expect(calls).toContain("podman machine set --rootful claudebox");
+    expect(calls).toContain("podman machine set --rootful agentbox");
   });
 
   it("self-heals: a machine deleted behind the Launcher's back is re-created on the next start", async () => {
     vi.mocked(run).mockImplementation(async (c, a) => (record(c, a), absent));
     await engineFor("win32").start();
-    expect(calls).toContain("podman machine init --cpus 4 --memory 6144 --disk-size 25 claudebox");
+    expect(calls).toContain("podman machine init --cpus 4 --memory 6144 --disk-size 25 agentbox");
   });
 });
 
@@ -87,11 +87,11 @@ describe("Engine.isRunning", () => {
   it("on the Mac reads `colima status`, which prints on stderr", async () => {
     vi.mocked(run).mockImplementation(async (c, a) => {
       record(c, a);
-      return { code: 0, stdout: "", stderr: 'msg="colima [profile=claudebox] is running"' };
+      return { code: 0, stdout: "", stderr: 'msg="colima [profile=agentbox] is running"' };
     });
 
     expect(await engineFor("darwin").isRunning()).toBe(true);
-    expect(calls).toEqual(["colima status --profile claudebox"]);
+    expect(calls).toEqual(["colima status --profile agentbox"]);
   });
 
   it("on the Mac is false when colima reports the profile down", async () => {
@@ -109,7 +109,7 @@ describe("Engine.isRunning", () => {
     });
 
     expect(await engineFor("win32").isRunning()).toBe(true);
-    expect(calls).toEqual(["podman machine inspect --format {{.State}} claudebox"]);
+    expect(calls).toEqual(["podman machine inspect --format {{.State}} agentbox"]);
   });
 
   it("on Windows is false when the machine exists but is stopped", async () => {
@@ -123,7 +123,7 @@ describe("Engine.isRunning", () => {
   it("on Windows is false when there is no machine (non-zero exit)", async () => {
     vi.mocked(run).mockImplementation(async (c, a) => {
       record(c, a);
-      return { code: 125, stdout: "", stderr: "Error: claudebox: VM does not exist" };
+      return { code: 125, stdout: "", stderr: "Error: agentbox: VM does not exist" };
     });
     expect(await engineFor("win32").isRunning()).toBe(false);
   });

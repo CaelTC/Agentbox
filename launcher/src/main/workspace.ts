@@ -811,7 +811,7 @@ export async function boxPlanImport(
 
 /**
  * Project Import (ticket 09): a folder on the MacBook *becomes* a Project, its
- * contents landing at the Project root (never nested — `claudebox-session`
+ * contents landing at the Project root (never nested — `agentbox-session`
  * launches Claude's cwd at exactly that root). One `tar` stream piped straight
  * into `docker cp -`, so 5000 files are one round trip instead of 5000; `.git`
  * always crosses alongside whatever `git ls-files` listed, history included.
@@ -888,7 +888,7 @@ export async function boxImportFolder(
   // success and is broken the moment it is opened.
   await box.execAsRoot(["chown", "-R", `${BOX_USER}:${BOX_USER}`, dir]);
 
-  // Written AFTER the copy, so a stray .claudebox/ carried in from the source
+  // Written AFTER the copy, so a stray .agentbox/ carried in from the source
   // folder can't clobber this Project's real metadata (ticket 09).
   await box.exec(["mkdir", "-p", `${dir}/${META_DIR}`]);
   await box.writeFile(

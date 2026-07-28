@@ -1,6 +1,6 @@
 # The Box
 
-The Docker image that is Claudebox at runtime (CONTEXT.md → "The Box"). This
+The Docker image that is Agentbox at runtime (CONTEXT.md → "The Box"). This
 directory is the Docker build context and is intentionally **public** — it
 contains no secrets (ADR 0002).
 
@@ -25,7 +25,7 @@ contains no secrets (ADR 0002).
 docker run --rm --cap-add NET_ADMIN \
   --sysctl net.ipv6.conf.all.disable_ipv6=1 \
   --sysctl net.ipv6.conf.default.disable_ipv6=1 \
-  claudebox:latest /usr/local/bin/verify-egress.sh
+  agentbox:latest /usr/local/bin/verify-egress.sh
 ```
 
 Run once by the Install Script after the image is built — **not** from

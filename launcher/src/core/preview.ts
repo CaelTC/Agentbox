@@ -51,7 +51,7 @@ export function loopbackPublishArgs(ports: readonly number[] = PREVIEW_PORTS): s
  */
 export function previewDoc(): string {
   const ports = PREVIEW_PORTS.join(", ");
-  return `# Preview in Claudebox
+  return `# Preview in Agentbox
 
 The user views web pages by clicking **Preview** in the Launcher, which opens
 whatever is serving inside this Box in their computer's browser.

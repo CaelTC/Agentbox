@@ -2,18 +2,18 @@
 
 ## Status
 
-accepted — amended by ADR 0006, which introduces the one credential Claudebox
+accepted — amended by ADR 0006, which introduces the one credential Agentbox
 has: a GitHub token, held on the host by the Launcher, never in the Box. The
 "no keys" rule holds for the repo, the image, and the Box; it no longer holds
 for the host.
 
 ## Context
 
-Claudebox is distributed by an Install Script (signed installers are not available to us) and must stay current on many non-technical colleagues' MacBooks. The obvious way to auto-update from a private GitHub repo is to package a GitHub key with the Launcher — but that puts a company credential on every laptop we don't control, which is exactly the shape of thing threat B exists to prevent. A key handed to non-technical users, packaged in a script, will eventually leak; and since the Box runs Claude with permissions bypassed and open public-internet egress, a key that reached inside the Box could be exfiltrated to `github.com`.
+Agentbox is distributed by an Install Script (signed installers are not available to us) and must stay current on many non-technical colleagues' MacBooks. The obvious way to auto-update from a private GitHub repo is to package a GitHub key with the Launcher — but that puts a company credential on every laptop we don't control, which is exactly the shape of thing threat B exists to prevent. A key handed to non-technical users, packaged in a script, will eventually leak; and since the Box runs Claude with permissions bypassed and open public-internet egress, a key that reached inside the Box could be exfiltrated to `github.com`.
 
 ## Decision
 
-Keep the Claudebox definition repo **public** and ship **no credentials anywhere** — not on the host, not in the Box. On every start the Launcher pulls the latest Box definition from the public repo and rebuilds the image only if it changed ("Refresh on Launch"). This is the sole update mechanism — the Launcher's "Update Claudebox" button runs this same pull, gate and build on demand rather than a second path, and additionally recreates the container so a freshly built image is the one running.
+Keep the Agentbox definition repo **public** and ship **no credentials anywhere** — not on the host, not in the Box. On every start the Launcher pulls the latest Box definition from the public repo and rebuilds the image only if it changed ("Refresh on Launch"). This is the sole update mechanism — the Launcher's "Update Agentbox" button runs this same pull, gate and build on demand rather than a second path, and additionally recreates the container so a freshly built image is the one running.
 
 ## Considered Options
 

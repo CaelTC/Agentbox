@@ -21,7 +21,7 @@ fi
 # appended: nothing here is the user's own text.
 mkdir -p /home/sandbox/.claude
 cat > /home/sandbox/.claude/CLAUDE.md <<'EOF'
-# Preview in Claudebox
+# Preview in Agentbox
 
 The user views web pages by clicking **Preview** in the Launcher, which opens
 whatever is serving inside this Box in their computer's browser.

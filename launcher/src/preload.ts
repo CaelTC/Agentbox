@@ -1,13 +1,13 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { ClaudeboxApi } from "./shared/api";
+import type { AgentboxApi } from "./shared/api";
 import { IPC } from "./shared/api";
 
 /**
- * The preload bridge. Exposes ONLY the typed ClaudeboxApi to the renderer —
+ * The preload bridge. Exposes ONLY the typed AgentboxApi to the renderer —
  * with context isolation on, the home screen gets no direct access to Node,
  * Electron, or the shell.
  */
-const api: ClaudeboxApi = {
+const api: AgentboxApi = {
   listProjects: () => ipcRenderer.invoke(IPC.listProjects),
   createProject: (name) => ipcRenderer.invoke(IPC.createProject, name),
   openSession: (slug) => ipcRenderer.invoke(IPC.openSession, slug),
@@ -31,4 +31,4 @@ const api: ClaudeboxApi = {
     ipcRenderer.on(IPC.bootstrap, (_e, result) => listener(result)),
 };
 
-contextBridge.exposeInMainWorld("claudebox", api);
+contextBridge.exposeInMainWorld("agentbox", api);

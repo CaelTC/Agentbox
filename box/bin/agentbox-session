@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""claudebox-session <slug> — the single Box-side entry point that turns a
+"""agentbox-session <slug> — the single Box-side entry point that turns a
 Project slug into its running Claude Code session (ticket 02).
 
 Both the web console (server.py) and the Launcher reach a Project's Claude ONLY
@@ -31,7 +31,7 @@ import re
 import subprocess
 import sys
 
-WORKSPACE = os.environ.get("CLAUDEBOX_WORKSPACE", "/workspace")
+WORKSPACE = os.environ.get("AGENTBOX_WORKSPACE", "/workspace")
 # A copy of the Launcher's SLUG_RE (core/projects.ts), which Python cannot
 # import; launcher/test/projects.test.ts compares the two patterns as text.
 # Applied with fullmatch, never match: Python's `$` also matches just before a
@@ -41,7 +41,7 @@ SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 
 def fail(msg: str) -> None:
-    print(f"claudebox-session: {msg}", file=sys.stderr)
+    print(f"agentbox-session: {msg}", file=sys.stderr)
     raise SystemExit(1)
 
 
@@ -64,13 +64,13 @@ def session_is_live(slug: str) -> bool:
 
 def main(argv: list[str]) -> None:
     if len(argv) != 1:
-        fail("usage: claudebox-session <slug>")
+        fail("usage: agentbox-session <slug>")
     slug = argv[0]
     if not SLUG_RE.fullmatch(slug):
         fail(f"invalid Project slug: {slug!r}")
 
     cwd = os.path.join(WORKSPACE, slug)
-    meta_path = os.path.join(cwd, ".claudebox", "project.json")
+    meta_path = os.path.join(cwd, ".agentbox", "project.json")
     if not os.path.isfile(meta_path):
         fail(f"no such Project: {slug!r}")
 

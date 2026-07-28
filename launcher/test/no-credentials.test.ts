@@ -63,12 +63,12 @@ describe("no credentials are checked into the repo (ADR 0002)", () => {
   // Launcher. What must still hold is that nothing hands it to the Box.
   it("the long-lived Box carries no token and cannot see the publish scratch volume", () => {
     const args = boxRunArgs().join(" ");
-    expect(args).not.toContain("CLAUDEBOX_GIT_TOKEN");
+    expect(args).not.toContain("AGENTBOX_GIT_TOKEN");
     expect(args).not.toContain(GIT_SCRATCH_VOLUME);
   });
 
   it("the credentialed publish container never mounts the Workspace", () => {
-    const args = pushRunArgs("alice", "my-site", "my-site", "main", "CLAUDEBOX_GIT_TOKEN").join(" ");
+    const args = pushRunArgs("alice", "my-site", "my-site", "main", "AGENTBOX_GIT_TOKEN").join(" ");
     expect(args).not.toContain(WORKSPACE_VOLUME);
   });
 

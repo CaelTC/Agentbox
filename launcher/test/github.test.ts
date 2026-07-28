@@ -82,16 +82,16 @@ describe("the two publish containers", () => {
   });
 
   it("pushes from a container that never mounts the Workspace", () => {
-    const args = pushRunArgs("alice", "my-site", "my-site", "main", "CLAUDEBOX_GIT_TOKEN");
+    const args = pushRunArgs("alice", "my-site", "my-site", "main", "AGENTBOX_GIT_TOKEN");
     expect(args.join(" ")).not.toContain(WORKSPACE_VOLUME);
     expect(args.join(" ")).toContain(`${GIT_SCRATCH_VOLUME}:/scratch`);
   });
 
   it("passes the token by name only, so it is not in the host's process list", () => {
-    const args = pushRunArgs("alice", "my-site", "my-site", "main", "CLAUDEBOX_GIT_TOKEN");
-    expect(args[args.indexOf("-e") + 1]).toBe("CLAUDEBOX_GIT_TOKEN");
+    const args = pushRunArgs("alice", "my-site", "my-site", "main", "AGENTBOX_GIT_TOKEN");
+    expect(args[args.indexOf("-e") + 1]).toBe("AGENTBOX_GIT_TOKEN");
     // A value alongside the name would be the leak this whole design avoids.
-    expect(args.join(" ")).not.toMatch(/CLAUDEBOX_GIT_TOKEN=/);
+    expect(args.join(" ")).not.toMatch(/AGENTBOX_GIT_TOKEN=/);
   });
 
   it("refuses outright to mix the token with the Workspace", () => {
@@ -153,8 +153,8 @@ describe("the two publish containers", () => {
     const script = bundleScript("my-site");
     expect(script).toContain("git config --get remote.origin.url");
     expect(script).toContain(ORIGIN_MARKER);
-    expect(parseOrigin(`${ORIGIN_MARKER} https://github.com/CaelTC/Claudebox.git`)).toBe(
-      "https://github.com/CaelTC/Claudebox.git",
+    expect(parseOrigin(`${ORIGIN_MARKER} https://github.com/CaelTC/Agentbox.git`)).toBe(
+      "https://github.com/CaelTC/Agentbox.git",
     );
     expect(parseOrigin("no remote here")).toBeUndefined();
   });
@@ -163,16 +163,16 @@ describe("the two publish containers", () => {
     // This URL lives in .git/config, which Claude can write, and it decides where
     // the token pushes. Everything unrecognised falls back to a slug-named repo.
     for (const url of [
-      "https://github.com/CaelTC/Claudebox.git",
-      "git@github.com:CaelTC/Claudebox.git",
-      "https://github.com/CaelTC/Claudebox",
+      "https://github.com/CaelTC/Agentbox.git",
+      "git@github.com:CaelTC/Agentbox.git",
+      "https://github.com/CaelTC/Agentbox",
     ]) {
-      expect(parseGithubRemote(url)).toEqual({ owner: "CaelTC", repo: "Claudebox" });
+      expect(parseGithubRemote(url)).toEqual({ owner: "CaelTC", repo: "Agentbox" });
     }
     for (const url of [
-      "https://gitlab.com/CaelTC/Claudebox.git", // another host
-      "https://x:y@github.com/CaelTC/Claudebox.git", // credentials smuggled in
-      "https://github.com/CaelTC/Claudebox.git evil", // a second word
+      "https://gitlab.com/CaelTC/Agentbox.git", // another host
+      "https://x:y@github.com/CaelTC/Agentbox.git", // credentials smuggled in
+      "https://github.com/CaelTC/Agentbox.git evil", // a second word
       "https://github.com.evil.example/a/b.git",
       "https://github.com/CaelTC/../../etc",
     ]) {
@@ -181,9 +181,9 @@ describe("the two publish containers", () => {
   });
 
   it("scopes the credential helper to github.com and validates the destination", () => {
-    const script = pushScript("CaelTC", "Claudebox", "my-site", "main", "T");
+    const script = pushScript("CaelTC", "Agentbox", "my-site", "main", "T");
     expect(script).toContain("credential.https://github.com.helper=");
-    expect(script).toContain('"https://github.com/CaelTC/Claudebox.git"');
+    expect(script).toContain('"https://github.com/CaelTC/Agentbox.git"');
     expect(() => pushScript("a;id", "r", "s", "main", "T")).toThrow(/not a usable/);
     expect(() => pushScript("a", "r`id`", "s", "main", "T")).toThrow(/not a usable/);
   });
@@ -201,7 +201,7 @@ describe("the two publish containers", () => {
   });
 
   it("pushes an explicit refspec into a repo it created itself", () => {
-    const script = pushScript("alice", "my-site", "my-site", "feature/x", "CLAUDEBOX_GIT_TOKEN");
+    const script = pushScript("alice", "my-site", "my-site", "feature/x", "AGENTBOX_GIT_TOKEN");
     expect(script).toContain("git init -q --bare /tmp/publish");
     expect(script).toContain("refs/heads/feature/x:refs/heads/feature/x");
     expect(script).not.toContain("--force");

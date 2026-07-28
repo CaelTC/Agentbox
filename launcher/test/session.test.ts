@@ -94,7 +94,7 @@ beforeEach(() => {
 describe("openProjectSession", () => {
   it("ensures the session through the funnel before showing anything", async () => {
     await openProjectSession("demo");
-    expect(calls).toEqual([`${ENGINE_CLI} exec claudebox claudebox-session demo`]);
+    expect(calls).toEqual([`${ENGINE_CLI} exec agentbox agentbox-session demo`]);
   });
 
   it("opens one window on the Project's console URL", async () => {
@@ -132,8 +132,8 @@ describe("openProjectSession, called again for a Project already open", () => {
     await openProjectSession("demo");
     await openProjectSession("demo");
     expect(calls).toEqual([
-      `${ENGINE_CLI} exec claudebox claudebox-session demo`,
-      `${ENGINE_CLI} exec claudebox claudebox-session demo`,
+      `${ENGINE_CLI} exec agentbox agentbox-session demo`,
+      `${ENGINE_CLI} exec agentbox agentbox-session demo`,
     ]);
   });
 });
@@ -210,7 +210,7 @@ describe("openProjectSession when the funnel fails", () => {
 /**
  * The best-effort contract, spelled out at the call site now that `runOk` is
  * gone. `bootstrap` awaits this INSIDE the try that reports "Couldn't start
- * Claudebox", so anything that escapes here turns a skippable Claude Code
+ * Agentbox", so anything that escapes here turns a skippable Claude Code
  * update into a failed launch.
  */
 describe("updateClaudeCode is best effort", () => {

@@ -137,7 +137,7 @@ describe("runOperation", () => {
 
   it("disables the button, says what it is doing, and hands it back afterwards", async () => {
     const { el, runOperation } = renderer();
-    const button = el("button", { textContent: "Update Claudebox" });
+    const button = el("button", { textContent: "Update Agentbox" });
     const work = pending<string>();
 
     const running = runOperation({
@@ -145,17 +145,17 @@ describe("runOperation", () => {
       busyLabel: "Checking…",
       run: () => work.promise,
       done: () => undefined,
-      failed: "Couldn't update Claudebox",
+      failed: "Couldn't update Agentbox",
     });
 
     expect(button.disabled).toBe(true);
     expect(button.textContent).toBe("Checking…");
 
-    work.ok("Claudebox is up to date.");
+    work.ok("Agentbox is up to date.");
     await running;
 
     expect(button.disabled).toBe(false);
-    expect(button.textContent).toBe("Update Claudebox");
+    expect(button.textContent).toBe("Update Agentbox");
   });
 
   it("closes the sheet before done() re-renders the screen behind it", async () => {
@@ -192,14 +192,14 @@ describe("runOperation", () => {
       // wraps everything thrown in a handler on its way back across the bridge.
       run: () =>
         Promise.reject(
-          new Error("Error invoking remote method 'export:save': Error: No such container: claudebox"),
+          new Error("Error invoking remote method 'export:save': Error: No such container: agentbox"),
         ),
       done: () => expect.unreachable("done() ran for a failed operation"),
       failed: "Couldn't save",
     });
 
     expect(sheets(document)).toHaveLength(0);
-    expect(flashes(document)).toEqual(["Couldn't save: No such container: claudebox"]);
+    expect(flashes(document)).toEqual(["Couldn't save: No such container: agentbox"]);
   });
 
   /**
@@ -280,13 +280,13 @@ describe("runOperation", () => {
   });
 
   it("runs one operation at a time, across screens", async () => {
-    // The reason this exists: "Update Claudebox" recreates the container, and it
+    // The reason this exists: "Update Agentbox" recreates the container, and it
     // is a click away on the home screen while an Export is still copying out of
     // a Project. Disabling the clicked button cannot see that far.
     const { document, el, runOperation } = renderer();
     const exporting = pending<string>();
     const exportBtn = el("button", { textContent: "Save" });
-    const updateBtn = el("button", { textContent: "Update Claudebox" });
+    const updateBtn = el("button", { textContent: "Update Agentbox" });
     let updates = 0;
 
     const first = runOperation({
@@ -305,12 +305,12 @@ describe("runOperation", () => {
         return Promise.resolve("updated");
       },
       done: () => undefined,
-      failed: "Couldn't update Claudebox",
+      failed: "Couldn't update Agentbox",
     });
 
     expect(updates).toBe(0); // the Box was never touched
     expect(updateBtn.disabled).toBeFalsy(); // and its button was left alone
-    expect(flashes(document)).toEqual(["Claudebox is already busy with something else. Let that finish first."]);
+    expect(flashes(document)).toEqual(["Agentbox is already busy with something else. Let that finish first."]);
 
     exporting.ok("saved");
     await first;
@@ -354,8 +354,8 @@ describe("fail", () => {
 
   it("strips a bare Error: too, and survives something that isn't an Error at all", () => {
     const { fail } = renderer();
-    expect(fail("Couldn't save", new Error("Error: No such container: claudebox"))).toBe(
-      "Couldn't save: No such container: claudebox",
+    expect(fail("Couldn't save", new Error("Error: No such container: agentbox"))).toBe(
+      "Couldn't save: No such container: agentbox",
     );
     expect(fail("Couldn't save", "the Box is gone")).toBe("Couldn't save: the Box is gone");
   });

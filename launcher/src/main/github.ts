@@ -34,7 +34,7 @@ const API = "https://api.github.com";
 const JSON_HEADERS = { Accept: "application/json", "Content-Type": "application/json" };
 
 /** The env var the token is handed to the credentialed container through. */
-const TOKEN_VAR = "CLAUDEBOX_GIT_TOKEN";
+const TOKEN_VAR = "AGENTBOX_GIT_TOKEN";
 
 export interface GithubStatus {
   /** False when this build has no OAuth App client id — connecting is impossible. */
@@ -79,7 +79,7 @@ function writeAccount(login: string, token: string): void {
   // dotfile is exactly what this design exists to avoid.
   if (!safeStorage.isEncryptionAvailable()) {
     throw new Error(
-      "This computer has no secure keystore available, so Claudebox will not save a GitHub sign-in.",
+      "This computer has no secure keystore available, so Agentbox will not save a GitHub sign-in.",
     );
   }
   const path = githubTokenPath();
@@ -117,7 +117,7 @@ let pending: DeviceCode | undefined;
 export async function startGithubLogin(): Promise<Omit<DeviceCode, "deviceCode">> {
   if (!GITHUB_CLIENT_ID) {
     throw new Error(
-      "This Claudebox build has no GitHub App configured, so it cannot connect an account.",
+      "This Agentbox build has no GitHub App configured, so it cannot connect an account.",
     );
   }
   const res = await fetch(DEVICE_CODE_URL, {
@@ -293,7 +293,7 @@ async function ensureRepo(repo: string, token: string): Promise<boolean> {
     await api("POST", "/user/repos", token, {
       name: repo,
       private: true,
-      description: "Saved from Claudebox",
+      description: "Saved from Agentbox",
     });
     return true;
   } catch (err) {
@@ -307,7 +307,7 @@ async function ensureRepo(repo: string, token: string): Promise<boolean> {
 function pushFailure(stderr: string, branch: string): string {
   if (/non-fast-forward|fetch first|rejected/i.test(stderr)) {
     // Never force: the remote history is the Sandbox User's, not ours to discard.
-    return `GitHub's ${branch} has changes Claudebox doesn't — it was changed somewhere else, so nothing was saved.`;
+    return `GitHub's ${branch} has changes Agentbox doesn't — it was changed somewhere else, so nothing was saved.`;
   }
   return `Could not save to GitHub: ${stderr.trim()}`;
 }

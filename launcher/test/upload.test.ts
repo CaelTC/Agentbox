@@ -7,7 +7,7 @@ import { resolveUploadTargets } from "../src/core/upload";
 let project: string;
 let host: string;
 beforeEach(() => {
-  project = mkdtempSync(join(tmpdir(), "claudebox-proj-"));
+  project = mkdtempSync(join(tmpdir(), "agentbox-proj-"));
   host = mkdtempSync(join(tmpdir(), "host-files-"));
 });
 

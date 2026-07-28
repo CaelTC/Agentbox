@@ -19,7 +19,7 @@ import { bootstrap, type BootstrapSteps } from "../src/main/bootstrap";
 // bootstrap.ts reaches ipc.ts for `homeListedProjects`, which reaches electron.
 vi.mock("electron", () => ({
   BrowserWindow: class {},
-  app: { getPath: vi.fn(() => "/tmp/claudebox-test-home") },
+  app: { getPath: vi.fn(() => "/tmp/agentbox-test-home") },
   ipcMain: { handle: vi.fn() },
   dialog: { showOpenDialog: vi.fn(), showMessageBox: vi.fn() },
   shell: { openExternal: vi.fn(async () => undefined), openPath: vi.fn(async () => "") },
@@ -156,7 +156,7 @@ describe("bootstrap", () => {
   it("reports a failed launch as the one status that draws the cold room", async () => {
     const { steps, sent, send } = fakeSteps({
       ensureBoxReady: async () => {
-        throw new Error("`docker start claudebox` failed (exit 1): no such container");
+        throw new Error("`docker start agentbox` failed (exit 1): no such container");
       },
     });
 
@@ -166,7 +166,7 @@ describe("bootstrap", () => {
     const failed = sent.at(-1) as { ok: boolean; message: string };
     expect(failed.ok).toBe(false);
     expect(failed.message).toBe(
-      "Couldn't start Claudebox: `docker start claudebox` failed (exit 1): no such container",
+      "Couldn't start Agentbox: `docker start agentbox` failed (exit 1): no such container",
     );
   });
 
@@ -192,6 +192,6 @@ describe("bootstrap", () => {
 
     await bootstrap(send, steps);
 
-    expect(sent.map((s) => s.message)).toEqual(["Claudebox is ready."]);
+    expect(sent.map((s) => s.message)).toEqual(["Agentbox is ready."]);
   });
 });

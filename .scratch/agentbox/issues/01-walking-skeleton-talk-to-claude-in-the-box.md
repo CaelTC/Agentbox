@@ -1,6 +1,6 @@
 # 01 — Walking skeleton: talk to Claude inside the Box
 
-**What to build:** A person can start Claudebox from a minimal shell script, authenticate with **Login with Claude**, type a prompt, and get a reply from Claude Code running inside the Box. Their work persists across restarts. This is the tracer bullet that proves the whole spine — Engine, the Box, auth, persistence — end to end.
+**What to build:** A person can start Agentbox from a minimal shell script, authenticate with **Login with Claude**, type a prompt, and get a reply from Claude Code running inside the Box. Their work persists across restarts. This is the tracer bullet that proves the whole spine — Engine, the Box, auth, persistence — end to end.
 
 **Blocked by:** None — can start immediately.
 

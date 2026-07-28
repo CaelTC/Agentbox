@@ -8,7 +8,7 @@
 
 {% block head %}
   {# set the rail state before first paint so a persisted collapse doesn't flash open #}
-  <script>if(localStorage.getItem('claudebox-rail')==='off')document.documentElement.classList.add('rail-off');</script>
+  <script>if(localStorage.getItem('agentbox-rail')==='off')document.documentElement.classList.add('rail-off');</script>
   {% block session_head %}{% endblock %}
 {% endblock %}
 
@@ -44,7 +44,7 @@
 </style>
 
 <div class="dock-top">
-  <button class="rail-toggle" onclick="localStorage.setItem('claudebox-rail', document.documentElement.classList.toggle('rail-off') ? 'off' : 'on')" aria-label="Toggle sidebar">
+  <button class="rail-toggle" onclick="localStorage.setItem('agentbox-rail', document.documentElement.classList.toggle('rail-off') ? 'off' : 'on')" aria-label="Toggle sidebar">
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
   </button>
   <span class="dock-title"><span class="dot"></span>{{ s.title }}</span>

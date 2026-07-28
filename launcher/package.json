@@ -1,8 +1,8 @@
 {
-  "name": "claudebox-launcher",
+  "name": "agentbox-launcher",
   "version": "0.1.0",
   "private": true,
-  "description": "The Claudebox Launcher — the double-clickable macOS app that is a Sandbox User's entire interface to Claudebox.",
+  "description": "The Agentbox Launcher — the double-clickable macOS app that is a Sandbox User's entire interface to Agentbox.",
   "main": "dist/main/main.js",
   "type": "commonjs",
   "scripts": {
@@ -12,8 +12,8 @@
     "build": "tsc && npm run assets",
     "assets": "node -e \"const fs=require('fs');fs.mkdirSync('dist/renderer',{recursive:true});for(const f of ['index.html','styles.css'])fs.copyFileSync('src/renderer/'+f,'dist/renderer/'+f);fs.cpSync('src/renderer/assets','dist/renderer/assets',{recursive:true})\"",
     "start": "npm run build && electron .",
-    "package": "npm run build && electron-packager . Claudebox --platform=darwin --out=release --overwrite --app-bundle-id=com.claudebox.launcher --ignore=\"/(src|test|release|\\.scratch|install)($|/)\"",
-    "package:win": "npm run build && electron-packager . Claudebox --platform=win32 --arch=x64 --out=release --overwrite --ignore=\"/(src|test|release|\\.scratch|install)($|/)\""
+    "package": "npm run build && electron-packager . Agentbox --platform=darwin --out=release --overwrite --app-bundle-id=com.agentbox.launcher --icon=assets/icon.icns --ignore=\"/(src|test|release|\\.scratch|install)($|/)\"",
+    "package:win": "npm run build && electron-packager . Agentbox --platform=win32 --arch=x64 --out=release --overwrite --icon=assets/icon.ico --ignore=\"/(src|test|release|\\.scratch|install)($|/)\""
   },
   "devDependencies": {
     "@electron/packager": "^20.0.4",

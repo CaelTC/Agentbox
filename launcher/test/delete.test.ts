@@ -89,7 +89,7 @@ describe("assertDeletableProjectFilePath", () => {
   it("refuses anything hidden, which is what keeps .git and the marker undeletable", () => {
     expect(() => assertDeletableProjectFilePath(dir, ".git")).toThrow(/hidden/);
     expect(() => assertDeletableProjectFilePath(dir, ".git/config")).toThrow(/hidden/);
-    expect(() => assertDeletableProjectFilePath(dir, ".claudebox/project.json")).toThrow(/hidden/);
+    expect(() => assertDeletableProjectFilePath(dir, ".agentbox/project.json")).toThrow(/hidden/);
     expect(() => assertDeletableProjectFilePath(dir, "src/.env")).toThrow(/hidden/);
   });
 

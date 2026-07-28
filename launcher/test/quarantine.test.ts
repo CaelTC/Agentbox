@@ -10,7 +10,7 @@ import { markExportedUntrusted } from "../src/main/workspace";
  * `spawnPath(path, exists)` injects its filesystem probe.
  */
 
-const TARGET = "/Users/sandbox/Claudebox/My Project/report.docx";
+const TARGET = "/Users/sandbox/Agentbox/My Project/report.docx";
 // 2026-07-25T00:00:00Z — fixed so the quarantine timestamp is assertable.
 const NOW = 1_784_937_600_000;
 
@@ -33,7 +33,7 @@ describe("untrustedMark", () => {
     expect(untrustedMark(TARGET, "darwin", NOW)).toEqual({
       kind: "command",
       command: "xattr",
-      args: ["-w", "com.apple.quarantine", "0001;6a63fc80;Claudebox;", TARGET],
+      args: ["-w", "com.apple.quarantine", "0001;6a63fc80;Agentbox;", TARGET],
     });
   });
 

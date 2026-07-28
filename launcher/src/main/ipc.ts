@@ -12,7 +12,7 @@ import {
 import { boxGate } from "./box-gate";
 import { exportRoot, hostBoxDefinitionDir } from "./paths";
 import { detectPreviewUrl } from "./preview";
-import { updateClaudebox } from "./refresh-runner";
+import { updateAgentbox } from "./refresh-runner";
 import { ensureBoxReady, openProjectSession } from "./session";
 import {
   boxCreateProject,
@@ -49,7 +49,7 @@ import {
  *                 can remember to take either.
  *
  * The channels below that reach the Box WITHOUT the whole handler under the
- * policy — Update Claudebox, which brings the Box up itself, Web Preview, which
+ * policy — Update Agentbox, which brings the Box up itself, Web Preview, which
  * only reads a Box that is already up, and the two that open a native picker
  * first — take the gate by hand around the part that is actually the Box's, and
  * say why at the call. The rule they are all keeping is the same one: nothing is
@@ -127,10 +127,10 @@ export function registerIpc(homeWindow: () => BrowserWindow | undefined): void {
   const confirmUpdate = async (): Promise<boolean> => {
     const options: Electron.MessageBoxOptions = {
       type: "question",
-      buttons: ["Update Claudebox", "Cancel"],
+      buttons: ["Update Agentbox", "Cancel"],
       defaultId: 0,
       cancelId: 1,
-      message: "Update Claudebox?",
+      message: "Update Agentbox?",
       detail:
         "If there's a new version, the sandbox restarts and any open Claude session closes. " +
         "Your projects are saved.",
@@ -167,7 +167,7 @@ export function registerIpc(homeWindow: () => BrowserWindow | undefined): void {
     }),
   );
 
-  // Update Claudebox brings the Box up itself, mid-sequence and after the
+  // Update Agentbox brings the Box up itself, mid-sequence and after the
   // rebuild — so it declares no policy here. Undefined on cancel: the renderer
   // says nothing rather than reporting a check that never ran.
   //
@@ -177,7 +177,7 @@ export function registerIpc(homeWindow: () => BrowserWindow | undefined): void {
   // the Sandbox User may yet cancel. Once they say yes, this is the operation
   // every other one has to wait for — it is the one that removes the container.
   route(IPC.updateBox, async (): Promise<string | undefined> =>
-    (await confirmUpdate()) ? boxGate(() => updateClaudebox()) : undefined,
+    (await confirmUpdate()) ? boxGate(() => updateAgentbox()) : undefined,
   );
 
   /* Workspace channels — the Box is up before any of these run. ----------- */

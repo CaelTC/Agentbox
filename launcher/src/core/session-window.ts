@@ -4,7 +4,7 @@ import { TERMINAL_PORT } from "./preview";
 
 /**
  * Opening a Project session (ticket 04). A session is launched through the ONE
- * Box-side funnel (`claudebox-session`, ticket 02) and viewed in a window the
+ * Box-side funnel (`agentbox-session`, ticket 02) and viewed in a window the
  * Launcher itself owns, on the loopback-forwarded console port — so a
  * non-technical user can't edit the URL or lose the tab, and the session is
  * reachable only from this computer, never the LAN (ADR 0001).
@@ -33,7 +33,7 @@ export function sessionUrl(slug: string, port: number = TERMINAL_PORT): string {
 export function ensureSessionArgs(slug: string): string[] {
   // Never interactive: off a TTY the funnel just ensures the session, it doesn't
   // attach. The slug is a distinct argv (never a shell string), so it can't inject.
-  return ["claudebox-session", assertValidSlug(slug)];
+  return ["agentbox-session", assertValidSlug(slug)];
 }
 
 /**
@@ -85,9 +85,9 @@ export function sessionWindowOptions(slug: string): BrowserWindowConstructorOpti
   return {
     width: 1100,
     height: 760,
-    // Replaced by the page's own <title> ("<slug> · Claudebox") once it loads;
+    // Replaced by the page's own <title> ("<slug> · Agentbox") once it loads;
     // this is what the window is called for the moment before that.
-    title: `${assertValidSlug(slug)} · Claudebox`,
+    title: `${assertValidSlug(slug)} · Agentbox`,
     // The console's own background (Coastal Water), so opening doesn't flash white.
     backgroundColor: "#073D44",
     autoHideMenuBar: true, // no menu bar to wander into on Windows

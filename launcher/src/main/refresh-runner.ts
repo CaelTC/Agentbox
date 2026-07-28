@@ -12,7 +12,7 @@ import {
 } from "../core/refresh";
 import type { OnStep } from "../core/startup";
 import { failureMessage, run } from "./exec";
-import { claudeboxHome, hostBoxDefinitionDir, hostDefinitionDir } from "./paths";
+import { agentboxHome, hostBoxDefinitionDir, hostDefinitionDir } from "./paths";
 import { ensureBoxReady, ensureEngine, removeBoxContainer, updateClaudeCode } from "./session";
 
 /**
@@ -21,11 +21,11 @@ import { ensureBoxReady, ensureEngine, removeBoxContainer, updateClaudeCode } fr
  * Stays usable offline. The DECISION is the pure refreshDecision(); this runner
  * supplies the effects (git pull, hash, docker build).
  *
- * Also runs on demand, from "Update Claudebox" on the home screen — same pull,
+ * Also runs on demand, from "Update Agentbox" on the home screen — same pull,
  * same gate, same build. What that button adds around this call is
- * `updateClaudebox()` below, not something the IPC router assembles.
+ * `updateAgentbox()` below, not something the IPC router assembles.
  */
-const hashFile = () => join(claudeboxHome(), "image.hash");
+const hashFile = () => join(agentboxHome(), "image.hash");
 
 export async function refreshOnLaunch(onStep?: OnStep): Promise<RefreshResult> {
   const previousHash = readStoredHash();
@@ -74,7 +74,7 @@ export async function refreshOnLaunch(onStep?: OnStep): Promise<RefreshResult> {
 }
 
 /**
- * The Box lifecycle "Update Claudebox" drives, as an injectable seam. Every
+ * The Box lifecycle "Update Agentbox" drives, as an injectable seam. Every
  * member is a real Engine call in production; passing a fake is what makes the
  * SEQUENCE below assertable without an Engine, a Box, or a window.
  */
@@ -96,7 +96,7 @@ const engineSteps: UpdateSteps = {
 };
 
 /**
- * Update Claudebox (ADR 0002): Refresh on Launch, on a button. Same pull, same
+ * Update Agentbox (ADR 0002): Refresh on Launch, on a button. Same pull, same
  * integrity gate, same conditional build — what this adds is the RECREATE,
  * because a rebuilt image does nothing while the old container is still the one
  * running (the same two lines bootstrap does).
@@ -108,7 +108,7 @@ const engineSteps: UpdateSteps = {
  *
  * Returns the sentence to show, composed by the tested `updateMessage`.
  */
-export async function updateClaudebox(steps: UpdateSteps = engineSteps): Promise<string> {
+export async function updateAgentbox(steps: UpdateSteps = engineSteps): Promise<string> {
   await steps.ensureEngine(); // the build needs the Engine, exactly as at launch
   const result = await steps.refresh();
   if (result.action !== "rebuilt") return updateMessage(result);
@@ -129,8 +129,8 @@ export async function updateClaudebox(steps: UpdateSteps = engineSteps): Promise
  * it isn't there, pull it when it is.
  *
  * The clone is not a convenience. The Install Script clones this too, but the
- * Launcher cannot assume the Install Script ran — a machine that got Claudebox
- * any other way (a repo checkout, a copied .app, a `~/.claudebox` that lost the
+ * Launcher cannot assume the Install Script ran — a machine that got Agentbox
+ * any other way (a repo checkout, a copied .app, a `~/.agentbox` that lost the
  * folder) has no clone, and then every `git -C <missing dir> pull` fails, is read
  * as "offline", and the SOLE update mechanism silently never runs again. That is
  * a permanently stale Box, and a stale Box is a stale `apply-egress.sh`.
@@ -145,7 +145,7 @@ async function fetchDefinition(): Promise<boolean> {
   const cloning = !existsSync(join(dir, ".git"));
 
   try {
-    mkdirSync(claudeboxHome(), { recursive: true });
+    mkdirSync(agentboxHome(), { recursive: true });
     const result = cloning
       ? // Shallow: the Launcher builds the definition, it never needs its history.
         await run("git", ["clone", "--depth", "1", DEFINITION_REPO, dir])

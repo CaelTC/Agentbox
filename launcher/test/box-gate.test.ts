@@ -6,7 +6,7 @@ import type { Project } from "../src/core/projects";
 import { boxGate } from "../src/main/box-gate";
 import { awaitGithubLogin } from "../src/main/github";
 import { homeListedProjects, registerIpc } from "../src/main/ipc";
-import { updateClaudebox } from "../src/main/refresh-runner";
+import { updateAgentbox } from "../src/main/refresh-runner";
 import { ensureBoxReady } from "../src/main/session";
 import { boxCreateProject, boxListProjects, boxUpload } from "../src/main/workspace";
 import type { BrowserWindow } from "electron";
@@ -14,7 +14,7 @@ import type { BrowserWindow } from "electron";
 /**
  * The Box Gate (#25). The renderer refuses a second operation while one is in
  * flight, but that lock is one window's, over four buttons. Every other
- * Box-touching channel walks straight past it — so "Update Claudebox" could
+ * Box-touching channel walks straight past it — so "Update Agentbox" could
  * `docker rm -f` the container out from under an Upload that was halfway
  * through copying into it, and the Sandbox User would be handed the Engine's
  * words about a container that no longer exists.
@@ -36,7 +36,7 @@ vi.mock("../src/main/session", () => ({
   openProjectSession: vi.fn(async () => undefined),
 }));
 
-vi.mock("../src/main/refresh-runner", () => ({ updateClaudebox: vi.fn() }));
+vi.mock("../src/main/refresh-runner", () => ({ updateAgentbox: vi.fn() }));
 
 vi.mock("../src/main/preview", () => ({ detectPreviewUrl: vi.fn(async () => undefined) }));
 
@@ -182,7 +182,7 @@ describe("the router's gate", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     // Both native dialogs answer immediately: the picker with one file, the
-    // Update question with "Update Claudebox".
+    // Update question with "Update Agentbox".
     vi.mocked(dialog.showOpenDialog).mockResolvedValue({
       canceled: false,
       filePaths: ["/Users/sandbox/notes.csv"],
@@ -191,7 +191,7 @@ describe("the router's gate", () => {
     registerIpc(() => window);
   });
 
-  it("makes Update Claudebox wait for an Upload that is already in flight", async () => {
+  it("makes Update Agentbox wait for an Upload that is already in flight", async () => {
     const upload = deferred<UploadTarget[]>();
     vi.mocked(boxUpload).mockReturnValue(upload.promise);
 
@@ -204,26 +204,26 @@ describe("the router's gate", () => {
 
     // The confirmation has been answered — the recreate is what is being held.
     expect(dialog.showMessageBox).toHaveBeenCalled();
-    expect(updateClaudebox).not.toHaveBeenCalled();
+    expect(updateAgentbox).not.toHaveBeenCalled();
 
     const update = deferred<string>();
-    vi.mocked(updateClaudebox).mockReturnValue(update.promise);
+    vi.mocked(updateAgentbox).mockReturnValue(update.promise);
     upload.resolve([]);
     await uploading;
     await settle();
 
-    expect(updateClaudebox).toHaveBeenCalled();
-    update.resolve("Claudebox is up to date.");
-    expect(await updating).toBe("Claudebox is up to date.");
+    expect(updateAgentbox).toHaveBeenCalled();
+    update.resolve("Agentbox is up to date.");
+    expect(await updating).toBe("Agentbox is up to date.");
   });
 
   it("makes an Upload wait for an Update that is already in flight", async () => {
     const update = deferred<string>();
-    vi.mocked(updateClaudebox).mockReturnValue(update.promise);
+    vi.mocked(updateAgentbox).mockReturnValue(update.promise);
 
     const updating = invoke(IPC.updateBox);
     await settle();
-    expect(updateClaudebox).toHaveBeenCalled();
+    expect(updateAgentbox).toHaveBeenCalled();
 
     const uploading = invoke(IPC.upload, "demo");
     await settle();
@@ -237,7 +237,7 @@ describe("the router's gate", () => {
     expect(boxUpload).not.toHaveBeenCalled();
 
     vi.mocked(boxUpload).mockResolvedValue([]);
-    update.resolve("Claudebox is up to date.");
+    update.resolve("Agentbox is up to date.");
     await updating;
     await settle();
 
@@ -255,7 +255,7 @@ describe("the router's gate", () => {
    */
   it("opens both native pickers without taking the gate at all", async () => {
     const held = deferred<string>();
-    vi.mocked(updateClaudebox).mockReturnValue(held.promise);
+    vi.mocked(updateAgentbox).mockReturnValue(held.promise);
     void invoke(IPC.updateBox);
     await settle();
 
@@ -267,7 +267,7 @@ describe("the router's gate", () => {
     expect(await invoke(IPC.planImport)).toBeUndefined();
     expect(ensureBoxReady).not.toHaveBeenCalled();
 
-    held.resolve("Claudebox is up to date.");
+    held.resolve("Agentbox is up to date.");
   });
 
   it("lets the next operation through when the one before it failed", async () => {
@@ -284,7 +284,7 @@ describe("the router's gate", () => {
   // behind a device code the Sandbox User may have wandered away from.
   it("does not make the GitHub sign-in poll wait behind an Update", async () => {
     const update = deferred<string>();
-    vi.mocked(updateClaudebox).mockReturnValue(update.promise);
+    vi.mocked(updateAgentbox).mockReturnValue(update.promise);
     vi.mocked(awaitGithubLogin).mockResolvedValue({
       configured: true,
       connected: true,
@@ -296,7 +296,7 @@ describe("the router's gate", () => {
 
     expect(await invoke(IPC.awaitGithubLogin)).toMatchObject({ connected: true });
 
-    update.resolve("Claudebox is up to date.");
+    update.resolve("Agentbox is up to date.");
   });
 
   /**

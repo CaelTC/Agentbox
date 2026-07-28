@@ -21,11 +21,11 @@ describe("ensureSessionArgs", () => {
   // `killSessionArgs`: the router has the Box up before this ever runs, so
   // nothing here reaches past the seam.
   it("routes through the single funnel, passing the slug as its own argv", () => {
-    expect(ensureSessionArgs("game2")).toEqual(["claudebox-session", "game2"]);
+    expect(ensureSessionArgs("game2")).toEqual(["agentbox-session", "game2"]);
   });
   it("carries no `exec`/container prefix of its own — that belongs to the seam", () => {
     expect(ensureSessionArgs("game2")).not.toContain("exec");
-    expect(ensureSessionArgs("game2")).not.toContain("claudebox");
+    expect(ensureSessionArgs("game2")).not.toContain("agentbox");
   });
   it("never runs interactively (-it) — off a TTY the funnel only ensures the session", () => {
     expect(ensureSessionArgs("game2")).not.toContain("-it");
@@ -95,7 +95,7 @@ describe("sessionWindowOptions", () => {
   });
 
   it("names the window after the Project for the moment before the page loads", () => {
-    expect(sessionWindowOptions("demo").title).toBe("demo · Claudebox");
+    expect(sessionWindowOptions("demo").title).toBe("demo · Agentbox");
   });
 
   it("refuses an unsafe slug rather than titling a window with it", () => {

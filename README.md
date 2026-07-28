@@ -1,4 +1,4 @@
-# Claudebox
+# Agentbox
 
 A local development sandbox for running Claude Code on a colleague's computer. It
 lets people who are not fluent in Git or coding safely practice and play with
@@ -32,7 +32,7 @@ the LAN.
   ┌─────────────────────────┐             entrypoint.sh
   │ Launcher (Electron)      │   docker      1. apply-egress.sh   (firewall first)
   │  · start Engine + Box    │──  exec  ──▶  2. start-terminal.sh (web console)
-  │  · Project home screen   │  claudebox-   3. sleep infinity    (stays alive)
+  │  · Project home screen   │  agentbox-   3. sleep infinity    (stays alive)
   │  · per-Project controls  │   session
   │  · quit ⇒ docker stop    │   <slug>    web console  (server.py / Starlette, :7681)
   └───────────┬─────────────┘               GET  /sessions/<slug>          terminal page
@@ -40,9 +40,9 @@ the LAN.
               │ BrowserWindow.loadURL(      GET  /sessions/<slug>/files      │ read-only
               │   http://localhost:7681/sessions/<slug> )                    │
               ▼                                                              ▼
-  ┌─────────────────────────┐  WS, :7681   claudebox-session <slug>   ── THE funnel ──
+  ┌─────────────────────────┐  WS, :7681   agentbox-session <slug>   ── THE funnel ──
   │ Session window          │◀═ loopback ═▶  · validate slug shape
-  │  (Launcher-owned: no    │    only        · require .claudebox/project.json
+  │  (Launcher-owned: no    │    only        · require .agentbox/project.json
   │   URL bar, one per      │                · tmux new-session -A -s <slug> \
   │   Project — reopening   │                    claude --dangerously-skip-permissions \
   │   raises it)            │                    [seedPrompt]        ← passed as one argv
@@ -64,7 +64,7 @@ differs is that the Windows Engine cannot enforce a disk ceiling, so the Resourc
 Cap is documented rather than bounded there
 ([ADR 0004](./docs/adr/0004-windows-runs-on-rootful-podman-wsl2-without-a-disk-cap.md)).
 
-**`claudebox-session` is the single source of truth for launching a Project.**
+**`agentbox-session` is the single source of truth for launching a Project.**
 Both the browser (via the web console's WebSocket) and the Launcher (via
 `docker exec`) reach a Project's Claude *only* through this one program, driven
 entirely by data on the Workspace volume — so an unknown or crafted slug can
@@ -76,7 +76,7 @@ container, not a per-action prompt, is the wall (ADR 0001).
 1. In the Launcher, the Sandbox User clicks a Project.
 2. The Launcher ensures the Box is up, writes the Project's `CLAUDE.md` if it is
    missing (the Web Preview contract: serve on a published port, bind `0.0.0.0`),
-   then runs `docker exec <box> claudebox-session <slug>` — off a TTY the funnel just
+   then runs `docker exec <box> agentbox-session <slug>` — off a TTY the funnel just
    **ensures** the tmux session exists (creating it detached, seeding the first
    prompt on a fresh session only).
 3. Its own window becomes a per-Project control panel. Nothing else happens
@@ -88,7 +88,7 @@ container, not a per-action prompt, is the wall (ADR 0001).
    again raises the window that is already open instead of stacking a second
    view of the same session on top of it.
 5. That page opens a WebSocket to the web console, which runs
-   `claudebox-session <slug>` **on a pty** — this time the funnel **attaches**
+   `agentbox-session <slug>` **on a pty** — this time the funnel **attaches**
    to the (already-created) session. Keystrokes and output stream over the
    socket; the session lives in tmux, so closing the window leaves it running.
 6. Clicking **Open session** after closing that window is step 4 again — the
@@ -106,7 +106,7 @@ never a live mount (ADR 0001). **Upload** copies individual files host→Box
 into an existing Project. **Export** copies a Project's documents Box→host
 under an allowlist (ADR 0003). **Import** copies a whole folder host→Box,
 becoming a new Project outright, unfiltered but for `.gitignore` — its
-contents land at the Project root because `claudebox-session` above always
+contents land at the Project root because `agentbox-session` above always
 starts Claude there ([ADR 0005](./docs/adr/0005-import-is-a-whole-project-not-a-filtered-copy.md)).
 
 ## Layout
@@ -115,10 +115,10 @@ starts Claude there ([ADR 0005](./docs/adr/0005-import-is-a-whole-project-not-a-
 box/         The Box — the public Docker image.
   Dockerfile        Batteries (Node/Python/Rust/git) + Claude Code + the console.
   entrypoint.sh     Egress firewall → web console → stay alive.
-  bin/claudebox-session   The funnel: slug → tmux → Claude (single source of truth).
+  bin/agentbox-session   The funnel: slug → tmux → Claude (single source of truth).
   egress/           The Egress Policy (iptables rules).
   terminal/         The web console — Starlette app (server.py) + templates + paths.
-scripts/     claudebox.sh — the walking-skeleton launcher (ticket 01).
+scripts/     agentbox.sh — the walking-skeleton launcher (ticket 01).
 launcher/    The Launcher app — macOS and Windows (Electron + TypeScript, tickets 04–09).
              Its src/core holds the pure, unit-tested logic for the whole system.
 docs/adr/    Architecture Decision Records.
@@ -172,7 +172,7 @@ It performs ten steps, all of them safely re-runnable:
    honest limits here: `.wslconfig` applies to *every* WSL distro on the machine,
    and it has no disk ceiling — so on Windows the Resource Cap does not yet bound
    disk the way it does on the Mac.
-5. Clone the public definition repo to `%USERPROFILE%\.claudebox\definition`
+5. Clone the public definition repo to `%USERPROFILE%\.agentbox\definition`
    over HTTPS, with no authentication.
 6. `podman machine init` at the cap → `podman machine set --rootful` → `start`.
 7. `podman build` the Box image.
@@ -181,7 +181,7 @@ It performs ten steps, all of them safely re-runnable:
    itself off the laptop and the LAN must never accept a Sandbox User.
 9. `npm ci && npm run package:win` in the cloned `launcher/` — the Launcher is
    built here, on this machine, from the source just fetched.
-10. Copy the built folder to `%LOCALAPPDATA%\Programs\Claudebox` and create a
+10. Copy the built folder to `%LOCALAPPDATA%\Programs\Agentbox` and create a
     Start Menu shortcut.
 
 Steps 9–10 build locally for the reason given above: an unsigned *downloaded*
@@ -205,5 +205,5 @@ how they fit together and how to package the Launcher.
 ## Try the spine by hand (needs macOS + Colima + Docker)
 
 ```bash
-./scripts/claudebox.sh
+./scripts/agentbox.sh
 ```

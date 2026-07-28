@@ -65,10 +65,10 @@ describe("the slug shape's three copies", () => {
     return found![1];
   }
 
-  it("box/bin/claudebox-session guards the slug with core/projects.ts's regex", () => {
-    const source = boxFile("bin", "claudebox-session");
-    expect(pythonSlugPattern(source, "claudebox-session")).toBe(SLUG_RE.source);
-    expect(pythonSlugMatcher(source, "claudebox-session")).toBe("fullmatch");
+  it("box/bin/agentbox-session guards the slug with core/projects.ts's regex", () => {
+    const source = boxFile("bin", "agentbox-session");
+    expect(pythonSlugPattern(source, "agentbox-session")).toBe(SLUG_RE.source);
+    expect(pythonSlugMatcher(source, "agentbox-session")).toBe("fullmatch");
   });
 
   it("box/terminal/paths.py rejects the same slugs core/projects.ts does", () => {

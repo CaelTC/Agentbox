@@ -21,7 +21,7 @@ Four properties carry it:
 1. **The Launcher owns both ends of the decision.** It builds the file list (via `docker exec`), renders the checkboxes, validates every path, and names the destination. Nothing served from inside the Box drives a host-side write, and no Box→Launcher channel is introduced.
 2. **Only document-shaped files are offered** — documents plus web files, so a "personal webpage" Project is useful when it lands. Everything else is shown greyed with a reason rather than silently dropped.
 3. **Bounded total size, refused above the cap.** The Resource Cap bounds the Box at ~25 GB; without a ceiling, Export would let a runaway Project pour that onto the user's real disk, which is threat A.
-4. **The friendly Project name reaches the host through a display sanitizer and a containment check.** The name is read from `.claudebox/project.json` *inside* the Box, so Claude can write it — it is untrusted input on the path to a host filesystem write, and treated as such.
+4. **The friendly Project name reaches the host through a display sanitizer and a containment check.** The name is read from `.agentbox/project.json` *inside* the Box, so Claude can write it — it is untrusted input on the path to a host filesystem write, and treated as such.
 
 ## Considered Options
 
@@ -32,7 +32,7 @@ Four properties carry it:
 
 ## Consequences
 
-- Export is the **first Box→host path in the system**. It does not weaken ADR 0001: it is a copy performed by trusted host code, not a bind mount, so `assertNoHostMounts` and the "no host mounts" invariant are untouched. A reader who finds the Launcher writing to `~/Claudebox` should read this ADR before assuming a bug.
+- Export is the **first Box→host path in the system**. It does not weaken ADR 0001: it is a copy performed by trusted host code, not a bind mount, so `assertNoHostMounts` and the "no host mounts" invariant are untouched. A reader who finds the Launcher writing to `~/Agentbox` should read this ADR before assuming a bug.
 - It introduces **threat C** (CONTEXT.md): content generated in the Box being executed on the host. The Box's walls cannot defend it, because it happens outside them. The realistic chain is prompt injection over the open egress the design deliberately allows — Claude fetches a page, the page tells it to write something poisoned, the user carries it across and opens it. The allowlist reduces this to the risk class of an email attachment; it does not eliminate it.
 - Export never deletes on the host. Files removed inside the Box linger in the exported folder. Accepted: stale files are a smaller harm than the Launcher deleting a user's work.
 - Backup, version history, and sharing remain **unsolved**. That is deliberate, not an oversight.

@@ -37,7 +37,7 @@ export const EXPORT_CAP_BYTES = 2 * 1024 * 1024 * 1024;
  * listing prunes dotfiles (main/workspace.ts), and no dotfile is on the allowlist
  * above — a Project cannot write its own landing folder's stamp.
  */
-export const SAVED_STAMP = ".claudebox-saved";
+export const SAVED_STAMP = ".agentbox-saved";
 
 /**
  * Documents plus web files, so a "personal webpage" Project is useful when it
@@ -130,7 +130,7 @@ const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f]/g;
 /**
  * Turn a friendly Project name into a host folder name. Unlike the Project slug
  * this keeps spaces, capitals and accents — it is what the Sandbox User sees in
- * Finder. The name is read from `.claudebox/project.json` INSIDE the Box, so
+ * Finder. The name is read from `.agentbox/project.json` INSIDE the Box, so
  * Claude can write it: strip everything that could steer a filesystem path, and
  * fall back to the (already validated) slug if nothing usable is left.
  */
@@ -156,7 +156,7 @@ export function exportFolderName(name: string, slug: string): string {
  * field is left empty, which is legal and is what plain `xattr -w` users do.
  */
 const QUARANTINE_FLAGS = "0001";
-const QUARANTINE_AGENT = "Claudebox";
+const QUARANTINE_AGENT = "Agentbox";
 
 export function quarantineValue(nowMs: number): string {
   const seconds = Math.floor(nowMs / 1000).toString(16).padStart(8, "0");

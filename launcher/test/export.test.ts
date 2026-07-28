@@ -19,7 +19,7 @@ const file = (path: string, over: Partial<BoxFile> = {}): BoxFile => ({
   ...over,
 });
 
-const ROOT = "/Users/sandbox/Claudebox";
+const ROOT = "/Users/sandbox/Agentbox";
 
 describe("classifyBoxFile", () => {
   it("passes documents and web files, so a webpage Project is useful when it lands", () => {
@@ -54,7 +54,7 @@ describe("classifyBoxFile", () => {
   it("refuses dotfiles and anything inside a dot-directory, so .git never crosses", () => {
     expect(classifyBoxFile(file(".env")).exportable).toBe(false);
     expect(classifyBoxFile(file(".git/config")).exportable).toBe(false);
-    expect(classifyBoxFile(file(".claudebox/project.json")).exportable).toBe(false);
+    expect(classifyBoxFile(file(".agentbox/project.json")).exportable).toBe(false);
     expect(classifyBoxFile(file("docs/.hidden/notes.md")).exportable).toBe(false);
   });
 
@@ -109,7 +109,7 @@ describe("resolveExportDir", () => {
   });
 
   it("cannot write outside the export root even when the name comes straight from Box metadata", () => {
-    // The friendly name is read from .claudebox/project.json INSIDE the Box, so
+    // The friendly name is read from .agentbox/project.json INSIDE the Box, so
     // Claude can write it — it is untrusted input on the way to a host path.
     for (const hostile of ["../../../etc", "..", "/etc/passwd", "a/../../b", "\u0000/x"]) {
       const dir = resolveExportDir(ROOT, { name: hostile, slug: "safe-slug" });
@@ -196,7 +196,7 @@ describe("planExport", () => {
 });
 
 describe("a hostile Project name read straight from Box metadata", () => {
-  // The friendly name lives in .claudebox/project.json INSIDE the Box, where
+  // The friendly name lives in .agentbox/project.json INSIDE the Box, where
   // Claude can write it. This is the whole path from that file to a host write.
   const fromBox = (name: string) => {
     const json = serializeProjectMeta({ name, slug: "safe-slug" });

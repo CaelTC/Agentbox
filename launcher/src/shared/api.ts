@@ -10,7 +10,7 @@ import type { UploadTarget } from "../core/upload";
  * the home screen can do goes through this narrow, typed surface — the renderer
  * never touches Docker, the filesystem, or child processes directly.
  */
-export interface ClaudeboxApi {
+export interface AgentboxApi {
   listProjects(): Promise<Project[]>;
   createProject(name: string): Promise<Project>;
   /**
@@ -67,7 +67,7 @@ export interface ClaudeboxApi {
   saveToGithub(slug: string): Promise<PublishResult>;
 
   /**
-   * Update Claudebox (ADR 0002): pull the public Box definition and, if it
+   * Update Agentbox (ADR 0002): pull the public Box definition and, if it
    * changed, rebuild the image and restart the sandbox on it. Confirmed by a
    * native dialog in the trusted layer first — undefined if that is cancelled.
    *
@@ -97,7 +97,7 @@ export interface ClaudeboxApi {
    * The trusted layer re-enumerates the Project and re-checks both the paths and
    * the typed name before an `rm` runs — this bridge carries a request, never a
    * decision. The Box's own console has no counterpart to this and gains none:
-   * the Launcher is the only interface in Claudebox that can delete a file.
+   * the Launcher is the only interface in Agentbox that can delete a file.
    */
   deleteFiles(slug: string, paths: string[], typed?: string): Promise<FileDeleteResult>;
 
@@ -175,6 +175,6 @@ export const IPC = {
 
 declare global {
   interface Window {
-    claudebox: ClaudeboxApi;
+    agentbox: AgentboxApi;
   }
 }

@@ -13,16 +13,16 @@ describe("boxRunArgs", () => {
   it("runs the Box detached with the stable container name", () => {
     expect(args[0]).toBe("run");
     expect(args).toContain("-d");
-    expect(args[args.indexOf("--name") + 1]).toBe("claudebox");
+    expect(args[args.indexOf("--name") + 1]).toBe("agentbox");
   });
 
   it("mounts the Workspace as a NAMED VOLUME, never a host path (ADR 0001, threat A)", () => {
     const vol = args[args.indexOf("-v") + 1];
-    expect(vol).toBe("claudebox-workspace:/workspace");
+    expect(vol).toBe("agentbox-workspace:/workspace");
   });
 
   it("persists the Claude login on a named home volume (survives restart/rebuild)", () => {
-    expect(args.join(" ")).toContain("claudebox-home:/home/sandbox");
+    expect(args.join(" ")).toContain("agentbox-home:/home/sandbox");
   });
 
   it("mounts nothing from the host filesystem", () => {
@@ -49,7 +49,7 @@ describe("boxUpdateClaudeArgs", () => {
 
   it("updates Claude Code as root in the running Box (root owns the global install)", () => {
     expect(args.join(" ")).toBe(
-      `exec -u root -e PATH=${BOX_ROOT_PATH} claudebox timeout 180 claude update`,
+      `exec -u root -e PATH=${BOX_ROOT_PATH} agentbox timeout 180 claude update`,
     );
   });
 });
@@ -63,14 +63,14 @@ describe("isHostMount", () => {
     expect(isHostMount("~/data:/workspace")).toBe(true);
   });
   it("does not flag named volumes", () => {
-    expect(isHostMount("claudebox-workspace:/workspace")).toBe(false);
+    expect(isHostMount("agentbox-workspace:/workspace")).toBe(false);
   });
 });
 
 describe("assertNoHostMounts", () => {
   it("throws if any -v is a host bind mount", () => {
     expect(() =>
-      assertNoHostMounts(["run", "-v", "/Users/alex:/workspace", "claudebox:latest"]),
+      assertNoHostMounts(["run", "-v", "/Users/alex:/workspace", "agentbox:latest"]),
     ).toThrow(/host mount/i);
   });
 });

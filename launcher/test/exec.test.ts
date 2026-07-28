@@ -29,7 +29,7 @@ describe("spawnPath", () => {
  * The deadline (#26). Every command against the running Box carries one, because
  * the Box Gate is single-file: a `docker exec` that never returns — Claude having
  * SIGSTOPped the sandbox's tmux server is enough — is not one dead operation but
- * every Box channel dead for the life of the Launcher, Update Claudebox included.
+ * every Box channel dead for the life of the Launcher, Update Agentbox included.
  *
  * Real processes, because what is being asserted is that a child which IGNORES
  * the polite signal still dies and still settles.

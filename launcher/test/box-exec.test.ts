@@ -101,7 +101,7 @@ describe("boxExec argv", () => {
 
   // A `docker exec` that never returns is not one dead operation: the Box Gate
   // is single-file, so it is every Box channel dead for the life of the
-  // Launcher — Update Claudebox, the mechanism that would ship the fix, included.
+  // Launcher — Update Agentbox, the mechanism that would ship the fix, included.
   it("bounds every exec with a deadline, and deliberately does not bound the copies", async () => {
     await boxExec.exec(["ls"]);
     await boxExec.tryExec(["ls"]);
@@ -124,13 +124,13 @@ describe("boxExec argv", () => {
 
   it("sends file content as base64, so arbitrary content never meets a shell", async () => {
     const content = `{"name":"Rock & Roll'; rm -rf /"}`;
-    await boxExec.writeFile("/workspace/demo/.claudebox/project.json", content);
+    await boxExec.writeFile("/workspace/demo/.agentbox/project.json", content);
 
     const [, argv] = vi.mocked(run).mock.calls[0]!;
     expect(argv).not.toContain(content);
     const b64 = argv[argv.length - 2]!; // sh -c SCRIPT sh <b64> <path>
     expect(Buffer.from(b64, "base64").toString("utf8")).toBe(content);
-    expect(argv[argv.length - 1]).toBe("/workspace/demo/.claudebox/project.json");
+    expect(argv[argv.length - 1]).toBe("/workspace/demo/.agentbox/project.json");
   });
 });
 
