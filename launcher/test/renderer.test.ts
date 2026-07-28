@@ -54,7 +54,11 @@ function renderer() {
   const js = transformSync(region![0], { loader: "ts" }).code;
   const document = fakeDocument();
   // A `setTimeout` that never fires, so a flash stays put to be asserted on.
-  const build = new Function("document", "setTimeout", `${js}\nreturn { el, fail, flash, openSheet, runOperation };`);
+  const build = new Function(
+    "document",
+    "setTimeout",
+    `${js}\nreturn { el, fail, flash, openSheet, runOperation, fileFolders, inFolder, matchesFilter, selectionTotal };`,
+  );
   return { document, ...build(document, () => undefined) } as {
     document: ReturnType<typeof fakeDocument>;
     el: (tag: string, props?: Record<string, unknown>, children?: unknown[]) => any;
@@ -62,6 +66,14 @@ function renderer() {
     flash: (message: string) => void;
     openSheet: (title: string, contents: unknown[], actions: unknown[]) => () => void;
     runOperation: (op: Record<string, unknown>) => Promise<void>;
+    fileFolders: (paths: readonly string[]) => string[];
+    inFolder: (path: string, folder: string) => boolean;
+    matchesFilter: (path: string, query: string) => boolean;
+    selectionTotal: (
+      files: readonly { path: string; size: number }[],
+      selected: ReadonlySet<string>,
+      capBytes: number,
+    ) => { count: number; bytes: number; over: boolean };
   };
 }
 
@@ -346,6 +358,96 @@ describe("fail", () => {
     // how the noise gets back onto the screen.
     expect(APP.match(/Couldn't[^`\n]*\$\{\(?err/g)).toBeNull();
   });
+});
+
+// --- the Files tab -----------------------------------------------------------
+
+/**
+ * The two-pane browser's whole model, which is why these four live in the
+ * machinery region: the pane itself is DOM this file has no seam for, but what
+ * it SHOWS is these functions, and they are the part that can quietly go wrong.
+ */
+describe("the Files tab's folder pane", () => {
+  it("derives every folder and every folder above one, ancestors first", () => {
+    const { fileFolders } = renderer();
+    expect(fileFolders(["notes.md", "data/2024/costs.csv", "data/readme.txt", "src/app.ts"])).toEqual([
+      "data",
+      "data/2024",
+      "src",
+    ]);
+  });
+
+  // Lexicographic order is what makes indent-by-depth enough to draw a tree: a
+  // folder that appeared before its own parent would hang off the wrong row.
+  it("never lists a folder before the folder it sits in", () => {
+    const { fileFolders } = renderer();
+    const folders = fileFolders(["a/b/c/deep.txt", "a/other.txt", "z/last.txt"]);
+    expect(folders).toEqual(["a", "a/b", "a/b/c", "z"]);
+    for (const [at, folder] of folders.entries()) {
+      const parent = folder.slice(0, folder.lastIndexOf("/"));
+      if (parent && folder.includes("/")) expect(folders.indexOf(parent)).toBeLessThan(at);
+    }
+  });
+
+  it("has no row for the Project root — that is All files, which matches everything", () => {
+    const { fileFolders, inFolder } = renderer();
+    expect(fileFolders(["notes.md"])).toEqual([]);
+    expect(inFolder("notes.md", "")).toBe(true);
+    expect(inFolder("data/2024/costs.csv", "")).toBe(true);
+  });
+
+  // A folder row holds everything UNDER it, however deep — picking "data" and
+  // seeing nothing because the files are all one level further down is the bug
+  // this prevents. And a prefix is not a folder: "data" must not swallow "database".
+  it("holds everything under a folder, and nothing from a folder that merely starts the same", () => {
+    const { inFolder } = renderer();
+    expect(inFolder("data/2024/costs.csv", "data")).toBe(true);
+    expect(inFolder("data/2024/costs.csv", "data/2024")).toBe(true);
+    expect(inFolder("database/schema.sql", "data")).toBe(false);
+    expect(inFolder("notes.md", "data")).toBe(false);
+  });
+});
+
+describe("the Files tab's filter and total", () => {
+  it("matches anywhere in the path, either case, ignoring what was typed around it", () => {
+    const { matchesFilter } = renderer();
+    expect(matchesFilter("data/2024-costs.CSV", "csv")).toBe(true);
+    expect(matchesFilter("data/2024-costs.csv", "  DATA ")).toBe(true);
+    expect(matchesFilter("notes.md", "csv")).toBe(false);
+    expect(matchesFilter("notes.md", "")).toBe(true); // an empty field hides nothing
+  });
+
+  // The selection survives switching folders and filtering, so the total is over
+  // everything ticked — not over what happens to be on screen.
+  it("totals everything ticked, wherever it is, and says when it is over the cap", () => {
+    const { selectionTotal } = renderer();
+    const files = [
+      { path: "notes.md", size: 1_000 },
+      { path: "data/costs.csv", size: 2_000 },
+      { path: "src/app.ts", size: 4_000 },
+    ];
+    expect(selectionTotal(files, new Set(["notes.md", "src/app.ts"]), 10_000)).toEqual({
+      count: 2,
+      bytes: 5_000,
+      over: false,
+    });
+    expect(selectionTotal(files, new Set(files.map((f) => f.path)), 5_000).over).toBe(true);
+    // Exactly at the cap is allowed: core/export.ts refuses above it, not at it.
+    expect(selectionTotal(files, new Set(files.map((f) => f.path)), 7_000).over).toBe(false);
+    expect(selectionTotal(files, new Set(["gone.txt"]), 10_000)).toEqual({ count: 0, bytes: 0, over: false });
+  });
+});
+
+/**
+ * The Box Gate is single-file and not re-entrant, so anything on a timer sits on
+ * the lock the Claude session itself needs. The Files tab therefore reads ONCE
+ * when it is opened and again only when the Sandbox User asks — a `setInterval`
+ * added to keep it "live" is the failure this test names in advance.
+ */
+it("has exactly one repeating timer in the renderer, and it is the starting clock", () => {
+  const intervals = APP.match(/setInterval\(/g) ?? [];
+  expect(intervals).toHaveLength(1);
+  expect(APP).toMatch(/startingClock = setInterval\(/);
 });
 
 // --- the two copies app.ts is forced to keep ---------------------------------

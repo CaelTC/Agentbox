@@ -11,6 +11,13 @@ export interface Project {
   readonly slug: string;
   /** Absolute path to the Project's folder inside the Workspace. */
   readonly dir: string;
+  /**
+   * Epoch ms of the last Export, absent if this Project has never been saved
+   * out. Filled host-side from the landing folder's own mtime (main/workspace.ts)
+   * — it costs no Box call, which is why the home screen can say it for every
+   * Project at once. Absent from a Project the Box just created.
+   */
+  readonly lastSaved?: number;
 }
 
 /** Persisted per-Project metadata, written into the Box by main/workspace.ts. */

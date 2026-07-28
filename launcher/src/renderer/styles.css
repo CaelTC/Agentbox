@@ -149,19 +149,19 @@ h1, h2, h3 {
 
 /* ------------------------------------------------------------------ hero ---- */
 
-/* The signature split: a solid brand panel beside a light panel. */
+/* The signature split: a solid brand panel beside a light panel.
+
+   The boot and error screens are the ONLY screens built from it, and each is the
+   hero alone, so it holds the whole window. It used to open the home screen too,
+   at 40vh — which, in a 680px-tall app window, put the projects the Launcher was
+   opened for below the fold. The working screens carry `.brandbar` instead. */
 .hero {
   display: grid;
   grid-template-columns: 1.25fr 1fr;
-  /* Deliberately short for a 680px-tall app window: the projects list has to
-     stay within reach of the fold. */
-  min-height: 40vh;
+  min-height: 100vh;
   background: var(--color-surface-dark);
   color: var(--color-text-inverse);
 }
-
-/* The boot and error screens are the hero alone — let it hold the whole window. */
-.hero:only-child { min-height: 100vh; }
 
 .hero__copy {
   display: flex;
@@ -172,9 +172,6 @@ h1, h2, h3 {
 }
 
 .hero__title { font-size: var(--text-display); }
-.hero--project .hero__title { font-size: var(--text-h2); }
-
-.hero__actions { display: flex; align-items: center; gap: var(--radius-lg); flex-wrap: wrap; }
 
 /* The one circular moment in the app — the barrel form, on the mark. */
 .hero__mark {
@@ -198,6 +195,59 @@ h1, h2, h3 {
   .hero { grid-template-columns: 1fr; }
   .hero__mark { display: none; }
 }
+
+/* -------------------------------------------------------------- brand bar ---- */
+
+/* The hero, one line high. Same dark brand surface, so the window still opens in
+   Coastal Water — but it costs a strip instead of two fifths of the screen, and
+   what the Sandbox User came for starts at the top of the page. */
+.brandbar {
+  background: var(--color-surface-dark);
+  color: var(--color-text-inverse);
+}
+.brandbar .container {
+  display: flex;
+  align-items: center;
+  gap: var(--radius-lg);
+  padding-block: 0.85rem;
+}
+.brandbar__mark { width: 26px; height: auto; }
+.brandbar__name { font-size: var(--text-lead); letter-spacing: var(--tracking-tight); }
+/* The lead is the brand's one sentence, and the first thing to go when the bar
+   runs out of room — the projects under it are the screen's real subject. */
+.brandbar__lead { margin: 0 0 0 auto; font-size: var(--text-meta); opacity: 0.8; }
+.brandbar__project {
+  font-size: var(--text-lead);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Inside a Project the bar carries the way out, the name, the tabs, and the one
+   button that opens the session — the session button sits at the far end. */
+.brandbar .btn { margin-left: auto; }
+
+@media (max-width: 720px) {
+  .brandbar__lead { display: none; }
+}
+
+/* ------------------------------------------------------------------ tabs ---- */
+
+/* The only navigation in the app that isn't a whole screen. Underline in Heat,
+   because the bar has no room for a second surface colour. */
+.tabs { display: flex; gap: var(--radius-lg); }
+.tab {
+  padding: 0.25rem 0;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: none;
+  color: var(--nootka-steam);
+  font-size: var(--text-meta);
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+}
+.tab:hover { color: var(--color-text-inverse); }
+.tab--on { color: var(--color-text-inverse); border-bottom-color: var(--color-accent); }
 
 /* --------------------------------------------------------------- buttons ---- */
 
@@ -282,7 +332,10 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: var(--radius-lg);
 }
-/* Four actions read better as a square than as three-plus-an-orphan. */
+/* An even set of actions reads as a block; an odd one reads as the last card
+   having been left over. It held five (three of them file transfer, and three of
+   them starting with the word "save") — those moved to the Files tab, and the
+   two that are left are a pair. Keep it even, or split it again. */
 .grid--actions { grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); }
 
 /* Reindeer Moss as a supporting block, not as text — its contrast is too low
@@ -305,10 +358,17 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .card strong { font-size: var(--text-lead); font-weight: var(--weight-bold); line-height: var(--leading-tight); }
 .card span { font-size: var(--text-meta); opacity: 0.8; }
 
-/* ------------------------------------------------------- new + open lists ---- */
+/* The one tile in the grid that isn't a Project. Dashed and unfilled, so it
+   reads as the empty slot at the front rather than as a sixth project. */
+.card--new {
+  border: 2px dashed var(--line-light);
+  border-left-width: 2px;
+  background: transparent;
+  box-shadow: none;
+}
+.card--new:hover { border-color: var(--color-accent); }
 
-.new-project { display: flex; gap: var(--radius-md); margin-top: var(--space-block); }
-.new-project input,
+/* Type-the-name and name-the-project fields. */
 .confirm input {
   flex: 1;
   padding: 0.85em 1em;
@@ -320,28 +380,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   border-radius: var(--radius-sm);
 }
 /* 0.75 is the floor here: Evergreen any lighter on white drops under AA. */
-.new-project input::placeholder,
 .confirm input::placeholder { color: var(--color-text); opacity: 0.75; }
-
-.projects { list-style: none; margin: 0; padding: 0; }
-.projects li + li { margin-top: var(--radius-md); }
-.projects button {
-  display: flex;
-  align-items: baseline;
-  gap: var(--radius-md);
-  width: 100%;
-  padding: 1rem 1.25rem;
-  text-align: left;
-  color: var(--color-text-inverse);
-  background: transparent;
-  border: 1px solid var(--line-dark);
-  border-radius: var(--radius-md);
-  font-size: var(--text-h3);
-  font-weight: var(--weight-bold);
-  letter-spacing: var(--tracking-tight);
-}
-.projects button:hover { border-color: var(--color-accent); }
-.projects .meta { margin-left: auto; font-weight: var(--weight-regular); letter-spacing: normal; }
 
 /* ---------------------------------------------------------------- footer ---- */
 
@@ -353,8 +392,101 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   background: var(--color-surface-dark);
   color: var(--nootka-steam);
 }
+/* The housekeeping lives on this line: the GitHub Account and "Update Claudebox"
+   were two full light bands, which gave maintenance the same weight as the work.
+   One row, at the bottom, at the size of things you touch once a month. */
+.footer__row {
+  display: flex;
+  align-items: center;
+  gap: var(--radius-lg);
+  flex-wrap: wrap;
+}
+/* The place line stays left; the housekeeping collects at the other end. */
+.footer__row > :first-child { margin-right: auto; }
+.footer__row .btn--link { font-size: var(--text-meta); }
 
-/* ---------------------------------------------------- export picker sheet ---- */
+/* ------------------------------------------------------------ files tab ---- */
+
+/* Folders left, files right — the one two-pane view in the app. The left column
+   is fixed because folder names are short and the file names are what need the
+   room; `minmax(0, 1fr)` so a long path can't push the pane wider than the band. */
+.two {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: var(--radius-lg);
+  align-items: start;
+}
+@media (max-width: 720px) {
+  .two { grid-template-columns: 1fr; }
+}
+
+/* Indent-by-depth alone draws the tree: `fileFolders` returns every folder after
+   its own ancestors, so there is no open/closed state to keep anywhere. */
+.tree { list-style: none; margin: 0; padding: 0; }
+.tree__row {
+  display: block;
+  width: 100%;
+  padding: 0.45rem 0.75rem;
+  text-align: left;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: inherit;
+  font-size: var(--text-meta);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tree__row:hover { background: rgba(7, 61, 68, 0.07); }
+.tree__row--on {
+  background: var(--color-surface-dark);
+  color: var(--color-text-inverse);
+  font-weight: var(--weight-bold);
+}
+
+.tools { display: flex; align-items: center; gap: var(--radius-lg); }
+.tools input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.5em 0.8em;
+  font-family: inherit;
+  font-size: var(--text-meta);
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--line-light);
+  border-radius: var(--radius-sm);
+}
+.tools input::placeholder { color: var(--color-text); opacity: 0.75; }
+
+/* The action bar: what the click will do on the left, why it might be refused on
+   the right. Same pairing the picker sheet used, kept on screen. */
+.bar {
+  display: flex;
+  align-items: center;
+  gap: var(--radius-lg);
+  margin-top: var(--radius-lg);
+}
+.bar .total { margin: 0 0 0 auto; }
+
+/* Where saved copies land — an answer on screen, replacing a card that answered
+   it in a toast that expired. */
+.saved {
+  display: flex;
+  align-items: center;
+  gap: var(--radius-lg);
+  flex-wrap: wrap;
+  margin-top: var(--space-block);
+  padding-top: var(--radius-lg);
+  border-top: 1px solid var(--line-light);
+  font-size: var(--text-meta);
+}
+.saved span { overflow-wrap: anywhere; }
+
+/* The file list is the tallest thing on this screen; cap it so the action bar
+   under it stays reachable without scrolling the whole band. */
+.two .files { max-height: 46vh; }
+
+/* --------------------------------------------------------- sheets + lists ---- */
 
 .sheet {
   position: fixed;
@@ -377,6 +509,9 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   box-shadow: var(--shadow-lift);
 }
 .panel h2 { font-size: var(--text-h3); margin-bottom: 0.35rem; }
+/* The panel is a flex column, which would otherwise stretch a link the width of
+   the sheet and make it read as a second primary button. */
+.panel > .btn--link { align-self: flex-start; margin-top: var(--radius-lg); }
 
 .files {
   list-style: none;

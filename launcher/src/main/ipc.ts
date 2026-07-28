@@ -25,6 +25,7 @@ import {
   boxListProjects,
   boxPlanImport,
   boxUpload,
+  withLastSaved,
 } from "./workspace";
 
 /**
@@ -183,7 +184,9 @@ export function registerIpc(homeWindow: () => BrowserWindow | undefined): void {
   routeViaBox(IPC.listProjects, async () => {
     const projects = await boxListProjects();
     homeHasItsProjects(); // still inside the gate — see `homeListedProjects`
-    return projects;
+    // The home screen shows each Project's last save. Host-side stat only, so it
+    // adds nothing to the time this holds the gate.
+    return withLastSaved(projects, exportRoot());
   });
   routeViaBox(IPC.createProject, (name: string) => boxCreateProject(name));
   routeViaBox(IPC.openSession, (slug: string) => openProjectSession(slug));

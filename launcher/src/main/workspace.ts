@@ -353,6 +353,26 @@ export async function boxExportDir(
 }
 
 /**
+ * When each Project was last saved onto this computer, read from the landing
+ * folder's own mtime. Purely host-side: no Box call, no new IPC channel, and the
+ * home screen gets one true thing to say about every Project at once.
+ *
+ * Per-Project try/catch because this is decoration, not an answer: a name that
+ * `resolveExportDir` refuses, or a folder that vanished mid-listing, must cost
+ * that row its subtitle and nothing else. The home screen already fails loudly
+ * when the Box can't be read; it must not fail at all over a mtime.
+ */
+export function withLastSaved(projects: readonly Project[], exportRoot: string): Project[] {
+  return projects.map((project) => {
+    try {
+      return { ...project, lastSaved: statSync(resolveExportDir(exportRoot, project, projects)).mtimeMs };
+    } catch {
+      return { ...project };
+    }
+  });
+}
+
+/**
  * One Project by slug, alongside the full listing it came from — `resolveExportDir`
  * needs the siblings to disambiguate two Projects whose friendly names collide.
  */
