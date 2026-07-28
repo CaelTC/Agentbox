@@ -185,9 +185,14 @@ function fileFolders(paths: readonly string[]): string[] {
       folders.add(prefix);
     }
   }
-  // Lexicographic order puts every folder after its own ancestors, which is
-  // what makes indent-by-depth alone enough to draw the tree.
-  return [...folders].sort();
+  // Sorted on the separator swapped for NUL, so that every folder is followed by
+  // its own descendants with no sibling wedged between them — which is what makes
+  // indent-by-depth alone enough to draw the tree. A plain sort() breaks that for
+  // any sibling name whose next character is below "/" (space, "-", ".", "+"):
+  // "docs-old" lands between "docs" and "docs/2024", and "2024" then draws one
+  // level under the wrong parent.
+  const order = (folder: string) => folder.replaceAll("/", "\u0000");
+  return [...folders].sort((a, b) => (order(a) < order(b) ? -1 : order(a) > order(b) ? 1 : 0));
 }
 
 /** A folder row holds everything UNDER it, however deep. "" is the whole Project. */
@@ -544,9 +549,11 @@ async function githubAccountLine(): Promise<Node[]> {
 }
 
 /**
- * One action, its plain-language consequence, and the click that does it. The
- * card is handed to its own handler because every one of these reaches the Box:
- * they run as operations, and an operation disables the control that started it.
+ * One action, its plain-language consequence, and the click that does it. A
+ * shape, not a promise about where the click goes: the home screen's tiles open
+ * a Project or a sheet and touch nothing, while the panel's cards reach the Box.
+ * The card is handed to its own handler for the latter — those run as operations,
+ * and an operation disables the control that started it.
  */
 function actionCard(
   title: string,

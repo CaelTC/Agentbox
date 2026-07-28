@@ -25,7 +25,6 @@ import {
   boxListProjects,
   boxPlanImport,
   boxUpload,
-  lastSavedAt,
   withLastSaved,
 } from "./workspace";
 
@@ -219,11 +218,7 @@ export function registerIpc(homeWindow: () => BrowserWindow | undefined): void {
     const dir = await boxExportDir(slug, exportRoot());
     if (!statSync(dir, { throwIfNoEntry: false })) return { dir, opened: false }; // nothing to show yet
     await shell.openPath(dir);
-    // The stamp, not the folder's mtime: opening the folder is the very thing
-    // that has Finder write a .DS_Store into it, so the old reading was bumped by
-    // this handler's own success (core/export.ts).
-    const lastSaved = lastSavedAt(dir);
-    return { dir, opened: true, ...(lastSaved === undefined ? {} : { lastSaved }) };
+    return { dir, opened: true };
   });
 
   // Import's trust boundary: the only folder that may ever cross into the Box

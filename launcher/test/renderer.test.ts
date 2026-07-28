@@ -389,6 +389,25 @@ describe("the Files tab's folder pane", () => {
     }
   });
 
+  // The pane draws depth alone, so a sibling wedged between a folder and its own
+  // children re-parents them on screen. A plain sort() does exactly that whenever
+  // the sibling's next character is below "/" — "-" here, but space, "." and "+"
+  // are the same bug and all of them are ordinary folder names.
+  it("keeps a folder's children directly under it, whatever the siblings are called", () => {
+    const { fileFolders } = renderer();
+    expect(fileFolders(["docs/2024/costs.csv", "docs-old/notes.md"])).toEqual([
+      "docs",
+      "docs/2024",
+      "docs-old",
+    ]);
+    expect(fileFolders(["a/b/deep.txt", "a b/flat.txt", "a.old/flat.txt"])).toEqual([
+      "a",
+      "a/b",
+      "a b",
+      "a.old",
+    ]);
+  });
+
   it("has no row for the Project root — that is All files, which matches everything", () => {
     const { fileFolders, inFolder } = renderer();
     expect(fileFolders(["notes.md"])).toEqual([]);

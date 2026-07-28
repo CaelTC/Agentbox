@@ -137,8 +137,6 @@ export interface SavedFolder {
   dir: string;
   /** False when the Project has never been saved, so there is nothing to open. */
   opened: boolean;
-  /** Epoch ms of the last save, absent if never saved. */
-  lastSaved?: number;
 }
 
 export const IPC = {

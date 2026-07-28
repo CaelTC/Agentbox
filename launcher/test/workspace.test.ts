@@ -274,6 +274,50 @@ describe("boxDeleteListing — the sheet between a click and permanent loss", ()
   });
 });
 
+/**
+ * The stamp is younger than the feature, so the folders of everyone who Exported
+ * before it existed hold copies no stamp accounts for. Left alone, the delete
+ * sheet would tell those users "once it's deleted, it's gone" over files sitting
+ * on their disk — the one sentence in the app that has to be true.
+ */
+describe("lastSavedAt — the one-time backfill for Exports older than the stamp", () => {
+  let dir: string;
+  const anHourAgo = new Date(Date.now() - 3_600_000);
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "claudebox-stamp-"));
+  });
+
+  it("stamps a folder an earlier build Exported into, from the folder's own mtime", () => {
+    writeFileSync(join(dir, "notes.md"), "hello");
+    utimesSync(dir, anHourAgo, anHourAgo);
+
+    expect(lastSavedAt(dir)).toBeCloseTo(anHourAgo.getTime(), -1);
+  });
+
+  // The whole point of the stamp is that the folder's mtime drifts. Reading it
+  // once is the deal; reading it again after Finder has been in there is not.
+  it("freezes that reading, so the drift cannot creep back in afterwards", () => {
+    writeFileSync(join(dir, "notes.md"), "hello");
+    utimesSync(dir, anHourAgo, anHourAgo);
+    const backfilled = lastSavedAt(dir);
+
+    writeFileSync(join(dir, ".DS_Store"), "finder");
+
+    expect(lastSavedAt(dir)).toBe(backfilled);
+  });
+
+  it("leaves a folder only Finder ever touched unstamped", () => {
+    writeFileSync(join(dir, ".DS_Store"), "finder");
+
+    expect(lastSavedAt(dir)).toBeUndefined();
+    expect(statSync(join(dir, SAVED_STAMP), { throwIfNoEntry: false })).toBeUndefined();
+  });
+
+  it("is undefined rather than a throw when the folder cannot be read", () => {
+    expect(lastSavedAt(join(dir, "never-exported"))).toBeUndefined();
+  });
+});
+
 describe("boxExport — `saved: N` is a promise about files on the disk", () => {
   let root: string;
   beforeEach(() => {

@@ -5,6 +5,7 @@ import {
   mkdirSync,
   readdirSync,
   statSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
@@ -196,9 +197,39 @@ export async function boxDeleteListing(
  * for a folder nothing has been saved into: on the delete sheet it is the
  * difference between "your copies stay where they are" and "once it's deleted,
  * it's gone", and that sentence has to be true rather than reassuring.
+ *
+ * A landing folder written before the stamp existed gets one backfill, so that
+ * sentence stays true for Exports an earlier build made: a folder holding a
+ * non-dotfile demonstrably received an Export, and the folder's mtime is the only
+ * record left of when. It is consulted ONCE and then frozen into the stamp — the
+ * Finder drift the stamp exists to remove cannot creep back in afterwards. The
+ * dotfile exclusion is what keeps the promise honest: no dotfile is exportable
+ * (core/export.ts), so a folder holding only a `.DS_Store` is one Finder opened
+ * and nothing ever saved into.
+ *
+ * Every failure here is `undefined`. This is decoration on the home screen and a
+ * softer sentence on the delete sheet; a landing folder the host will not let us
+ * read must not take either screen down with it.
  */
 export function lastSavedAt(exportDir: string): number | undefined {
-  return statSync(join(exportDir, SAVED_STAMP), { throwIfNoEntry: false })?.mtimeMs;
+  const stamp = join(exportDir, SAVED_STAMP);
+  try {
+    const stamped = statSync(stamp, { throwIfNoEntry: false });
+    if (stamped) return stamped.mtimeMs;
+
+    const folder = statSync(exportDir, { throwIfNoEntry: false });
+    if (!folder) return undefined;
+    const exported = readdirSync(exportDir, { withFileTypes: true }).some(
+      (entry) => entry.isFile() && !entry.name.startsWith("."),
+    );
+    if (!exported) return undefined;
+
+    writeFileSync(stamp, `${new Date(folder.mtimeMs).toISOString()}\n`);
+    utimesSync(stamp, folder.atime, folder.mtime);
+    return folder.mtimeMs;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -370,8 +401,9 @@ export async function boxExportDir(
  *
  * Never saved is the ORDINARY case and is not an exception: `lastSavedAt` reports
  * it as `undefined`, so the common path no longer throws once per Project per
- * render. The try/catch that remains is for the two calls that genuinely can
- * fail — a friendly name `resolveExportDir` refuses, an unreadable Export root —
+ * render, and neither can an unreadable landing folder. The try/catch that
+ * remains is for the one call that genuinely throws — a friendly name that
+ * `resolveExportDir` refuses —
  * because this is decoration, not an answer. The home screen already fails loudly
  * when the Box can't be read; it must not fail at all over a timestamp.
  */
