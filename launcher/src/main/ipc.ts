@@ -184,8 +184,10 @@ export function registerIpc(homeWindow: () => BrowserWindow | undefined): void {
   routeViaBox(IPC.listProjects, async () => {
     const projects = await boxListProjects();
     homeHasItsProjects(); // still inside the gate — see `homeListedProjects`
-    // The home screen shows each Project's last save. Host-side stat only, so it
-    // adds nothing to the time this holds the gate.
+    // The home screen shows each Project's last save. Host-side filesystem work
+    // only — no Box call — plus, on the first render after upgrade, one stamp
+    // write per landing folder an earlier build Exported into. Bounded: once per
+    // folder, ever, and stamped folders are a single stat from then on.
     return withLastSaved(projects, exportRoot());
   });
   routeViaBox(IPC.createProject, (name: string) => boxCreateProject(name));

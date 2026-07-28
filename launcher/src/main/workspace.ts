@@ -4,6 +4,7 @@ import {
   lstatSync,
   mkdirSync,
   readdirSync,
+  rmSync,
   statSync,
   utimesSync,
   writeFileSync,
@@ -207,9 +208,15 @@ export async function boxDeleteListing(
  * (core/export.ts), so a folder holding only a `.DS_Store` is one Finder opened
  * and nothing ever saved into.
  *
- * Every failure here is `undefined`. This is decoration on the home screen and a
- * softer sentence on the delete sheet; a landing folder the host will not let us
- * read must not take either screen down with it.
+ * Writing that stamp is best-effort, the ANSWER is not: an Export has already
+ * been proven to have landed by the time the write is attempted, so a landing
+ * folder the host will not let us write into still reports when it was saved —
+ * it just pays for the walk again next time. A stamp that was created but could
+ * not be dated is removed rather than left reading `now`, which is the drift.
+ *
+ * Every failure to READ here is `undefined`. This is decoration on the home
+ * screen and a softer sentence on the delete sheet; a landing folder the host
+ * will not let us read must not take either screen down with it.
  */
 export function lastSavedAt(exportDir: string): number | undefined {
   const stamp = join(exportDir, SAVED_STAMP);
@@ -218,18 +225,38 @@ export function lastSavedAt(exportDir: string): number | undefined {
     if (stamped) return stamped.mtimeMs;
 
     const folder = statSync(exportDir, { throwIfNoEntry: false });
-    if (!folder) return undefined;
-    const exported = readdirSync(exportDir, { withFileTypes: true }).some(
-      (entry) => entry.isFile() && !entry.name.startsWith("."),
-    );
-    if (!exported) return undefined;
+    if (!folder || !holdsAnExportedFile(exportDir)) return undefined;
 
-    writeFileSync(stamp, `${new Date(folder.mtimeMs).toISOString()}\n`);
-    utimesSync(stamp, folder.atime, folder.mtime);
+    try {
+      writeFileSync(stamp, `${new Date(folder.mtimeMs).toISOString()}\n`);
+      utimesSync(stamp, folder.atime, folder.mtime);
+    } catch {
+      try {
+        rmSync(stamp, { force: true });
+      } catch {
+        // Neither datable nor removable: the answer below is still the true one.
+      }
+    }
     return folder.mtimeMs;
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Is there anything in this landing folder that only an Export could have put
+ * there? `boxExport` keeps the Project's own directory structure, so a Project
+ * whose files all lived under `docs/` lands as directories with the files a level
+ * down — the evidence is at any depth, not just the top. Stops at the FIRST one:
+ * this is a yes/no question asked inside the Box Gate, not an inventory.
+ */
+function holdsAnExportedFile(dir: string): boolean {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name.startsWith(".")) continue; // no dotfile is exportable
+    if (entry.isFile()) return true;
+    if (entry.isDirectory() && holdsAnExportedFile(join(dir, entry.name))) return true;
+  }
+  return false;
 }
 
 /**

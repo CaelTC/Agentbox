@@ -662,6 +662,8 @@ async function openProject(project: Project): Promise<void> {
       done: (listing) => {
         if (showing === startedAt) select(filesTab, filesPanel(project, listing, loadFiles));
       },
+      // Required by `Operation`, and unreachable here: `run` catches its own
+      // failure above, so the promise this hands over never rejects.
       failed: cantRead,
     });
   };

@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -304,6 +304,31 @@ describe("lastSavedAt — the one-time backfill for Exports older than the stamp
     writeFileSync(join(dir, ".DS_Store"), "finder");
 
     expect(lastSavedAt(dir)).toBe(backfilled);
+  });
+
+  // Export keeps the Project's own directory structure, so a landing folder can
+  // legitimately hold nothing but directories — the users this backfill exists for.
+  it("finds the Exported copies when they landed inside a subfolder", () => {
+    mkdirSync(join(dir, "docs", "2024"), { recursive: true });
+    writeFileSync(join(dir, "docs", "2024", "report.md"), "hello");
+    utimesSync(dir, anHourAgo, anHourAgo);
+
+    expect(lastSavedAt(dir)).toBeCloseTo(anHourAgo.getTime(), -1);
+  });
+
+  // The answer is proven before the stamp is attempted, so it survives a folder
+  // the host will not let us write into — the delete sheet's sentence stays true.
+  it("still reports the save when the stamp cannot be written", () => {
+    writeFileSync(join(dir, "notes.md"), "hello");
+    utimesSync(dir, anHourAgo, anHourAgo);
+    chmodSync(dir, 0o500);
+
+    try {
+      expect(lastSavedAt(dir)).toBeCloseTo(anHourAgo.getTime(), -1);
+      expect(statSync(join(dir, SAVED_STAMP), { throwIfNoEntry: false })).toBeUndefined();
+    } finally {
+      chmodSync(dir, 0o700);
+    }
   });
 
   it("leaves a folder only Finder ever touched unstamped", () => {
