@@ -1,4 +1,4 @@
-import type { DeleteListing, DeleteResult } from "../core/delete";
+import type { DeleteListing, DeleteResult, FileDeleteResult } from "../core/delete";
 import type { ExportListing, ExportResult } from "../core/export";
 import type { PublishResult } from "../core/github";
 import type { ImportListing } from "../core/import";
@@ -89,6 +89,17 @@ export interface ClaudeboxApi {
    * `saveToComputer` re-validates its selection.
    */
   deleteProject(slug: string, typed: string): Promise<DeleteResult>;
+  /**
+   * Delete files and folders inside a Project, permanently. `paths` are
+   * Project-relative, from the same listing `listExportFiles` produced; `typed`
+   * is the folder's name when one folder is going, and is unused otherwise.
+   *
+   * The trusted layer re-enumerates the Project and re-checks both the paths and
+   * the typed name before an `rm` runs — this bridge carries a request, never a
+   * decision. The Box's own console has no counterpart to this and gains none:
+   * the Launcher is the only interface in Claudebox that can delete a file.
+   */
+  deleteFiles(slug: string, paths: string[], typed?: string): Promise<FileDeleteResult>;
 
   /**
    * Resolves once the Engine + Box are up so the home screen can safely query
@@ -158,6 +169,7 @@ export const IPC = {
   updateBox: "box:update",
   planDelete: "delete:plan",
   deleteProject: "delete:project",
+  deleteFiles: "delete:files",
   bootstrap: "app:bootstrap",
 } as const;
 

@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  assertDeletableProjectFilePath,
   assertDeletableProjectPath,
   confirmsProjectName,
+  folderName,
   parseProjectUsage,
+  planFileDelete,
 } from "../src/core/delete";
 
 describe("assertDeletableProjectPath", () => {
@@ -32,6 +35,129 @@ describe("assertDeletableProjectPath", () => {
     // The Launcher runs on Windows too (ADR 0004); the path it deletes is inside
     // the Box either way, so it must never pick up a host path separator.
     expect(assertDeletableProjectPath("/workspace", "my-site")).not.toContain("\\");
+  });
+});
+
+/**
+ * The trust boundary of deleting files. `relPath` arrives from the renderer, and
+ * everything this returns is handed to a root `rm -rf` inside the Box — so the
+ * question every case below asks is the same one: can a string get out of the
+ * Project directory, or become the Project directory itself?
+ */
+describe("assertDeletableProjectFilePath", () => {
+  const dir = "/workspace/my-site";
+
+  it("builds the file's path under the Project", () => {
+    expect(assertDeletableProjectFilePath(dir, "notes.md")).toBe("/workspace/my-site/notes.md");
+    expect(assertDeletableProjectFilePath(dir, "data/2024/q1.csv")).toBe(
+      "/workspace/my-site/data/2024/q1.csv",
+    );
+  });
+
+  it("refuses a traversal rather than resolving it", () => {
+    // The reason this is concatenation and not node:path: `normalize()` would
+    // turn each of these into a real path OUTSIDE the Project and hand it over.
+    for (const escape of [
+      "..",
+      "../other-project",
+      "../../etc/passwd",
+      "data/../../other-project",
+      "data/../..",
+      "a/./../../b",
+    ]) {
+      expect(() => assertDeletableProjectFilePath(dir, escape)).toThrow(/Refusing to delete/);
+    }
+  });
+
+  it("refuses an absolute path — the one that ignores the Project entirely", () => {
+    expect(() => assertDeletableProjectFilePath(dir, "/etc/passwd")).toThrow(/Refusing to delete/);
+    expect(() => assertDeletableProjectFilePath(dir, "/workspace")).toThrow(/Refusing to delete/);
+    expect(() => assertDeletableProjectFilePath(dir, "/")).toThrow(/Refusing to delete/);
+  });
+
+  it("can never be handed the Project directory itself — that has its own delete", () => {
+    expect(() => assertDeletableProjectFilePath(dir, "")).toThrow(/Refusing to delete/);
+    expect(() => assertDeletableProjectFilePath(dir, ".")).toThrow(/Refusing to delete/);
+    expect(() => assertDeletableProjectFilePath(dir, "./")).toThrow(/Refusing to delete/);
+  });
+
+  it("refuses empty and doubled separators, which are a Project path in disguise", () => {
+    expect(() => assertDeletableProjectFilePath(dir, "data//../..")).toThrow(/Refusing to delete/);
+    expect(() => assertDeletableProjectFilePath(dir, "data/")).toThrow(/Refusing to delete/);
+  });
+
+  it("refuses anything hidden, which is what keeps .git and the marker undeletable", () => {
+    expect(() => assertDeletableProjectFilePath(dir, ".git")).toThrow(/hidden/);
+    expect(() => assertDeletableProjectFilePath(dir, ".git/config")).toThrow(/hidden/);
+    expect(() => assertDeletableProjectFilePath(dir, ".claudebox/project.json")).toThrow(/hidden/);
+    expect(() => assertDeletableProjectFilePath(dir, "src/.env")).toThrow(/hidden/);
+  });
+
+  it("stays a POSIX Box path on a Windows host (node:path would make it C:\\workspace)", () => {
+    expect(assertDeletableProjectFilePath(dir, "data/costs.csv")).not.toContain("\\");
+  });
+
+  // Not sanitised, deliberately: `sh()` passes every path as a positional
+  // argument, so it never meets the script text. What must hold is only that a
+  // shell-ish name is contained — it is a legal filename, and refusing it would
+  // leave a file no one can delete.
+  it("keeps a shell-looking filename inside the Project", () => {
+    expect(assertDeletableProjectFilePath(dir, "$(whoami).txt")).toBe(
+      "/workspace/my-site/$(whoami).txt",
+    );
+    expect(assertDeletableProjectFilePath(dir, "a; rm -rf ~")).toBe("/workspace/my-site/a; rm -rf ~");
+    expect(assertDeletableProjectFilePath(dir, "notes*.md")).toBe("/workspace/my-site/notes*.md");
+  });
+});
+
+/**
+ * The other half of the boundary: what the renderer ticked has to be something
+ * the Box just listed. Membership is what makes an invented path unusable even
+ * before containment is checked.
+ */
+describe("planFileDelete", () => {
+  const files = [
+    { path: "notes.md", size: 1_000, exportable: true },
+    { path: "data/costs.csv", size: 2_000, exportable: true },
+    { path: "data/2024/q1.csv", size: 4_000, exportable: true },
+    { path: "data-old/costs.csv", size: 8_000, exportable: true },
+  ];
+
+  it("takes a listed file as itself", () => {
+    const plan = planFileDelete(files, ["notes.md"]);
+    expect(plan.targets).toEqual([{ path: "notes.md", folder: false, fileCount: 1, totalBytes: 1_000 }]);
+    expect(plan.refused).toEqual([]);
+    expect(plan).toMatchObject({ fileCount: 1, totalBytes: 1_000 });
+  });
+
+  it("takes a folder as everything under it, and nothing beside it", () => {
+    const plan = planFileDelete(files, ["data"]);
+    expect(plan.targets).toEqual([{ path: "data", folder: true, fileCount: 2, totalBytes: 6_000 }]);
+    expect(plan.fileCount).toBe(2); // data-old/ is a sibling, not a child
+  });
+
+  it("refuses a path the Box's listing doesn't have, and names it", () => {
+    const plan = planFileDelete(files, ["gone.md", "notes.md"]);
+    expect(plan.targets.map((t) => t.path)).toEqual(["notes.md"]);
+    expect(plan.refused).toEqual([{ path: "gone.md", reason: "It isn't in this project any more." }]);
+  });
+
+  // The pruned listing is the whole defence: `.git` is not in it, so no ticking
+  // can produce a target under it — no second rule needed here.
+  it("cannot produce a target the listing pruned", () => {
+    expect(planFileDelete(files, [".git", ".git/config", "node_modules"]).targets).toEqual([]);
+    expect(planFileDelete(files, ["..", "/etc/passwd"]).targets).toEqual([]);
+  });
+
+  it("counts a path ticked twice once", () => {
+    expect(planFileDelete(files, ["notes.md", "notes.md"]).fileCount).toBe(1);
+  });
+});
+
+describe("folderName", () => {
+  it("is the last segment — the string the confirmation asks for", () => {
+    expect(folderName("data/2024")).toBe("2024");
+    expect(folderName("data")).toBe("data");
   });
 });
 

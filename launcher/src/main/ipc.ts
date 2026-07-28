@@ -16,6 +16,7 @@ import { updateClaudebox } from "./refresh-runner";
 import { ensureBoxReady, openProjectSession } from "./session";
 import {
   boxCreateProject,
+  boxDeleteFiles,
   boxDeleteListing,
   boxDeleteProject,
   boxExport,
@@ -257,4 +258,14 @@ export function registerIpc(homeWindow: () => BrowserWindow | undefined): void {
 
   routeViaBox(IPC.planDelete, (slug: string) => boxDeleteListing(slug, exportRoot()));
   routeViaBox(IPC.deleteProject, (slug: string, typed: string) => boxDeleteProject(slug, typed));
+
+  // Deleting files inside a Project. `paths` and `typed` are both the renderer's
+  // input rather than truth: boxDeleteFiles re-enumerates the Project inside the
+  // Box, refuses any path that listing doesn't hold or that could leave the
+  // Project directory, and re-checks the typed folder name — before an `rm`
+  // runs. Pinned by this arrow, so no fourth argument from the renderer can ever
+  // reach the injected `BoxExec`.
+  routeViaBox(IPC.deleteFiles, (slug: string, paths: string[], typed?: string) =>
+    boxDeleteFiles(slug, paths, typed),
+  );
 }

@@ -26,6 +26,7 @@ const api: ClaudeboxApi = {
   updateBox: () => ipcRenderer.invoke(IPC.updateBox),
   planDelete: (slug) => ipcRenderer.invoke(IPC.planDelete, slug),
   deleteProject: (slug, typed) => ipcRenderer.invoke(IPC.deleteProject, slug, typed),
+  deleteFiles: (slug, paths, typed) => ipcRenderer.invoke(IPC.deleteFiles, slug, paths, typed),
   onBootstrap: (listener) =>
     ipcRenderer.on(IPC.bootstrap, (_e, result) => listener(result)),
 };

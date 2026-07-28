@@ -127,6 +127,37 @@ describe("boxGate", () => {
     expect(await boxGate(() => "after")).toBe("after");
   });
 
+  /**
+   * The gate's worst failure mode, and the only one with no recovery: a target
+   * that takes the gate from inside itself waits for itself forever, and takes
+   * every Box channel in the Launcher down with it for the life of the process.
+   * No caller reaches it that way today — this is what keeps that true.
+   */
+  it("refuses a re-entrant take instead of deadlocking on it", async () => {
+    await expect(boxGate(() => boxGate(() => "inner"))).rejects.toThrow("re-entered");
+    await expect(
+      boxGate(async () => {
+        await Promise.resolve(); // the store survives an await, not just the first tick
+        return boxGate(() => "inner");
+      }),
+    ).rejects.toThrow("re-entered");
+
+    expect(await boxGate(() => "after")).toBe("after"); // and the queue still runs
+  });
+
+  // The case a boolean flag would confuse with the one above: a second caller
+  // arriving while the first holds the gate is the ORDINARY case, and queues.
+  it("still queues a call made from outside while the gate is held", async () => {
+    const held = deferred<string>();
+    const first = boxGate(() => held.promise);
+    const second = boxGate(() => "second");
+    await settle();
+
+    held.resolve("first");
+    expect(await first).toBe("first");
+    expect(await second).toBe("second");
+  });
+
   it("survives a synchronous throw the same way", async () => {
     await expect(
       boxGate(() => {

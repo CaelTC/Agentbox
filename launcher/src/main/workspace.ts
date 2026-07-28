@@ -35,11 +35,15 @@ import {
   type ImportListing,
 } from "../core/import";
 import {
+  assertDeletableProjectFilePath,
   assertDeletableProjectPath,
   confirmsProjectName,
+  folderName,
   parseProjectUsage,
+  planFileDelete,
   type DeleteListing,
   type DeleteResult,
+  type FileDeleteResult,
 } from "../core/delete";
 import { killSessionArgs } from "../core/session-window";
 import type { Project, ProjectMeta } from "../core/projects";
@@ -319,6 +323,113 @@ export async function boxDeleteProject(
   }
 
   return { slug, name, sessionKilled: killed.code === 0 };
+}
+
+/**
+ * Delete files and folders INSIDE a Project, permanently (core/delete.ts says
+ * why there is no trash here either).
+ *
+ * `pick` arrives from the renderer, so — like `boxExport`'s selection and
+ * `boxDeleteProject`'s typed name — it is input rather than truth. It is checked
+ * twice before anything is removed, and the two checks answer different
+ * questions:
+ *
+ *   1. `planFileDelete` re-enumerates the Project INSIDE the Box and honours a
+ *      path only if that fresh listing has it. The listing prunes dotfiles and
+ *      `node_modules`, so `.git` and the Project's own marker are unreachable
+ *      through it by construction rather than by a rule someone has to keep.
+ *   2. `assertDeletableProjectFilePath` refuses anything that could leave the
+ *      Project directory, on the string itself. Check 1 already makes a
+ *      traversal unmatchable; this is the one that stands between a renderer
+ *      that stops behaving and a root `rm -rf`, and it is deliberately not
+ *      reasoning about what check 1 happens to allow today.
+ *
+ * `typed` is the folder gate. A folder takes everything under it, so it earns
+ * the same type-the-name confirmation a whole Project does, re-checked HERE and
+ * not merely in the sheet. It is not a security boundary — a renderer could tick
+ * the folder's files individually and get the same bytes removed — it is what
+ * makes one click on a folder an intention rather than a slip, and the trusted
+ * layer keeps it so that a stale sheet cannot satisfy it either.
+ *
+ * Root, for the same reason `boxDeleteProject` is: `docker cp` synthesises
+ * parent directories as root, so an imported Project holds directories the
+ * sandbox user cannot unlink.
+ *
+ * Failure is REPORTED, not thrown. One `rm -rf` covers every target, and what
+ * actually went is then read back from the Box rather than inferred from an exit
+ * code — `rm -rf` exits 0 over plenty it never touched, and non-zero while
+ * having removed most of what it was given. A delete that half-worked is a real
+ * outcome and the screen has to be able to say which half.
+ */
+export async function boxDeleteFiles(
+  slug: string,
+  pick: readonly string[],
+  typed?: string,
+  box: BoxExec = boxExec,
+): Promise<FileDeleteResult> {
+  // Required, never defaulted: a caller that forgets the selection must delete
+  // nothing. The same guard `boxExport` keeps, and here it guards an `rm -rf`.
+  if (!Array.isArray(pick) || pick.length === 0) throw new Error("Nothing was chosen to delete.");
+
+  const dir = projectPath(slug);
+  const plan = planFileDelete(await boxListProjectFiles(slug, box), pick);
+
+  const folders = plan.targets.filter((t) => t.folder);
+  if (folders.length > 0) {
+    // One at a time, so the name that was typed is unambiguously the one that
+    // was checked. The Files tab only ever offers one folder anyway.
+    if (plan.targets.length !== 1) {
+      throw new Error("Delete a folder on its own, not alongside other files.");
+    }
+    if (!confirmsProjectName(typed ?? "", folderName(folders[0]!.path))) {
+      throw new Error("That isn't the name of this folder, so nothing was deleted.");
+    }
+  }
+
+  const failed = [...plan.refused];
+  if (plan.targets.length === 0) return { deleted: [], fileCount: 0, totalBytes: 0, failed };
+
+  const paths = plan.targets.map((t) => assertDeletableProjectFilePath(dir, t.path));
+
+  let refusal: string | undefined;
+  try {
+    await box.execAsRoot(["rm", "-rf", ...paths], `Deleting files in '${slug}'`);
+  } catch (err) {
+    // Not the answer, just the best explanation available for whatever the
+    // read-back below finds still sitting there.
+    refusal = err instanceof Error ? err.message : String(err);
+  }
+
+  // What is GONE is read back rather than assumed — one exec for the whole set,
+  // because the Box Gate is held for all of it and a per-target probe over a
+  // 200-file selection is 200 round trips inside that hold. `if` rather than
+  // `&&` so a last path that no longer exists doesn't fail the whole loop.
+  const survivors = new Set(
+    (
+      await box.exec(
+        sh('for p in "$@"; do if [ -e "$p" ]; then printf "%s\\n" "$p"; fi; done', ...paths),
+        `Checking what was deleted from '${slug}'`,
+      )
+    )
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean),
+  );
+
+  const deleted: string[] = [];
+  let fileCount = 0;
+  let totalBytes = 0;
+  for (const [index, target] of plan.targets.entries()) {
+    if (survivors.has(paths[index]!)) {
+      failed.push({ path: target.path, reason: refusal ?? "The sandbox wouldn't remove it." });
+      continue;
+    }
+    deleted.push(target.path);
+    fileCount += target.fileCount;
+    totalBytes += target.totalBytes;
+  }
+
+  return { deleted, fileCount, totalBytes, failed };
 }
 
 /**
