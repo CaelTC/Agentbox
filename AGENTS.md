@@ -45,11 +45,23 @@ what may open before the gate, why a value is host-side). Either keep the
 invariant or update the comment to the new one. Silently breaking one is how the
 next reader gets it wrong.
 
-## Known-failing test
+## Tests that spawn real processes
 
-`test/exec.test.ts > run's deadline` fails on a clean tree on this machine — it
-asserts wall-clock elapsed time and loses that race. Confirm any suspected new
-failure by stashing before you chase it.
+`test/exec.test.ts > run's deadline` spawns real children, and two costs it has
+to clear are invisible in the source:
+
+- **Resolution.** `run` hands the child a PATH `spawnPath` has just made longer,
+  and the child scans it. ~45 entries cost ~180ms before `/bin/sh` is reached,
+  against ~6ms for the absolute path — so spawn `/bin/sh`, never `sh`.
+- **Startup.** Getting a process to its first line is single-digit ms idle and
+  hundreds under the parallel suite. A deadline shorter than that signals a
+  child that has not run yet, so assert the child reached the state under test
+  (it says so on stdout) rather than assuming a short deadline let it.
+
+Together these made that case look like an unwinnable wall-clock race, and hid a
+real defect underneath: the deadline signalled only the direct child, so a
+grandchild kept the stdout pipe — and `close`, and the promise — open. See the
+`killGroup` comment in `src/main/exec.ts`.
 
 ## Maintaining this file
 

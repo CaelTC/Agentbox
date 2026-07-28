@@ -69,15 +69,42 @@ export function run(
   timeoutMs?: number,
 ): Promise<RunResult> {
   return new Promise((resolve, reject) => {
+    // `detached` gives the child a process GROUP of its own, which is what the
+    // deadline below signals. See `killGroup`.
+    const group = process.platform !== "win32";
     const child = spawn(command, args, {
       stdio: ["ignore", "pipe", "pipe"],
       env: { ...process.env, ...env, PATH: spawnPath() },
+      detached: group,
     });
     let stdout = "";
     let stderr = "";
     let timedOut = false;
     child.stdout.on("data", (d) => (stdout += String(d)));
     child.stderr.on("data", (d) => (stderr += String(d)));
+
+    /**
+     * The GROUP, not the child. This promise resolves on 'close', which waits
+     * for the stdout/stderr pipes — and a child leaves those pipes to ITS
+     * children: `docker exec` runs a shell, that shell runs the command, and
+     * every one of them inherits the write end. Signal the direct child alone
+     * and the grandchild lives on holding the pipe, so 'close' never arrives
+     * and the deadline fails at the only thing it exists to guarantee — a
+     * hung exec still taking the single-file Box Gate down for the life of the
+     * Launcher. Measured: 9019ms to settle a 150ms deadline, versus 165ms once
+     * the group is signalled.
+     *
+     * Windows has no process groups to signal and `kill` there already ends the
+     * process, so it takes the direct-child path.
+     */
+    const killGroup = (signal: NodeJS.Signals) => {
+      try {
+        if (group && child.pid) process.kill(-child.pid, signal);
+        else child.kill(signal);
+      } catch {
+        // Already gone — the race this loses is the one we wanted.
+      }
+    };
 
     // SIGKILL after the grace because SIGTERM is ignorable and the whole point
     // here is that 'close' — and so this promise — is guaranteed to arrive.
@@ -87,8 +114,8 @@ export function run(
         ? undefined
         : setTimeout(() => {
             timedOut = true;
-            child.kill("SIGTERM");
-            kill = setTimeout(() => child.kill("SIGKILL"), KILL_GRACE_MS);
+            killGroup("SIGTERM");
+            kill = setTimeout(() => killGroup("SIGKILL"), KILL_GRACE_MS);
           }, timeoutMs);
     const done = () => (clearTimeout(deadline), clearTimeout(kill));
 
