@@ -57,7 +57,7 @@ function renderer() {
   const build = new Function(
     "document",
     "setTimeout",
-    `${js}\nreturn { el, fail, flash, openSheet, runOperation, fileFolders, inFolder, matchesFilter, selectionTotal };`,
+    `${js}\nreturn { el, fail, flash, openSheet, runOperation, fileFolders, inFolder, matchesFilter, selectionTotal, carriedSelection };`,
   );
   return { document, ...build(document, () => undefined) } as {
     document: ReturnType<typeof fakeDocument>;
@@ -74,6 +74,10 @@ function renderer() {
       selected: ReadonlySet<string>,
       capBytes: number,
     ) => { count: number; bytes: number; over: boolean };
+    carriedSelection: (
+      files: readonly { path: string; exportable: boolean }[],
+      prior?: { selected: ReadonlySet<string>; known: ReadonlySet<string> },
+    ) => Set<string>;
   };
 }
 
@@ -454,6 +458,39 @@ describe("the Files tab's filter and total", () => {
     // Exactly at the cap is allowed: core/export.ts refuses above it, not at it.
     expect(selectionTotal(files, new Set(files.map((f) => f.path)), 7_000).over).toBe(false);
     expect(selectionTotal(files, new Set(["gone.txt"]), 10_000)).toEqual({ count: 0, bytes: 0, over: false });
+  });
+
+  it("ticks everything exportable on a first open or a Refresh", () => {
+    const { carriedSelection } = renderer();
+    const files = [
+      { path: "notes.md", exportable: true },
+      { path: "run.sh", exportable: false },
+    ];
+    expect([...carriedSelection(files)]).toEqual(["notes.md"]);
+  });
+
+  // The whole point of the carry: adding one file to a narrowed selection must
+  // not re-tick the files the Sandbox User deliberately excluded.
+  it("carries the earlier ticks across an Add, and ticks only what is new", () => {
+    const { carriedSelection } = renderer();
+    const files = [
+      { path: "keep.md", exportable: true },
+      { path: "dropped.md", exportable: true },
+      { path: "added.md", exportable: true },
+      { path: "added.sh", exportable: false },
+    ];
+    const prior = {
+      selected: new Set(["keep.md"]),
+      known: new Set(["keep.md", "dropped.md"]),
+    };
+    expect([...carriedSelection(files, prior)].sort()).toEqual(["added.md", "keep.md"]);
+  });
+
+  // A path that was ticked and has since gone simply isn't there to tick.
+  it("drops carried ticks for files that are no longer listed", () => {
+    const { carriedSelection } = renderer();
+    const prior = { selected: new Set(["gone.md"]), known: new Set(["gone.md"]) };
+    expect([...carriedSelection([{ path: "here.md", exportable: true }], prior)]).toEqual(["here.md"]);
   });
 });
 

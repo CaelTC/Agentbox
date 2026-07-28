@@ -247,9 +247,20 @@ export function lastSavedAt(exportDir: string): number | undefined {
  * whose files all lived under `docs/` lands as directories with the files a level
  * down — the evidence is at any depth, not just the top. Stops at the FIRST one:
  * this is a yes/no question asked inside the Box Gate, not an inventory.
+ *
+ * A directory the host will not let us read is "no evidence HERE", not "no
+ * evidence": one unreadable subfolder must not bury a real Export sitting beside
+ * it, or the delete sheet goes back to "once it's deleted, it's gone" over copies
+ * that are on disk — the sentence this whole backfill exists to keep true.
  */
 function holdsAnExportedFile(dir: string): boolean {
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+  let entries;
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return false;
+  }
+  for (const entry of entries) {
     if (entry.name.startsWith(".")) continue; // no dotfile is exportable
     if (entry.isFile()) return true;
     if (entry.isDirectory() && holdsAnExportedFile(join(dir, entry.name))) return true;
@@ -532,7 +543,12 @@ export async function boxExport(
       try {
         writeFileSync(join(dir, SAVED_STAMP), `${new Date().toISOString()}\n`);
       } catch {
-        // Undated on disk; `lastSavedAt` backfills it from the folder next time.
+        // What survives depends on whether this Project had ever been saved
+        // before: a MISSING stamp is backfilled from the folder next time, but an
+        // EXISTING one keeps the earlier Export's date, because `lastSavedAt`
+        // returns on the stamp it finds and never reaches the backfill. So a
+        // second Export whose stamp write fails reports the first one's date
+        // until a later Export writes the stamp successfully.
       }
     }
   }

@@ -221,6 +221,27 @@ function selectionTotal(
   return { count: picked.length, bytes, over: bytes > capBytes };
 }
 
+/**
+ * What stays ticked when the Files tab is rebuilt. "Add files…" is an addition,
+ * not a reset: someone who narrowed 200 files down to three and then added a
+ * document has to end up with four ticked, not 201 — a click that copies out the
+ * 198 they deliberately excluded. So the earlier ticks carry across, and any path
+ * the earlier listing did not have — the files just added — starts ticked, the
+ * same way it would on a first open.
+ *
+ * No `prior` is a first open or a Refresh: everything exportable starts ticked,
+ * so "save all of it" is one click, and on Refresh the reset is what the word
+ * implies.
+ */
+function carriedSelection(
+  files: readonly { path: string; exportable: boolean }[],
+  prior?: { selected: ReadonlySet<string>; known: ReadonlySet<string> },
+): Set<string> {
+  const keeps = (path: string): boolean =>
+    !prior || prior.selected.has(path) || !prior.known.has(path);
+  return new Set(files.filter((f) => f.exportable && keeps(f.path)).map((f) => f.path));
+}
+
 // --- end of the renderer's machinery -----------------------------------------
 
 /**
@@ -650,7 +671,7 @@ async function openProject(project: Project): Promise<void> {
   // it opens a host picker that owes the listing nothing. The sentence is the
   // same one either way — `fail` composes every failure in this file.
   const cantRead = `Couldn't read the files in ${project.name}`;
-  const loadFiles = (button: HTMLButtonElement): void => {
+  const loadFiles = (button: HTMLButtonElement, prior?: PriorTicks): void => {
     const startedAt = showing;
     void runOperation({
       button,
@@ -660,7 +681,7 @@ async function openProject(project: Project): Promise<void> {
           return undefined;
         }),
       done: (listing) => {
-        if (showing === startedAt) select(filesTab, filesPanel(project, listing, loadFiles));
+        if (showing === startedAt) select(filesTab, filesPanel(project, listing, loadFiles, prior));
       },
       // Required by `Operation`, and unreachable here: `run` catches its own
       // failure above, so the promise this hands over never rejects.
@@ -751,6 +772,16 @@ function sessionPanel(project: Project): HTMLElement {
 }
 
 /**
+ * What a rebuilt Files tab needs to know about the one it replaces: which paths
+ * were ticked, and which paths it had at all — the second is what makes a file
+ * that appeared since then recognisable as new. See `carriedSelection`.
+ */
+interface PriorTicks {
+  readonly selected: ReadonlySet<string>;
+  readonly known: ReadonlySet<string>;
+}
+
+/**
  * The Files tab (tickets 07/08): everything in one Project, and the three things
  * a Sandbox User does with it — bring files in, carry files out, and look at
  * what has already been carried out. Those used to be three cards on the panel,
@@ -775,13 +806,12 @@ function sessionPanel(project: Project): HTMLElement {
 function filesPanel(
   project: Project,
   listing: ExportListing | undefined,
-  reload: (button: HTMLButtonElement) => void,
+  reload: (button: HTMLButtonElement, prior?: PriorTicks) => void,
+  prior?: PriorTicks,
 ): HTMLElement {
   const files = listing?.files ?? [];
   const paths = files.map((f) => f.path);
-  // Exportable files start ticked, so "save all of it" is still one click — the
-  // default the sheet this replaced had.
-  const selected = new Set(files.filter((f) => f.exportable).map((f) => f.path));
+  const selected = carriedSelection(files, prior);
   let folder = ""; // the whole Project
   let query = "";
 
@@ -900,7 +930,10 @@ function filesPanel(
       done: (copied) => {
         if (!copied.length) return;
         flash(`Added ${copied.length} file(s) to ${project.name}.`);
-        reload(add);
+        // Adding is not re-reading: the ticks the Sandbox User already made go
+        // across to the panel that replaces this one, and only what wasn't here
+        // before arrives ticked.
+        reload(add, { selected, known: new Set(paths) });
       },
       failed: "Couldn't add those files",
     }),
@@ -911,12 +944,18 @@ function filesPanel(
       button: saveBtn,
       busyLabel: "Saving…",
       run: () => cb.saveToComputer(project.slug, [...selected]),
-      done: (res) =>
+      done: (res) => {
         flash(
           res.overCap
             ? `Too big to save: ${size(res.totalBytes)}, and the limit is ${size(res.capBytes)}. Nothing was saved.`
             : saved(res),
-        ),
+        );
+        // The boxes stay live while "Saving…" runs, and `runOperation` puts back
+        // the label and the enabled state it captured BEFORE the save — so a tick
+        // changed mid-save would otherwise leave a button reading the old count
+        // that saves the new one. Redrawing from the selection settles both.
+        drawTotal();
+      },
       failed: "Couldn't save",
     }),
   );
