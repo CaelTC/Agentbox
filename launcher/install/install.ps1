@@ -46,6 +46,7 @@ $ProgramsDir = if ($env:CLAUDEBOX_PROGRAMS) { $env:CLAUDEBOX_PROGRAMS }
 
 # What `npm run package:win` emits into launcher/release - the mirror of
 # install.sh's Claudebox.app. Built here, on this machine, by Build-Launcher.
+$LauncherSrc = Join-Path $DefinitionDir 'launcher'
 $LauncherFolder = 'Claudebox-win32-x64'
 $LauncherExe = 'Claudebox.exe'
 
@@ -345,16 +346,13 @@ Nothing has been installed to the Start Menu; re-run once the cause is fixed.
 }
 
 # --- 9. Build the Launcher from the definition we just fetched ---------------
-# The mirror of install.sh's build_launcher, and for the same reason: the exe is
-# a build product, so the clone above holds source and nothing else. Packaging
-# win32 ON Windows is the native case - no Wine, no cross-download - and a
-# locally built exe carries no Mark-of-the-Web, so it dodges the SmartScreen
-# prompt an unsigned downloaded build would trigger.
+# The mirror of install.sh's build_launcher: built here rather than downloaded
+# because a locally built exe carries no Mark-of-the-Web - the full rationale
+# lives in launcher/README.md ("Packaging").
 function Build-Launcher {
   Write-Log 'Building the Launcher (this takes a few minutes the first time)...'
-  $launcher = Join-Path $DefinitionDir 'launcher'
-  Invoke-Checked { npm --prefix $launcher ci }
-  Invoke-Checked { npm --prefix $launcher run package:win }
+  Invoke-Checked { npm --prefix $LauncherSrc ci }
+  Invoke-Checked { npm --prefix $LauncherSrc run package:win }
 }
 
 # --- 10. Install the Launcher + a Start Menu entry ---------------------------
@@ -362,7 +360,7 @@ function Build-Launcher {
 # installer, no electron-builder: no new build dependency and no change to the
 # Mac packaging path.
 function Install-Launcher {
-  $source = Join-Path (Join-Path (Join-Path $DefinitionDir 'launcher') 'release') $LauncherFolder
+  $source = Join-Path $LauncherSrc "release\$LauncherFolder"
   if (-not (Test-Path $source)) {
     throw "The Launcher did not build - $source is missing, so there is nothing to install."
   }

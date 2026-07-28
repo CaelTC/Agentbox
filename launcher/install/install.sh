@@ -34,10 +34,10 @@ install_homebrew_if_needed() {
   fi
 }
 
-# --- 1. Engine: Colima + the Docker CLI --------------------------------------
+# --- 1. Engine: Colima + the Docker CLI (+ Node, to build the Launcher) ------
 install_engine() {
-  log "Installing the Engine (Colima) and Docker CLI…"
-  brew install colima docker
+  log "Installing the Engine (Colima), Docker CLI and Node…"
+  brew install colima docker node
 }
 
 # No browser is installed here. The Launcher draws the Project session window
@@ -64,17 +64,10 @@ prepare_image() {
 }
 
 # --- 4. Build the Launcher from the definition we just fetched ---------------
-# The .app is a build product, so it is not in the repo and cannot be: the clone
-# above is source. Building it here rather than downloading a bundle is also what
-# keeps Gatekeeper out of the way — a locally built app carries no
-# com.apple.quarantine, which an unsigned app fetched over HTTPS would (ADR 0002
-# rules out signing, so the quarantine flag is the whole difference between "it
-# opens" and "macOS refuses to open it").
+# Built here rather than downloaded because a locally built app carries no
+# com.apple.quarantine flag — the full rationale lives in launcher/README.md
+# ("Packaging").
 build_launcher() {
-  if ! command -v npm >/dev/null 2>&1; then
-    log "Installing Node (needed to build the Launcher)…"
-    brew install node
-  fi
   log "Building the Launcher (this takes a few minutes the first time)…"
   npm --prefix "$LAUNCHER_SRC" ci
   npm --prefix "$LAUNCHER_SRC" run package
@@ -82,11 +75,14 @@ build_launcher() {
 
 # --- 5. Install the Launcher into /Applications ------------------------------
 install_launcher() {
-  # electron-packager names the folder after the host arch, so match rather than
-  # guess: one provisioner's Mac is arm64, the next one's is x64.
-  local built=("$LAUNCHER_SRC"/release/Claudebox-darwin-*/Claudebox.app)
-  if [[ ! -d "${built[0]}" ]]; then
-    echo "The Launcher did not build — nothing to install." >&2
+  # electron-packager names the folder after the host arch (arm64 on one
+  # provisioner's Mac, x64 on the next). Ask Node for the same answer rather
+  # than globbing release/, where a stale folder from a previous arch could
+  # shadow the build that just happened.
+  local built
+  built="$LAUNCHER_SRC/release/Claudebox-darwin-$(node -p process.arch)/Claudebox.app"
+  if [[ ! -d "$built" ]]; then
+    echo "The Launcher did not build — $built is missing, so there is nothing to install." >&2
     exit 1
   fi
 
@@ -94,7 +90,7 @@ install_launcher() {
   # Replaced, not merged: `cp -R` over a live bundle leaves the previous version's
   # files behind inside it, and a half-old .app is worse than no .app.
   rm -rf "${APPLICATIONS_DIR:?}/Claudebox.app"
-  cp -R "${built[0]}" "$APPLICATIONS_DIR/"
+  cp -R "$built" "$APPLICATIONS_DIR/"
 }
 
 main() {

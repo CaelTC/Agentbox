@@ -626,7 +626,7 @@ async function openProject(project: Project): Promise<void> {
   // The way out sits top-left, in the slot the "Open project" eyebrow held: that
   // eyebrow only restated the screen you were already looking at, and the back
   // control is the one thing on this panel that has a conventional home.
-  const back = el("button", { className: "back" }, [
+  const back = el("button", { className: "back eyebrow" }, [
     el("span", {
       className: "back__icon",
       innerHTML:

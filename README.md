@@ -167,7 +167,7 @@ It performs ten steps, all of them safely re-runnable:
 2. Ensure WSL2. **On a machine that has never had WSL2, this enables it and then
    stops with "restart Windows and run this script again".** That restart is
    unavoidable; after it, re-running the script carries on from where it left off.
-3. `winget install` podman and git (skipping any already present).
+3. `winget install` podman, git and Node (skipping any already present).
 4. Write `%USERPROFILE%\.wslconfig` with the Resource Cap's CPU/memory. Two
    honest limits here: `.wslconfig` applies to *every* WSL distro on the machine,
    and it has no disk ceiling — so on Windows the Resource Cap does not yet bound
@@ -184,10 +184,8 @@ It performs ten steps, all of them safely re-runnable:
 10. Copy the built folder to `%LOCALAPPDATA%\Programs\Claudebox` and create a
     Start Menu shortcut.
 
-Steps 9–10 are why Node is one of the winget packages. Nothing prebuilt is
-downloaded: a locally built exe carries no Mark-of-the-Web, so it dodges the
-SmartScreen prompt an unsigned *downloaded* build would trigger — the same
-reason the Mac builds its own `.app` rather than fetching one.
+Steps 9–10 build locally for the reason given above: an unsigned *downloaded*
+build would trigger SmartScreen; one built on the machine does not.
 
 ## Working on it
 

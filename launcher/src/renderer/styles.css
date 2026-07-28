@@ -294,21 +294,18 @@ button {
 }
 .btn--link:hover { opacity: 0.75; }
 
-/* The way back out of a Project. It stands in the eyebrow's slot and borrows its
-   type, so the top-left of the panel reads as one line either way. */
+/* The way back out of a Project. It stands in the eyebrow's slot and IS an
+   .eyebrow (the type ramp and Steam-on-dark come from that class), so the
+   top-left of the panel reads as one line either way. */
 .back {
   align-self: flex-start;
   display: inline-flex;
   align-items: center;
   gap: 1rem;
+  margin: 0;
   padding: 0;
   border: 0;
   background: none;
-  color: var(--nootka-steam);
-  font-size: var(--text-meta);
-  font-weight: var(--weight-bold);
-  letter-spacing: var(--tracking-eyebrow);
-  text-transform: uppercase;
 }
 .back__icon {
   display: grid;
