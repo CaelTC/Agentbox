@@ -57,7 +57,7 @@ function renderer() {
   const build = new Function(
     "document",
     "setTimeout",
-    `${js}\nreturn { el, fail, flash, openSheet, runOperation, fileFolders, inFolder, matchesFilter, selectionTotal, carriedSelection };`,
+    `${js}\nreturn { el, fail, flash, openSheet, runOperation, fileFolders, inFolder, matchesFilter, selectionTotal, folderTotal, carriedSelection };`,
   );
   return { document, ...build(document, () => undefined) } as {
     document: ReturnType<typeof fakeDocument>;
@@ -74,6 +74,10 @@ function renderer() {
       selected: ReadonlySet<string>,
       capBytes: number,
     ) => { count: number; bytes: number; over: boolean };
+    folderTotal: (
+      files: readonly { path: string; size: number }[],
+      folder: string,
+    ) => { count: number; bytes: number };
     carriedSelection: (
       files: readonly { path: string; exportable: boolean }[],
       prior?: { selected: ReadonlySet<string>; known: ReadonlySet<string> },
@@ -458,6 +462,26 @@ describe("the Files tab's filter and total", () => {
     // Exactly at the cap is allowed: core/export.ts refuses above it, not at it.
     expect(selectionTotal(files, new Set(files.map((f) => f.path)), 7_000).over).toBe(false);
     expect(selectionTotal(files, new Set(["gone.txt"]), 10_000)).toEqual({ count: 0, bytes: 0, over: false });
+  });
+
+  /**
+   * The number the delete screen's folder button and its confirmation sheet are
+   * both drawn from. It is what a single click is about to destroy, so the two
+   * ways of getting it wrong are the two that matter: missing a nested file, and
+   * catching a sibling whose name merely starts the same way.
+   */
+  it("totals a folder's whole subtree, and nothing beside it", () => {
+    const { folderTotal } = renderer();
+    const files = [
+      { path: "notes.md", size: 1_000 },
+      { path: "data/costs.csv", size: 2_000 },
+      { path: "data/2024/q1.csv", size: 4_000 },
+      { path: "data-old/costs.csv", size: 8_000 },
+    ];
+    expect(folderTotal(files, "data")).toEqual({ count: 2, bytes: 6_000 }); // nested included
+    expect(folderTotal(files, "data-old")).toEqual({ count: 1, bytes: 8_000 }); // not swept in above
+    expect(folderTotal(files, "")).toEqual({ count: 4, bytes: 15_000 }); // "" is the whole Project
+    expect(folderTotal(files, "gone")).toEqual({ count: 0, bytes: 0 });
   });
 
   it("ticks everything exportable on a first open or a Refresh", () => {

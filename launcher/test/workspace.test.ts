@@ -7,6 +7,7 @@ import { importTarArgs, importTarInput } from "../src/core/import";
 import { run, type RunResult } from "../src/main/exec";
 import {
   boxCreateProject,
+  boxDeleteFiles,
   boxDeleteListing,
   boxDeleteProject,
   boxExport,
@@ -49,6 +50,8 @@ const isFileListing = (argv: readonly string[]) => argv.join(" ").includes("-pri
 const isDf = (argv: readonly string[]) => argv[0] === "df";
 const isUsage = (argv: readonly string[]) => argv.join(" ").includes("du -sk");
 const isMeta = (argv: readonly string[]) => argv[0] === "cat";
+/** The delete's read-back: which of the paths it just rm'd are still there. */
+const isReadBack = (argv: readonly string[]) => argv.join(" ").includes("for p in");
 
 describe("boxUpload — a failed copy is not an upload", () => {
   const sources = ["/host/budget.csv", "/host/notes.txt"];
@@ -213,6 +216,170 @@ describe("boxDeleteProject", () => {
     await expect(boxDeleteProject("demo", "  my site ", fake)).rejects.toThrow(
       /still in the Workspace/,
     );
+  });
+});
+
+/**
+ * Deleting files INSIDE a Project. Everything here is about the one property the
+ * feature has to keep: what the renderer sent is a request, and the only paths
+ * that reach `rm -rf` are ones this layer enumerated itself and then contained.
+ */
+describe("boxDeleteFiles", () => {
+  const LISTED = ["644\t1000\tnotes.md", "644\t2000\tdata/costs.csv", "644\t4000\tdata/2024/q1.csv"].join("\n");
+
+  /**
+   * A Box that lists three files, removes what it is told to, and then answers
+   * the read-back honestly — `survives` is what the `rm` failed to take.
+   */
+  const filesBox = (opts: { rm?: Error; survives?: string[] } = {}) =>
+    fakeBox((op, argv) => {
+      if (isFileListing(argv)) return LISTED;
+      if (op === "execAsRoot" && argv[0] === "rm") return opts.rm ?? "";
+      if (isReadBack(argv)) return (opts.survives ?? []).join("\n");
+      return "";
+    });
+
+  const rmArgs = (fake: { calls: string[] }) => fake.calls.find((c) => c.startsWith("execAsRoot rm"));
+
+  it("deletes the ticked files and reports what went", async () => {
+    const fake = filesBox();
+
+    expect(await boxDeleteFiles("demo", ["notes.md", "data/costs.csv"], undefined, fake)).toEqual({
+      deleted: ["notes.md", "data/costs.csv"],
+      fileCount: 2,
+      totalBytes: 3_000,
+      failed: [],
+    });
+    expect(rmArgs(fake)).toBe(
+      "execAsRoot rm -rf /workspace/demo/notes.md /workspace/demo/data/costs.csv",
+    );
+  });
+
+  // The trust boundary, from the outside: the renderer is the only source of
+  // these strings, and none of these may become an `rm` argument.
+  it("removes NOTHING for a path that escapes the Project", async () => {
+    for (const escape of ["../other-project", "../../etc", "/etc/passwd", "..", "data/../.."]) {
+      const fake = filesBox();
+      const res = await boxDeleteFiles("demo", [escape], undefined, fake);
+
+      expect(res.deleted).toEqual([]);
+      expect(res.failed).toEqual([{ path: escape, reason: "It isn't in this project any more." }]);
+      expect(fake.calls.some((c) => c.includes("rm -rf"))).toBe(false);
+    }
+  });
+
+  // Two independent checks stand between a ticked path and the `rm`, and this is
+  // the second one on its own: even a path the listing DID hold is re-contained
+  // before it is handed over. A listing that ever produced a traversal — a
+  // future `-printf` change, a filename with a newline in it — must throw here
+  // rather than delete outside the Project.
+  it("refuses a listed path that would still leave the Project", async () => {
+    const rogue = fakeBox((_op, argv) =>
+      isFileListing(argv) ? "644\t10\t../other-project/secrets.env" : "",
+    );
+
+    await expect(boxDeleteFiles("demo", ["../other-project/secrets.env"], undefined, rogue)).rejects.toThrow(
+      /Refusing to delete/,
+    );
+    expect(rogue.calls.some((c) => c.includes("rm -rf"))).toBe(false);
+  });
+
+  it("cannot reach .git or the Project's marker, because the listing prunes them", async () => {
+    const fake = filesBox();
+    const res = await boxDeleteFiles("demo", [".git", ".claudebox/project.json"], undefined, fake);
+
+    expect(res.deleted).toEqual([]);
+    expect(res.failed).toHaveLength(2);
+    expect(fake.calls.some((c) => c.includes("rm -rf"))).toBe(false);
+  });
+
+  it("refuses an empty selection outright", async () => {
+    const fake = filesBox();
+    await expect(boxDeleteFiles("demo", [], undefined, fake)).rejects.toThrow(/Nothing was chosen/);
+    expect(fake.calls.some((c) => c.includes("rm -rf"))).toBe(false);
+  });
+
+  /* The folder gate — the friction the spec scales up to, re-checked here. ---- */
+
+  it("takes a folder with everything under it", async () => {
+    const fake = filesBox();
+
+    expect(await boxDeleteFiles("demo", ["data"], "data", fake)).toEqual({
+      deleted: ["data"],
+      fileCount: 2,
+      totalBytes: 6_000,
+      failed: [],
+    });
+    expect(rmArgs(fake)).toBe("execAsRoot rm -rf /workspace/demo/data");
+  });
+
+  it("removes NOTHING when the typed folder name is wrong, missing, or someone else's", async () => {
+    for (const typed of [undefined, "", "dat", "notes.md", "2024"]) {
+      const fake = filesBox();
+      await expect(boxDeleteFiles("demo", ["data"], typed, fake)).rejects.toThrow(
+        /isn't the name of this folder/,
+      );
+      expect(fake.calls.some((c) => c.includes("rm -rf"))).toBe(false);
+    }
+  });
+
+  it("asks for the folder's own name, not its path", async () => {
+    const fake = filesBox();
+    // The confirmation says "Type 2024" — so the path is what is deleted and the
+    // last segment is what is checked. Both, or the sheet is lying.
+    expect((await boxDeleteFiles("demo", ["data/2024"], "2024", fake)).deleted).toEqual(["data/2024"]);
+    expect(rmArgs(fake)).toBe("execAsRoot rm -rf /workspace/demo/data/2024");
+  });
+
+  it("accepts the folder name the way a person types it (case, stray spaces)", async () => {
+    expect((await boxDeleteFiles("demo", ["data"], "  DATA ", filesBox())).deleted).toEqual(["data"]);
+  });
+
+  // A folder's name is only unambiguous if it is the only thing going, and the
+  // confirmation named ONE thing. A mixed selection would have the Sandbox User
+  // type "data" and take three unrelated files with it.
+  it("refuses a folder alongside other files rather than deleting the batch", async () => {
+    const fake = filesBox();
+    await expect(boxDeleteFiles("demo", ["data", "notes.md"], "data", fake)).rejects.toThrow(
+      /on its own/,
+    );
+    expect(fake.calls.some((c) => c.includes("rm -rf"))).toBe(false);
+  });
+
+  /* Partial failure — read back, never assumed. ------------------------------ */
+
+  it("reports what survived the rm instead of claiming it all went", async () => {
+    const fake = filesBox({
+      rm: new Error("rm: cannot remove 'notes.md': Permission denied"),
+      survives: ["/workspace/demo/notes.md"],
+    });
+
+    expect(await boxDeleteFiles("demo", ["notes.md", "data/costs.csv"], undefined, fake)).toEqual({
+      // The other one went even though the rm exited non-zero — which is why the
+      // answer is the read-back and not the exit code.
+      deleted: ["data/costs.csv"],
+      fileCount: 1,
+      totalBytes: 2_000,
+      failed: [{ path: "notes.md", reason: "rm: cannot remove 'notes.md': Permission denied" }],
+    });
+  });
+
+  it("reports a file that survived even when the rm claimed success", async () => {
+    const fake = filesBox({ survives: ["/workspace/demo/notes.md"] });
+    const res = await boxDeleteFiles("demo", ["notes.md"], undefined, fake);
+
+    expect(res.deleted).toEqual([]);
+    expect(res.failed).toEqual([{ path: "notes.md", reason: "The sandbox wouldn't remove it." }]);
+  });
+
+  // The ordinary race: a file the picker listed is gone by the time the sheet is
+  // confirmed. Named, not silently counted as deleted.
+  it("names a path that vanished between the listing and the click", async () => {
+    const fake = filesBox();
+    const res = await boxDeleteFiles("demo", ["notes.md", "gone.md"], undefined, fake);
+
+    expect(res.deleted).toEqual(["notes.md"]);
+    expect(res.failed).toEqual([{ path: "gone.md", reason: "It isn't in this project any more." }]);
   });
 });
 
