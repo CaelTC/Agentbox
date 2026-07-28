@@ -5,7 +5,7 @@
  * sentence. Its own GB-only version rendered anything under ~50 MB as "0 GB",
  * so a refused Import read "this needs 0 GB, and only 0 GB is free."
  *
- * `src/renderer/app.ts` keeps its own copy of this and cannot import it: the
+ * `src/renderer/machinery.ts` keeps its own copy of this and cannot import it: the
  * renderer is a classic `<script>` with contextIsolation on, and tsc emits
  * CommonJS, so any import there becomes a `require()` that throws.
  */

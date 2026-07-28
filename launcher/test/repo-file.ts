@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 /**
@@ -12,3 +12,11 @@ import { join } from "node:path";
  */
 export const repoFile = (...parts: string[]) =>
   readFileSync(join(__dirname, "..", "..", ...parts), "utf8");
+
+/**
+ * The names in one directory of the repository, sorted. A drift test that has to
+ * cover EVERY file of a kind (every renderer script, say) enumerates them rather
+ * than listing them, so a file added tomorrow is covered without an edit here.
+ */
+export const repoDir = (...parts: string[]) =>
+  readdirSync(join(__dirname, "..", "..", ...parts)).sort();

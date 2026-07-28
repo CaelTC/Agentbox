@@ -1,23 +1,34 @@
 import { transformSync } from "esbuild";
 import { describe, expect, it } from "vitest";
-import { repoFile } from "./repo-file";
+import { repoDir, repoFile } from "./repo-file";
 
 /**
- * The renderer is a classic <script>: `src/renderer/app.ts` has no imports and
- * no exports, because tsc would emit CommonJS and the browser would throw on the
- * first `require`. So this file reaches for app.ts as a *source file* rather than
- * a module, two ways:
+ * The renderer is classic <script>s: none of `src/renderer/*.ts` has an import or
+ * an export, because tsc would emit CommonJS and the browser would throw on the
+ * first `require`. They share one global scope and index.html lists them in the
+ * order they must run. So this file reaches for them as *source files* rather
+ * than modules, three ways:
  *
- *  - the machinery region (openSheet, runOperation, flash, el) is cut out,
- *    compiled, and run against a fake DOM — that region is written to depend on
- *    nothing but `document` and `setTimeout` precisely so this can work;
- *  - the two functions app.ts is forced to keep a second copy of (`normalize`
- *    from core/delete.ts, `size` from core/format.ts) are compared as text
- *    against their originals, the same trick test/preview.test.ts plays on
- *    box/entrypoint.sh.
+ *  - the machinery region (openSheet, runOperation, flash, el) is cut out of
+ *    machinery.ts, compiled, and run against a fake DOM — that region is written
+ *    to depend on nothing but `document` and `setTimeout` precisely so this can
+ *    work;
+ *  - the two functions the renderer is forced to keep a second copy of
+ *    (`normalize` from core/delete.ts, `size` from core/format.ts) are compared
+ *    as text against their originals, the same trick test/preview.test.ts plays
+ *    on box/entrypoint.sh;
+ *  - the properties that must hold across the whole renderer (one timer, one
+ *    place that composes a failure, no module syntax anywhere, every script
+ *    actually loaded) are scanned over every source at once.
  */
 const src = (...parts: string[]) => repoFile("launcher", "src", ...parts);
-const APP = src("renderer", "app.ts");
+
+/** Every renderer script, in the order index.html loads them being irrelevant here. */
+const SCRIPTS = repoDir("launcher", "src", "renderer").filter(
+  (name) => name.endsWith(".ts") && !name.endsWith(".d.ts"),
+);
+const MACHINERY = src("renderer", "machinery.ts");
+const RENDERER = SCRIPTS.map((name) => src("renderer", name)).join("\n");
 
 // --- the machinery, cut out and run ------------------------------------------
 
@@ -49,8 +60,8 @@ function fakeDocument() {
 
 /** A fresh renderer: its own DOM, and its own busy state. */
 function renderer() {
-  const region = APP.match(REGION);
-  expect(region, "the machinery markers in app.ts are gone — see this file's docstring").not.toBeNull();
+  const region = MACHINERY.match(REGION);
+  expect(region, "the machinery markers in machinery.ts are gone — see this file's docstring").not.toBeNull();
   const js = transformSync(region![0], { loader: "ts" }).code;
   const document = fakeDocument();
   // A `setTimeout` that never fires, so a flash stays put to be asserted on.
@@ -360,11 +371,11 @@ describe("fail", () => {
     expect(fail("Couldn't save", "the Box is gone")).toBe("Couldn't save: the Box is gone");
   });
 
-  it("is the only thing in app.ts that composes a failure out of an error", () => {
+  it("is the only thing in the renderer that composes a failure out of an error", () => {
     // Seven hand-rolled `Couldn't …: ${(err as Error).message}` catches used to
     // sit alongside it, none of them stripping the wrapper above. A new one is
     // how the noise gets back onto the screen.
-    expect(APP.match(/Couldn't[^`\n]*\$\{\(?err/g)).toBeNull();
+    expect(RENDERER.match(/Couldn't[^`\n]*\$\{\(?err/g)).toBeNull();
   });
 });
 
@@ -525,12 +536,40 @@ describe("the Files tab's filter and total", () => {
  * added to keep it "live" is the failure this test names in advance.
  */
 it("has exactly one repeating timer in the renderer, and it is the starting clock", () => {
-  const intervals = APP.match(/setInterval\(/g) ?? [];
+  const intervals = RENDERER.match(/setInterval\(/g) ?? [];
   expect(intervals).toHaveLength(1);
-  expect(APP).toMatch(/startingClock = setInterval\(/);
+  expect(RENDERER).toMatch(/startingClock = setInterval\(/);
 });
 
-// --- the two copies app.ts is forced to keep ---------------------------------
+// --- the classic <script> load model -----------------------------------------
+
+/**
+ * What a single app.ts used to make impossible, and the split does not: a
+ * renderer source that index.html never loads is dead code with a green build,
+ * and an `import` or `export` in any one of them makes tsc emit CommonJS for
+ * that file — the screen comes up blank, with nothing failing anywhere else.
+ */
+describe("the renderer's scripts", () => {
+  const INDEX = src("renderer", "index.html");
+
+  it("are every one of them loaded by index.html", () => {
+    for (const name of SCRIPTS) {
+      expect(INDEX, `${name} is compiled but never loaded`).toContain(
+        `src="./${name.replace(/\.ts$/, ".js")}"`,
+      );
+    }
+  });
+
+  it("carry no module syntax, in any of them", () => {
+    for (const name of SCRIPTS) {
+      expect(src("renderer", name), `${name} has module syntax`).not.toMatch(
+        /^\s*(import|export)\b/m,
+      );
+    }
+  });
+});
+
+// --- the two copies the renderer is forced to keep ---------------------------
 
 /** The source text of a top-level function, `export` prefix and all trimmed off. */
 function declaration(source: string, name: string): string {
@@ -543,17 +582,17 @@ describe("the renderer's two copies of a core rule", () => {
   // Neither can be imported: the renderer is a classic <script> (core/format.ts
   // explains it at length). Duplication is therefore the design — drifting is
   // not, and nothing but these two tests would notice.
-  it("app.ts normalizes the typed Project name exactly as core/delete.ts does", () => {
+  it("machinery.ts normalizes the typed Project name exactly as core/delete.ts does", () => {
     // Drift here enables "Delete forever" on a name the trusted layer then
     // refuses, which reads to the Sandbox User as a dead button.
-    expect(declaration(APP, "normalize")).toBe(declaration(src("core", "delete.ts"), "normalize"));
-    expect(declaration(APP, "normalize")).toContain("replace(/\\s+/g");
+    expect(declaration(MACHINERY, "normalize")).toBe(declaration(src("core", "delete.ts"), "normalize"));
+    expect(declaration(MACHINERY, "normalize")).toContain("replace(/\\s+/g");
   });
 
-  it("app.ts sizes bytes exactly as core/format.ts does", () => {
+  it("machinery.ts sizes bytes exactly as core/format.ts does", () => {
     // Drift here has the confirmation sheet and the dialog behind it quoting two
     // different sizes for the same Import.
-    expect(declaration(APP, "size")).toBe(declaration(src("core", "format.ts"), "size"));
-    expect(declaration(APP, "size")).toContain("GB");
+    expect(declaration(MACHINERY, "size")).toBe(declaration(src("core", "format.ts"), "size"));
+    expect(declaration(MACHINERY, "size")).toContain("GB");
   });
 });
