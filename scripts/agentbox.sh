@@ -20,6 +20,11 @@ VOLUME="agentbox-workspace"
 WORKSPACE_DIR="/workspace"
 HOME_VOLUME="agentbox-home"
 HOME_DIR="/home/sandbox"
+DB_NETWORK="agentbox-db"
+DB_SUBNET="172.30.0.0/24"
+DB_CONTAINER="agentbox-postgres"
+DB_IMAGE="postgres:16"
+DB_VOLUME="agentbox-postgres"
 BOX_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../box" && pwd)"
 
 # Resource Cap (~4 CPU / 6 GB RAM / 25 GB disk). The disk cap bounds threat A.
@@ -82,6 +87,24 @@ else
     "$IMAGE" \
     sleep infinity
 fi
+
+# 3b. The Database: postgres on its own INTERNAL network (docker gives it no
+#     route out — it cannot escape), the Box attached as a second interface.
+#     Reachable from inside the Box only; the egress firewall opens exactly
+#     port 5432 to the pinned subnet. No published port, data on a named volume.
+docker network inspect "$DB_NETWORK" >/dev/null 2>&1 \
+  || docker network create --internal --subnet "$DB_SUBNET" "$DB_NETWORK"
+if ! docker start "$DB_CONTAINER" >/dev/null 2>&1; then
+  log "Starting postgres…"
+  docker run -d \
+    --name "$DB_CONTAINER" \
+    --network "$DB_NETWORK" \
+    --restart unless-stopped \
+    -e POSTGRES_PASSWORD=postgres \
+    -v "${DB_VOLUME}:/var/lib/postgresql/data" \
+    "$DB_IMAGE"
+fi
+docker network connect "$DB_NETWORK" "$CONTAINER" 2>/dev/null || true
 
 # 4. Drop the user into Claude Code with permissions bypassed.
 log "Web terminal (tmux) at http://127.0.0.1:7681 — open it in your browser."

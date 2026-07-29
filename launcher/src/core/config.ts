@@ -97,6 +97,23 @@ export const GIT_SCRATCH_VOLUME = "agentbox-git";
 export const GIT_SCRATCH_DIR = "/scratch";
 
 /**
+ * The Database (CONTEXT.md): postgres in its own container beside the Box, on
+ * an INTERNAL docker network. Internal is the wall — docker gives that network
+ * no route out, so postgres cannot escape it, and nothing but the Box (attached
+ * as a second interface) can reach it. The subnet is PINNED so the Egress
+ * Policy can hold one static allow (DB_PORT to DB_SUBNET) instead of chasing
+ * whatever docker allocates. The password is a fixed non-secret: the socket is
+ * unreachable from the host, the LAN, and the internet by construction, and it
+ * grants access to nothing but this DB (Credential Hygiene is untouched).
+ */
+export const DB_NETWORK = "agentbox-db";
+export const DB_SUBNET = "172.30.0.0/24";
+export const DB_CONTAINER = "agentbox-postgres";
+export const DB_IMAGE = "postgres:16";
+export const DB_VOLUME = "agentbox-postgres";
+export const DB_PORT = 5432;
+
+/**
  * The Agentbox OAuth App's client id (ADR 0006). Public by design — a client id
  * is not a credential, and the device flow explicitly sends no client secret, so
  * this stays consistent with ADR 0002's "no keys anywhere".

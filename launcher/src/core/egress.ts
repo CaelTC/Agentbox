@@ -10,6 +10,8 @@
  * against these ones IN ORDER (order is the policy, see below).
  */
 
+import { DB_PORT, DB_SUBNET } from "./config";
+
 /**
  * RFC-1918 private ranges + link-local, plus 100.64.0.0/10 (carrier-grade NAT,
  * the range Tailscale / mesh VPNs ride — a common path to company systems that
@@ -72,6 +74,18 @@ export function egressPolicyRules(options: EgressPolicyOptions = {}): string[][]
     rules.push(["-A", "OUTPUT", "-d", ns, "-p", "udp", "--dport", "53", "-j", "ACCEPT"]);
     rules.push(["-A", "OUTPUT", "-d", ns, "-p", "tcp", "--dport", "53", "-j", "ACCEPT"]);
   }
+
+  // 2c. Allow the Database — one port, one pinned subnet (config.ts). The
+  //     subnet sits inside the 172.16/12 DROP below, so this must come first.
+  //     Everything else on that subnet stays dropped, and the network itself is
+  //     docker-internal, so this opens a path to postgres and to nothing else.
+  rules.push([
+    "-A", "OUTPUT",
+    "-d", DB_SUBNET,
+    "-p", "tcp",
+    "--dport", String(DB_PORT),
+    "-j", "ACCEPT",
+  ]);
 
   // 3. Block the host gateway explicitly (defends against reaching the laptop).
   if (options.gatewayIp) {

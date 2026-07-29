@@ -4,6 +4,7 @@ import {
   egressPolicyRules,
   isPrivateAddress,
 } from "../src/core/egress";
+import { DB_PORT, DB_SUBNET } from "../src/core/config";
 import { repoFile } from "./repo-file";
 
 const flat = (rules: string[][]) => rules.map((r) => r.join(" "));
@@ -110,6 +111,31 @@ describe("egressPolicyRules DNS allowance (Colima)", () => {
   it("adds no DNS rules when no resolvers are given (Docker Desktop path)", () => {
     const noDns = flat(egressPolicyRules({ gatewayIp: "192.168.5.1" }));
     expect(noDns.some((l) => l.includes("--dport 53"))).toBe(false);
+  });
+});
+
+describe("egressPolicyRules Database allowance", () => {
+  const lines = flat(egressPolicyRules({ gatewayIp: "192.168.5.1" }));
+  const allow = `-A OUTPUT -d ${DB_SUBNET} -p tcp --dport ${DB_PORT} -j ACCEPT`;
+
+  it("allows postgres' port to the pinned db subnet", () => {
+    expect(lines).toContain(allow);
+  });
+
+  it("permits ONLY that port — never a blanket ACCEPT of the subnet", () => {
+    expect(lines.filter((l) => l.includes(DB_SUBNET))).toEqual([allow]);
+  });
+
+  it("comes BEFORE the 172.16/12 DROP that contains the subnet (first match wins)", () => {
+    const drop = lines.indexOf("-A OUTPUT -d 172.16.0.0/12 -j DROP");
+    expect(drop).toBeGreaterThanOrEqual(0);
+    expect(lines.indexOf(allow)).toBeLessThan(drop);
+  });
+
+  it("the subnet sits inside a blocked range — the allow is a deliberate hole, not a stray", () => {
+    // If DB_SUBNET ever moved OUTSIDE the blocked ranges the allow would be
+    // covered by the final default-ACCEPT and this rule would be dead weight.
+    expect(isPrivateAddress(DB_SUBNET.split("/")[0]!)).toBe(true);
   });
 });
 

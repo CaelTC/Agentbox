@@ -2,6 +2,11 @@ import {
   BOX_CONTAINER,
   BOX_IMAGE,
   BOX_ROOT_PATH,
+  DB_CONTAINER,
+  DB_IMAGE,
+  DB_NETWORK,
+  DB_SUBNET,
+  DB_VOLUME,
   HOME_DIR,
   HOME_VOLUME,
   WORKSPACE_DIR,
@@ -72,6 +77,50 @@ export function boxRunArgs(options: BoxRunOptions = {}): string[] {
   ];
   assertNoHostMounts(args);
   return args;
+}
+
+/**
+ * The Database's network: INTERNAL (no route out — that is the wall, see
+ * DB_NETWORK in config.ts) with the pinned subnet the Egress Policy's allow
+ * names. Creating it when it already exists is an error the caller tolerates.
+ */
+export function dbNetworkCreateArgs(): string[] {
+  return ["network", "create", "--internal", "--subnet", DB_SUBNET, DB_NETWORK];
+}
+
+/**
+ * `docker run` args for the Database container. On the internal network ONLY,
+ * and publishes no port: reachable from inside the Box and from nowhere else.
+ * Data persists on a named volume — never a host mount, same as the Workspace.
+ */
+export function dbRunArgs(): string[] {
+  const args = [
+    "run",
+    "-d",
+    "--name",
+    DB_CONTAINER,
+    "--network",
+    DB_NETWORK,
+    // Docker restarts a crashed DB by itself; the Launcher only creates/starts.
+    "--restart",
+    "unless-stopped",
+    "-e",
+    "POSTGRES_PASSWORD=postgres",
+    "-v",
+    `${DB_VOLUME}:/var/lib/postgresql/data`,
+    DB_IMAGE,
+  ];
+  assertNoHostMounts(args);
+  return args;
+}
+
+/**
+ * Attach the Box to the Database network as a SECOND interface — its default
+ * bridge, published ports, and egress firewall all stay exactly as they are.
+ * Run once, when the container is created; membership survives stop/start.
+ */
+export function boxConnectDbArgs(): string[] {
+  return ["network", "connect", DB_NETWORK, BOX_CONTAINER];
 }
 
 /**

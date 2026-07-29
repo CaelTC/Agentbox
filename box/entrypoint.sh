@@ -42,6 +42,19 @@ npx vite --host 0.0.0.0 --port 5173
 ```
 
 Then tell the user to click **Preview**.
+
+# Database in Agentbox
+
+A PostgreSQL server is already running beside this Box on a private docker
+network. Whenever a project needs a database, USE IT — do not install postgres,
+mysql, or another server, and do not reach for sqlite because a database
+"isn't available". It is:
+
+    postgresql://postgres:postgres@agentbox-postgres:5432/postgres
+
+Create one database per project (`CREATE DATABASE <project>`) rather than
+sharing `postgres`. It is reachable only from inside this Box, and its data
+survives restarts.
 EOF
 
 # The mattpocock-skills Battery (ticket 03). The Dockerfile bakes it into the

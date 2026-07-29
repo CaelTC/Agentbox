@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { BOX_ROOT_PATH } from "../src/core/config";
+import { BOX_ROOT_PATH, DB_NETWORK, DB_SUBNET } from "../src/core/config";
 import {
   assertNoHostMounts,
+  boxConnectDbArgs,
   boxRunArgs,
   boxUpdateClaudeArgs,
+  dbNetworkCreateArgs,
+  dbRunArgs,
   isHostMount,
 } from "../src/core/box";
 
@@ -41,6 +44,37 @@ describe("boxRunArgs", () => {
   it("keeps the container alive so a Claude session can be exec'd into it", () => {
     // last tokens are the long-lived command
     expect(args.slice(-2).join(" ")).toBe("sleep infinity");
+  });
+});
+
+describe("the Database (postgres beside the Box)", () => {
+  const net = dbNetworkCreateArgs();
+  const db = dbRunArgs();
+
+  it("creates the network INTERNAL — no route out is what 'cannot escape' means", () => {
+    expect(net).toContain("--internal");
+  });
+
+  it("pins the subnet the Egress Policy's allow names", () => {
+    expect(net[net.indexOf("--subnet") + 1]).toBe(DB_SUBNET);
+  });
+
+  it("puts postgres on the internal network ONLY", () => {
+    expect(db[db.indexOf("--network") + 1]).toBe(DB_NETWORK);
+  });
+
+  it("publishes NO port — the DB is reachable from inside the Box and nowhere else", () => {
+    expect(db).not.toContain("-p");
+    expect(db).not.toContain("--publish");
+  });
+
+  it("persists data on a named volume, never a host mount", () => {
+    expect(db[db.indexOf("-v") + 1]).toBe("agentbox-postgres:/var/lib/postgresql/data");
+    expect(() => assertNoHostMounts(db)).not.toThrow();
+  });
+
+  it("attaches the Box to the db network as a second interface", () => {
+    expect(boxConnectDbArgs()).toEqual(["network", "connect", DB_NETWORK, "agentbox"]);
   });
 });
 

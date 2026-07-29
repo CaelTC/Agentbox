@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { boxRunArgs } from "../src/core/box";
+import {
+  boxConnectDbArgs,
+  boxRunArgs,
+  dbNetworkCreateArgs,
+  dbRunArgs,
+} from "../src/core/box";
 import {
   BOX_IMAGE,
   DEFINITION_REPO,
@@ -70,6 +75,35 @@ describe("scripts/agentbox.sh (the walking skeleton) against the core", () => {
   it("starts the Engine with exactly colimaStartArgs(): the profile at the Resource Cap", () => {
     const start = command(SKELETON, /^\s*colima start .*$/m, "the `colima start` line");
     expect(argv(start, vars).slice(1)).toEqual(colimaStartArgs());
+  });
+
+  it("creates the Database network with exactly dbNetworkCreateArgs(): internal, pinned subnet", () => {
+    const create = command(
+      SKELETON,
+      /docker network create .*$/m,
+      "the `docker network create` line",
+    );
+    expect(argv(create, vars).slice(1)).toEqual(dbNetworkCreateArgs());
+  });
+
+  it("runs postgres with exactly dbRunArgs(): internal network only, named volume, no ports", () => {
+    const run = command(
+      SKELETON,
+      /docker run -d \\\n\s*--name "\$DB_CONTAINER"[\s\S]*?"\$DB_IMAGE"/,
+      "the postgres `docker run` block",
+    );
+    expect(argv(run, vars).slice(1)).toEqual(dbRunArgs());
+  });
+
+  it("attaches the Box to the Database network with exactly boxConnectDbArgs()", () => {
+    const connect = command(
+      SKELETON,
+      /docker network connect .*$/m,
+      "the `docker network connect` line",
+    );
+    expect(argv(connect, vars).slice(1, 1 + boxConnectDbArgs().length)).toEqual(
+      boxConnectDbArgs(),
+    );
   });
 
   it("declares the Resource Cap the Launcher does", () => {

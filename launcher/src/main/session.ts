@@ -1,6 +1,12 @@
 import { BrowserWindow } from "electron";
-import { BOX_CONTAINER, BOX_IMAGE, ENGINE_CLI } from "../core/config";
-import { boxRunArgs, boxUpdateClaudeArgs } from "../core/box";
+import { BOX_CONTAINER, BOX_IMAGE, DB_CONTAINER, ENGINE_CLI } from "../core/config";
+import {
+  boxConnectDbArgs,
+  boxRunArgs,
+  boxUpdateClaudeArgs,
+  dbNetworkCreateArgs,
+  dbRunArgs,
+} from "../core/box";
 import {
   ensureSessionArgs,
   isConsoleUrl,
@@ -62,14 +68,36 @@ async function runStep(step: StartupStep, boxDefinitionDir: string): Promise<voi
       await mustSucceed(ENGINE_CLI, ["build", "-t", BOX_IMAGE, boxDefinitionDir]);
       return;
     case "run-box":
+      await ensureDatabase();
       await mustSucceed(ENGINE_CLI, boxRunArgs());
+      await mustSucceed(ENGINE_CLI, boxConnectDbArgs());
       return;
     case "start-box":
+      await ensureDatabase();
+      // Tolerated, not required: a container from before the Database existed
+      // was never connected, and connecting one that already is is an error.
+      await run(ENGINE_CLI, boxConnectDbArgs());
       // Restart the existing container, preserving its filesystem (login, etc.).
       await mustSucceed(ENGINE_CLI, ["start", BOX_CONTAINER]);
       return;
     case "attach":
       return; // the session is launched by the funnel, shown by openProjectSession
+  }
+}
+
+/**
+ * Bring up the Database beside the Box (CONTEXT.md): postgres on its own
+ * internal docker network, reachable from inside the Box and nowhere else.
+ * Idempotent — every state (missing, stopped, running) converges in at most
+ * three engine calls, so it simply runs before either Box-starting step.
+ */
+async function ensureDatabase(): Promise<void> {
+  // "already exists" is an answer, not a failure.
+  await run(ENGINE_CLI, dbNetworkCreateArgs());
+  // An existing container — stopped OR running — starts; only absence needs a run.
+  const started = await run(ENGINE_CLI, ["start", DB_CONTAINER]);
+  if (started.code !== 0) {
+    await mustSucceed(ENGINE_CLI, dbRunArgs());
   }
 }
 

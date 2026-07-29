@@ -50,6 +50,13 @@ for ns in $(awk '/^nameserver/ {print $2}' /etc/resolv.conf 2>/dev/null); do
   iptables -A OUTPUT -d "${ns}" -p tcp --dport 53 -j ACCEPT
 done
 
+# 2c. The Database network (created by the Launcher / scripts/agentbox.sh with
+#     this pinned subnet). Postgres' port — and ONLY that port — is reachable
+#     there; the rest of the subnet stays inside the 172.16/12 DROP below.
+#     Literal on purpose: the drift test compares this line verbatim against
+#     core/egress.ts, whose DB_SUBNET/DB_PORT carry the same values.
+iptables -A OUTPUT -d 172.30.0.0/24 -p tcp --dport 5432 -j ACCEPT
+
 # 3. Host gateway, blocked explicitly.
 if [[ -n "${GATEWAY}" ]]; then
   iptables -A OUTPUT -d "${GATEWAY}" -j DROP

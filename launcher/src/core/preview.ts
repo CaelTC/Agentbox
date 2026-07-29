@@ -9,6 +9,8 @@
  * which port is actually serving and opens it.
  */
 
+import { DB_CONTAINER, DB_PORT } from "./config";
+
 /** Common dev-server ports we pre-publish so Preview works without reconfiguration. */
 export const PREVIEW_PORTS: readonly number[] = [3000, 4321, 5173, 8000, 8080];
 
@@ -72,6 +74,19 @@ npx vite --host 0.0.0.0 --port 5173
 \`\`\`
 
 Then tell the user to click **Preview**.
+
+# Database in Agentbox
+
+A PostgreSQL server is already running beside this Box on a private docker
+network. Whenever a project needs a database, USE IT — do not install postgres,
+mysql, or another server, and do not reach for sqlite because a database
+"isn't available". It is:
+
+    postgresql://postgres:postgres@${DB_CONTAINER}:${DB_PORT}/postgres
+
+Create one database per project (\`CREATE DATABASE <project>\`) rather than
+sharing \`postgres\`. It is reachable only from inside this Box, and its data
+survives restarts.
 `;
 }
 
