@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- App icon: agents in the Box. Transparent background, near-full-bleed box. -->
+  <g transform="translate(512 512) scale(10) translate(-60 -60)">
+    <!-- the Box, with a door in the right wall -->
+    <path d="M70 16 H34 A18 18 0 0 0 16 34 V86 A18 18 0 0 0 34 104 H70 M70 16 H86 A18 18 0 0 1 104 34 V44 M104 76 V86 A18 18 0 0 1 86 104 H70"
+          fill="none" stroke="#26262B" stroke-width="7" stroke-linecap="round"/>
+    <!-- linked agents inside -->
+    <g stroke="#26262B" stroke-width="3.5" stroke-linecap="round" opacity="0.55">
+      <line x1="46" y1="46" x2="68" y2="58"/>
+      <line x1="46" y1="46" x2="50" y2="76"/>
+      <line x1="50" y1="76" x2="68" y2="58"/>
+    </g>
+    <circle cx="46" cy="46" r="9.5" fill="#3B82F6"/>
+    <circle cx="68" cy="58" r="7" fill="#3B82F6"/>
+    <circle cx="50" cy="76" r="6.5" fill="#3B82F6"/>
+    <!-- the dispatched one: unlinked, at the threshold -->
+    <circle cx="104" cy="60" r="5.5" fill="#3B82F6"/>
+  </g>
+</svg>
