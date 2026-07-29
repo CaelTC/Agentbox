@@ -59,8 +59,14 @@ const KILL_GRACE_MS = 2_000;
  * Claude has just SIGSTOPped does exactly that, taking the Box Gate down with it
  * for the life of the process: every Box-touching channel, Update Agentbox
  * included, queues behind a promise that will never resolve. A timeout is
- * SIGTERM, then SIGKILL after a grace, and resolves like any other failure —
- * non-zero, with the deadline named in `stderr`, so callers need no new branch.
+ * SIGTERM, then SIGKILL after a grace — to the child's whole process GROUP off
+ * Windows, since a grandchild holding the stdout pipe keeps this promise open
+ * (see `killGroup`) — and resolves like any other failure: non-zero, with the
+ * deadline named in `stderr`, so callers need no new branch.
+ *
+ * The group is why the child is spawned `detached`: it is its own group leader,
+ * so a signal to the Launcher's group no longer reaches it. Nothing here relies
+ * on that — the child is never `unref`'d and this promise still awaits it.
  */
 export function run(
   command: string,
@@ -69,15 +75,56 @@ export function run(
   timeoutMs?: number,
 ): Promise<RunResult> {
   return new Promise((resolve, reject) => {
+    // `detached` gives the child a process GROUP of its own, which is what the
+    // deadline below signals. See `killGroup`.
+    const group = process.platform !== "win32";
     const child = spawn(command, args, {
       stdio: ["ignore", "pipe", "pipe"],
       env: { ...process.env, ...env, PATH: spawnPath() },
+      detached: group,
     });
     let stdout = "";
     let stderr = "";
     let timedOut = false;
     child.stdout.on("data", (d) => (stdout += String(d)));
     child.stderr.on("data", (d) => (stderr += String(d)));
+
+    /**
+     * The GROUP, not the child. This promise resolves on 'close', which waits
+     * for the stdout/stderr pipes, and a HOST-side child leaves those pipes to
+     * ITS children: signal the direct child alone and a grandchild lives on
+     * holding the write end, so 'close' never arrives. Measured on the local
+     * `sh -c` case in `test/exec.test.ts`: 9019ms to settle a 150ms deadline,
+     * versus 165ms once the group is signalled.
+     *
+     * DEFENCE IN DEPTH, not the Box Gate's live failure mode. A `docker exec`
+     * has no host-side grandchild — the shell it runs lives in the container
+     * (under Colima, another VM kernel entirely), is no descendant of the
+     * Launcher and holds no host fd; the only host holder of the pipe is the
+     * `docker` CLI itself, which `child.kill` already ends. This covers host
+     * helpers that do fork.
+     *
+     * Windows takes the direct-child path and KEEPS that hazard: `kill` there is
+     * TerminateProcess on the one handle, so a forking host helper's children
+     * survive holding the inherited pipes, and closing it needs a Job Object or
+     * `taskkill /T /F`.
+     */
+    const killGroup = (signal: NodeJS.Signals) => {
+      try {
+        if (group && child.pid) {
+          process.kill(-child.pid, signal);
+          return;
+        }
+      } catch {
+        // The group signal did not land (EPERM, or `-pid` no longer a live
+        // group). The direct child below stays the floor.
+      }
+      try {
+        child.kill(signal);
+      } catch {
+        // Already gone — the race this loses is the one we wanted.
+      }
+    };
 
     // SIGKILL after the grace because SIGTERM is ignorable and the whole point
     // here is that 'close' — and so this promise — is guaranteed to arrive.
@@ -87,8 +134,8 @@ export function run(
         ? undefined
         : setTimeout(() => {
             timedOut = true;
-            child.kill("SIGTERM");
-            kill = setTimeout(() => child.kill("SIGKILL"), KILL_GRACE_MS);
+            killGroup("SIGTERM");
+            kill = setTimeout(() => killGroup("SIGKILL"), KILL_GRACE_MS);
           }, timeoutMs);
     const done = () => (clearTimeout(deadline), clearTimeout(kill));
 

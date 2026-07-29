@@ -37,16 +37,51 @@ describe("spawnPath", () => {
 describe("run's deadline", () => {
   it("kills a child that never exits — even one that ignores SIGTERM — and settles", async () => {
     const started = Date.now();
-    const res = await run("sh", ["-c", "trap '' TERM; while :; do sleep 0.2; done"], undefined, 150);
+    // Two things the deadline must clear before it can prove anything, both of
+    // which the 150ms this asked for did not:
+    //
+    // `/bin/sh`, not `sh` — the child resolves its command by scanning the PATH
+    // `run` hands it, which `spawnPath` has just made LONGER; ~45 entries cost
+    // ~180ms of misses before /bin/sh is reached, against ~6ms for the absolute
+    // path. And 1_000ms, not 150 — spawning a process and running one line of
+    // it is single-digit ms idle but hundreds under a parallel suite.
+    //
+    // Lose either and the SIGTERM lands on a shell that has not reached its
+    // `trap` yet, so all this proves is that a child dying POLITELY dies.
+    const res = await run(
+      "/bin/sh",
+      ["-c", "trap '' TERM; echo trapped; while :; do sleep 0.2; done"],
+      undefined,
+      1_000,
+    );
 
     expect(res.code).not.toBe(0);
-    expect(res.stderr).toContain("timed out after 150ms");
-    // It went the whole way to SIGKILL: the SIGTERM at 150ms was ignored.
-    expect(Date.now() - started).toBeGreaterThan(1_000);
+    expect(res.stderr).toContain("timed out after 1000ms");
+    // The precondition, asserted rather than assumed: the child really was
+    // ignoring SIGTERM by the time the deadline fired.
+    expect(res.stdout).toContain("trapped");
+    // It went the whole way to SIGKILL. A child that took the polite signal
+    // would have settled at ~1_000ms; this one had to wait out the grace.
+    expect(Date.now() - started).toBeGreaterThan(2_000);
   }, 20_000);
 
+  it("settles when the child leaves a grandchild holding the pipe", async () => {
+    const started = Date.now();
+    // The process 'close' waits for is not always the one the deadline
+    // signalled: a host-side child can fork, and the grandchild inherits the
+    // stdout pipe. Signalling the direct child alone left that pipe open and
+    // this took the `sleep`'s full 30s. Defence in depth rather than a live Box
+    // failure mode — a `docker exec`'s shell runs in the container and holds no
+    // host fd. See the `killGroup` comment.
+    const res = await run("/bin/sh", ["-c", "echo up; sleep 30"], undefined, 1_000);
+
+    expect(res.stdout).toContain("up"); // the shell reached its first line before the deadline
+    expect(res.stderr).toContain("timed out after 1000ms");
+    expect(Date.now() - started).toBeLessThan(10_000);
+  }, 40_000);
+
   it("leaves a command that finishes inside the deadline alone", async () => {
-    expect(await run("sh", ["-c", "printf hi"], undefined, 10_000)).toMatchObject({
+    expect(await run("/bin/sh", ["-c", "printf hi"], undefined, 10_000)).toMatchObject({
       code: 0,
       stdout: "hi",
       stderr: "",
@@ -54,7 +89,7 @@ describe("run's deadline", () => {
   });
 
   it("has no deadline at all when none is asked for (the copies)", async () => {
-    expect(await run("sh", ["-c", "printf hi"])).toMatchObject({ code: 0, stdout: "hi" });
+    expect(await run("/bin/sh", ["-c", "printf hi"])).toMatchObject({ code: 0, stdout: "hi" });
   });
 });
 
