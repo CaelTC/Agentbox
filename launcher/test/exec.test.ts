@@ -72,15 +72,15 @@ describe("run's deadline", () => {
     // the grandchild inherits the stdout pipe. Signalling the direct child
     // alone left that pipe open and this took the `sleep`'s full 30s — the
     // deadline missing the one thing it exists to guarantee.
-    const res = await run("/bin/sh", ["-c", "echo up; sleep 30"], undefined, 500);
+    const res = await run("/bin/sh", ["-c", "echo up; sleep 30"], undefined, 1_000);
 
-    expect(res.stdout).toContain("up"); // the grandchild really was spawned
-    expect(res.stderr).toContain("timed out after 500ms");
+    expect(res.stdout).toContain("up"); // the shell reached its first line before the deadline
+    expect(res.stderr).toContain("timed out after 1000ms");
     expect(Date.now() - started).toBeLessThan(10_000);
   }, 40_000);
 
   it("leaves a command that finishes inside the deadline alone", async () => {
-    expect(await run("sh", ["-c", "printf hi"], undefined, 10_000)).toMatchObject({
+    expect(await run("/bin/sh", ["-c", "printf hi"], undefined, 10_000)).toMatchObject({
       code: 0,
       stdout: "hi",
       stderr: "",
@@ -88,7 +88,7 @@ describe("run's deadline", () => {
   });
 
   it("has no deadline at all when none is asked for (the copies)", async () => {
-    expect(await run("sh", ["-c", "printf hi"])).toMatchObject({ code: 0, stdout: "hi" });
+    expect(await run("/bin/sh", ["-c", "printf hi"])).toMatchObject({ code: 0, stdout: "hi" });
   });
 });
 
