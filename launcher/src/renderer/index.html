@@ -5,6 +5,21 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Agentbox</title>
     <link rel="stylesheet" href="./styles.css" />
+    <!--
+      The renderer is classic <script>s, not modules: tsc would emit CommonJS
+      and the browser would throw on the first `require`. So they share one
+      global scope and this list is their dependency order — machinery first
+      (it declares the bridge every other one reaches through), app.js last
+      (it is the only one that runs anything as it loads). `defer` runs them in
+      document order. A renderer source missing from this list is dead code;
+      test/renderer.test.ts fails when one is.
+    -->
+    <script defer src="./machinery.js"></script>
+    <script defer src="./layout.js"></script>
+    <script defer src="./home.js"></script>
+    <script defer src="./project.js"></script>
+    <script defer src="./files.js"></script>
+    <script defer src="./file-delete.js"></script>
     <script defer src="./app.js"></script>
   </head>
   <body>
