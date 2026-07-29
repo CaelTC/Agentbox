@@ -98,21 +98,25 @@ export function run(
      * `docker` CLI itself, which `child.kill` already ends. This covers host
      * helpers that do fork.
      *
-     * Windows has no process groups to signal and `kill` there already ends the
-     * process, so it takes the direct-child path.
+     * Windows takes the direct-child path and KEEPS that hazard: `kill` there is
+     * TerminateProcess on the one handle, so a forking host helper's children
+     * survive holding the inherited pipes, and closing it needs a Job Object or
+     * `taskkill /T /F`.
      */
     const killGroup = (signal: NodeJS.Signals) => {
       try {
-        if (group && child.pid) process.kill(-child.pid, signal);
-        else child.kill(signal);
+        if (group && child.pid) {
+          process.kill(-child.pid, signal);
+          return;
+        }
       } catch {
         // The group signal did not land (EPERM, or `-pid` no longer a live
-        // group). The direct child stays the floor — 'close' is the guarantee.
-        try {
-          child.kill(signal);
-        } catch {
-          // Already gone — the race this loses is the one we wanted.
-        }
+        // group). The direct child below stays the floor.
+      }
+      try {
+        child.kill(signal);
+      } catch {
+        // Already gone — the race this loses is the one we wanted.
       }
     };
 
