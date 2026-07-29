@@ -59,8 +59,14 @@ const KILL_GRACE_MS = 2_000;
  * Claude has just SIGSTOPped does exactly that, taking the Box Gate down with it
  * for the life of the process: every Box-touching channel, Update Agentbox
  * included, queues behind a promise that will never resolve. A timeout is
- * SIGTERM, then SIGKILL after a grace, and resolves like any other failure —
- * non-zero, with the deadline named in `stderr`, so callers need no new branch.
+ * SIGTERM, then SIGKILL after a grace — to the child's whole process GROUP off
+ * Windows, since a grandchild holding the stdout pipe keeps this promise open
+ * (see `killGroup`) — and resolves like any other failure: non-zero, with the
+ * deadline named in `stderr`, so callers need no new branch.
+ *
+ * The group is why the child is spawned `detached`: it is its own group leader,
+ * so a signal to the Launcher's group no longer reaches it. Nothing here relies
+ * on that — the child is never `unref`'d and this promise still awaits it.
  */
 export function run(
   command: string,
