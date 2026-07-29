@@ -1,5 +1,7 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
+import { homedir } from "node:os";
+import { ENGINE_PROFILE } from "../core/config";
 
 /**
  * Thin promise wrapper over spawning `colima` / `docker` / `git`. The Launcher
@@ -46,6 +48,28 @@ export function spawnPath(
   return [...add, path].filter(Boolean).join(":");
 }
 
+/**
+ * Pin every Engine call to the Box's own VM. The `docker` CLI talks to whatever
+ * the CURRENT context points at — on a machine that also runs Docker Desktop
+ * that is Docker Desktop, so the Box silently lands outside the Colima VM and
+ * outside the Resource Cap (ADR 0001's boundary, unenforced). DOCKER_HOST
+ * outranks the context, and Colima puts each profile's socket at a fixed path,
+ * so pinning it here — the same choke point as the PATH fix — covers every
+ * spawn at once. Absent VM ⇒ absent socket ⇒ commands fail closed instead of
+ * quietly running against the wrong engine.
+ *
+ * Windows gets no pin: podman ignores DOCKER_HOST and targets its own machine.
+ * ponytail: assumes the default $COLIMA_HOME (~/.colima); wire COLIMA_HOME
+ * through here if anyone relocates it.
+ */
+export function engineEnv(
+  platform: NodeJS.Platform = process.platform,
+  home = homedir(),
+): Readonly<Record<string, string>> {
+  if (platform === "win32") return {};
+  return { DOCKER_HOST: `unix://${home}/.colima/${ENGINE_PROFILE}/docker.sock` };
+}
+
 /** How long a killed child is given to die politely before SIGKILL. */
 const KILL_GRACE_MS = 2_000;
 
@@ -80,7 +104,7 @@ export function run(
     const group = process.platform !== "win32";
     const child = spawn(command, args, {
       stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env, ...env, PATH: spawnPath() },
+      env: { ...process.env, ...env, PATH: spawnPath(), ...engineEnv() },
       detached: group,
     });
     let stdout = "";

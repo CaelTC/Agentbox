@@ -60,6 +60,10 @@ fetch_definition() {
 prepare_image() {
   log "Preparing the initial Box image…"
   colima start --profile agentbox --cpu 4 --memory 6 --disk 25
+  # Pin docker to the profile's own socket: without this the build lands on
+  # whatever the current context is (Docker Desktop, if installed) instead of
+  # the VM just started — same pin as engineEnv() in launcher/src/main/exec.ts.
+  export DOCKER_HOST="unix://$HOME/.colima/agentbox/docker.sock"
   docker build -t agentbox:latest "$AGENTBOX_HOME/definition/box"
 }
 

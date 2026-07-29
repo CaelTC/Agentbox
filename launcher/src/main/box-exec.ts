@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { BOX_CONTAINER, BOX_ROOT_PATH, ENGINE_CLI } from "../core/config";
-import { failureMessage, run, spawnPath, type RunResult } from "./exec";
+import { engineEnv, failureMessage, run, spawnPath, type RunResult } from "./exec";
 
 /**
  * The Box-exec seam: every invocation of the Engine CLI against the RUNNING Box
@@ -203,10 +203,11 @@ export const boxExec: BoxExec = {
     const child = spawn(ENGINE_CLI, ["stop", BOX_CONTAINER], {
       detached: true,
       stdio: "ignore",
-      // The same PATH fix every other Engine call gets. Without it a Launcher
-      // started from Finder spawns a bare `docker` that is not on PATH, and the
-      // Box stayed up after quit — holding the Resource Cap.
-      env: { ...process.env, PATH: spawnPath() },
+      // The same PATH + DOCKER_HOST fixes every other Engine call gets. Without
+      // them a Launcher started from Finder spawns a bare `docker` that is not
+      // on PATH — or one aimed at Docker Desktop instead of the Box's VM — and
+      // the Box stayed up after quit, holding the Resource Cap.
+      env: { ...process.env, PATH: spawnPath(), ...engineEnv() },
     });
     // Node reports a failed spawn as an asynchronous 'error' event, never a
     // throw, and an EventEmitter with no 'error' listener rethrows — which here
@@ -236,7 +237,7 @@ export interface PipeStage {
  */
 export function runPipe(a: PipeStage, b: PipeStage, input = ""): Promise<RunResult> {
   return new Promise((promiseResolve, reject) => {
-    const env = { ...process.env, PATH: spawnPath() };
+    const env = { ...process.env, PATH: spawnPath(), ...engineEnv() };
     const first = spawn(a.command, a.args, { stdio: ["pipe", "pipe", "pipe"], env });
     const second = spawn(b.command, b.args, { stdio: ["pipe", "pipe", "pipe"], env });
 

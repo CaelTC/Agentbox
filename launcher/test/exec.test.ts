@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { failureMessage, run, spawnPath } from "../src/main/exec";
+import { engineEnv, failureMessage, run, spawnPath } from "../src/main/exec";
 
 const allExist = () => true;
 const noneExist = () => false;
@@ -22,6 +22,18 @@ describe("spawnPath", () => {
 
   it("leaves PATH untouched on Windows — no Homebrew, and ':' is not the separator", () => {
     expect(spawnPath("C:\\Windows;C:\\podman", allExist, "win32")).toBe("C:\\Windows;C:\\podman");
+  });
+});
+
+describe("engineEnv", () => {
+  it("pins DOCKER_HOST to the agentbox profile's socket — the current context may be Docker Desktop", () => {
+    expect(engineEnv("darwin", "/Users/alex")).toEqual({
+      DOCKER_HOST: "unix:///Users/alex/.colima/agentbox/docker.sock",
+    });
+  });
+
+  it("pins nothing on Windows — podman ignores DOCKER_HOST and targets its own machine", () => {
+    expect(engineEnv("win32", "C:\\Users\\alex")).toEqual({});
   });
 });
 

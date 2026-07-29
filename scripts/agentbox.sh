@@ -47,6 +47,11 @@ else
   colima start --profile "$PROFILE" --cpu "$CPU" --memory "$MEMORY" --disk "$DISK"
 fi
 
+# Pin docker to the profile's own socket: without this every docker command
+# below targets the current context (Docker Desktop, if installed) instead of
+# the VM just started — same pin as engineEnv() in launcher/src/main/exec.ts.
+export DOCKER_HOST="unix://$HOME/.colima/${PROFILE}/docker.sock"
+
 # 2. Build the Box image.
 log "Building the Box…"
 docker build -t "$IMAGE" "$BOX_DIR"

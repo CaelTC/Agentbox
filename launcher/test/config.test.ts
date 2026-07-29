@@ -8,6 +8,7 @@ import {
 } from "../src/core/config";
 import { TERMINAL_PORT } from "../src/core/preview";
 import { colimaStartArgs, isColimaRunning } from "../src/main/colima";
+import { engineEnv } from "../src/main/exec";
 import { repoFile } from "./repo-file";
 
 /**
@@ -87,6 +88,13 @@ describe("scripts/agentbox.sh (the walking skeleton) against the core", () => {
     expect(SKELETON).toMatch(new RegExp(`http://127\\.0\\.0\\.1:${TERMINAL_PORT}(?![\\d:])`));
   });
 
+  it("pins docker to the profile's socket the Launcher pins (engineEnv)", () => {
+    // Without the pin every docker command targets the CURRENT context — Docker
+    // Desktop on a machine that has it — and the Box escapes the Resource Cap.
+    const pin = command(SKELETON, /^\s*export DOCKER_HOST=.*$/m, "the DOCKER_HOST pin");
+    expect(argv(pin, vars)[1]).toBe(`DOCKER_HOST=${engineEnv("darwin", "$HOME").DOCKER_HOST}`);
+  });
+
   it("greps colima status for a line a NAMED profile actually prints", () => {
     // The bug this pins: `grep -qi "colima is running"` never matches, because
     // with --profile the line reads `colima [profile=agentbox] is running`. The
@@ -118,6 +126,11 @@ describe("install/install.sh (the Mac Install Script) against the core", () => {
   it("builds the image tag the Launcher then runs", () => {
     const build = command(INSTALL_SH, /docker build -t \S+/, "the `docker build` line");
     expect(argv(build)[3]).toBe(BOX_IMAGE);
+  });
+
+  it("pins docker to the profile's socket the Launcher pins (engineEnv)", () => {
+    const pin = command(INSTALL_SH, /^\s*export DOCKER_HOST=.*$/m, "the DOCKER_HOST pin");
+    expect(argv(pin)[1]).toBe(`DOCKER_HOST=${engineEnv("darwin", "$HOME").DOCKER_HOST}`);
   });
 });
 
