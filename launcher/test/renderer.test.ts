@@ -551,11 +551,35 @@ it("has exactly one repeating timer in the renderer, and it is the starting cloc
  */
 describe("the renderer's scripts", () => {
   const INDEX = src("renderer", "index.html");
+  /** The scripts index.html loads, in the order it loads them. */
+  const LOADED = [...INDEX.matchAll(/<script defer src="\.\/([^"]+)"><\/script>/g)].map((m) => m[1]);
 
   it("are every one of them loaded by index.html", () => {
     for (const name of SCRIPTS) {
       expect(INDEX, `${name} is compiled but never loaded`).toContain(
         `src="./${name.replace(/\.ts$/, ".js")}"`,
+      );
+    }
+  });
+
+  it("load machinery.js first and app.js last", () => {
+    // The load-bearing half of that list. machinery.js declares `cb` and `app`
+    // as top-level `const`s — in the temporal dead zone until it runs — and
+    // app.js is the only script with top-level code, reaching for both as it
+    // loads. Either one out of place throws a ReferenceError and blanks the
+    // screen while every other test and the build stay green, which is the
+    // whole failure class this suite exists to catch. The five in between are
+    // nothing but hoisted function declarations, so their order is free.
+    expect(LOADED[0], "machinery.js must load first").toBe("machinery.js");
+    expect(LOADED.at(-1), "app.js must load last").toBe("app.js");
+  });
+
+  it("are the only things index.html loads", () => {
+    // The other direction of the membership check above: a typo in a src is a
+    // 404 the browser reports to nobody and no other test would notice.
+    for (const file of LOADED) {
+      expect(SCRIPTS, `index.html loads ${file}, which no renderer source emits`).toContain(
+        file.replace(/\.js$/, ".ts"),
       );
     }
   });
