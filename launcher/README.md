@@ -24,12 +24,18 @@ src/
   main/        Electron main process — the EFFECTS around the pure core. Holds
                the Engine seam (engine.ts + its colima.ts / podman.ts adapters)
                and the Box-exec seam (box-exec.ts), brokers the Box-side
-               Workspace, and opens a Project's session (funnel + the
-               Launcher-owned session window, one per Project — reopening
-               raises it rather than stacking).
-  renderer/    The home screen + per-Project control panel. The Claude session
-               itself opens in a separate window, not in here — and only when
-               the user clicks Open session.
+               Workspace (workspace.ts is a barrel over the workspace-*.ts
+               concern modules: projects, upload, export, import, delete), and
+               opens a Project's session (funnel + the Launcher-owned session
+               window, one per Project — reopening raises it rather than
+               stacking).
+  renderer/    The home screen + per-Project control panel, one classic
+               <script> per screen (machinery, layout, home, project, files,
+               file-delete, app) sharing a single global scope — index.html
+               lists them in the order they must run, and a renderer source
+               missing from that list is dead code. The Claude session itself
+               opens in a separate window, not in here — and only when the
+               user clicks Open session.
   shared/      The typed IPC contract (AgentboxApi) between main and renderer.
   preload.ts   contextBridge exposing only AgentboxApi to the renderer.
   types/       Ambient Electron declaration (see "The Electron shim" below).
@@ -45,11 +51,12 @@ kept thin so little logic escapes the tests.
 **Two deliberate notes for reviewers:**
 
 - The Workspace is a named volume with no host mirror (ADR 0001), so there is no
-  host-side Project filesystem at all: `main/workspace.ts` is the only thing that
-  creates, lists, or writes into Projects, brokering every operation into the Box
-  via `docker exec`/`docker cp`. `core/projects.ts` and `core/upload.ts` hold
-  only the pure rules it reuses (`sanitizeProjectName`, `assertValidSlug`,
-  `resolveUploadTargets`, `serializeProjectMeta`), which the unit tests exercise
+  host-side Project filesystem at all: the `main/workspace*.ts` modules are the
+  only things that create, list, or write into Projects, brokering every
+  operation into the Box via `docker exec`/`docker cp`. `core/projects.ts` and
+  `core/upload.ts` hold only the pure rules they reuse (`sanitizeProjectName`,
+  `assertValidSlug`, `resolveUploadTargets`,
+  `serializeProjectMeta`), which the unit tests exercise
   as an executable spec of the naming/collision/metadata rules.
 - Web Preview publishes a fixed set of common dev-server ports
   (`PREVIEW_PORTS`). A server on some other port won't be auto-detected — the

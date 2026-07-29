@@ -39,11 +39,11 @@ line in the barrel — one import surface, named rather than `export *`.
 
 ## Comments state invariants
 
-The renderer's files and `styles.css` record reasoning, not description — several comments
-name an invariant the code below keeps (how many cards a grid holds, what may
-open before the gate, why a value is host-side). Either keep the invariant or
-update the comment to the new one. Silently breaking one is how the next reader
-gets it wrong.
+The renderer's files and `styles.css` record reasoning, not description — several
+comments name an invariant the code below keeps (how many cards a grid holds,
+what may open before the gate, why a value is host-side). Either keep the
+invariant or update the comment to the new one. Silently breaking one is how the
+next reader gets it wrong.
 
 ## Known-failing test
 
