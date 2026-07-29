@@ -60,8 +60,10 @@ to clear are invisible in the source:
 
 Together these made that case look like an unwinnable wall-clock race, and hid a
 real defect underneath: the deadline signalled only the direct child, so a
-grandchild kept the stdout pipe — and `close`, and the promise — open. See the
-`killGroup` comment in `src/main/exec.ts`.
+grandchild kept the stdout pipe — and `close`, and the promise — open. Measured
+on that local `sh -c` case, not on a `docker exec`, whose shell runs inside the
+container and holds no host fd: the group kill is defence in depth for host-side
+helpers that fork. See the `killGroup` comment in `src/main/exec.ts`.
 
 ## Maintaining this file
 

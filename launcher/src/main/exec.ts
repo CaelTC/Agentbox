@@ -85,14 +85,18 @@ export function run(
 
     /**
      * The GROUP, not the child. This promise resolves on 'close', which waits
-     * for the stdout/stderr pipes — and a child leaves those pipes to ITS
-     * children: `docker exec` runs a shell, that shell runs the command, and
-     * every one of them inherits the write end. Signal the direct child alone
-     * and the grandchild lives on holding the pipe, so 'close' never arrives
-     * and the deadline fails at the only thing it exists to guarantee — a
-     * hung exec still taking the single-file Box Gate down for the life of the
-     * Launcher. Measured: 9019ms to settle a 150ms deadline, versus 165ms once
-     * the group is signalled.
+     * for the stdout/stderr pipes, and a HOST-side child leaves those pipes to
+     * ITS children: signal the direct child alone and a grandchild lives on
+     * holding the write end, so 'close' never arrives. Measured on the local
+     * `sh -c` case in `test/exec.test.ts`: 9019ms to settle a 150ms deadline,
+     * versus 165ms once the group is signalled.
+     *
+     * DEFENCE IN DEPTH, not the Box Gate's live failure mode. A `docker exec`
+     * has no host-side grandchild — the shell it runs lives in the container
+     * (under Colima, another VM kernel entirely), is no descendant of the
+     * Launcher and holds no host fd; the only host holder of the pipe is the
+     * `docker` CLI itself, which `child.kill` already ends. This covers host
+     * helpers that do fork.
      *
      * Windows has no process groups to signal and `kill` there already ends the
      * process, so it takes the direct-child path.
@@ -102,7 +106,13 @@ export function run(
         if (group && child.pid) process.kill(-child.pid, signal);
         else child.kill(signal);
       } catch {
-        // Already gone — the race this loses is the one we wanted.
+        // The group signal did not land (EPERM, or `-pid` no longer a live
+        // group). The direct child stays the floor — 'close' is the guarantee.
+        try {
+          child.kill(signal);
+        } catch {
+          // Already gone — the race this loses is the one we wanted.
+        }
       }
     };
 

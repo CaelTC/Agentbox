@@ -68,10 +68,11 @@ describe("run's deadline", () => {
   it("settles when the child leaves a grandchild holding the pipe", async () => {
     const started = Date.now();
     // The process 'close' waits for is not always the one the deadline
-    // signalled: `docker exec` runs a shell, the shell runs the command, and
-    // the grandchild inherits the stdout pipe. Signalling the direct child
-    // alone left that pipe open and this took the `sleep`'s full 30s — the
-    // deadline missing the one thing it exists to guarantee.
+    // signalled: a host-side child can fork, and the grandchild inherits the
+    // stdout pipe. Signalling the direct child alone left that pipe open and
+    // this took the `sleep`'s full 30s. Defence in depth rather than a live Box
+    // failure mode — a `docker exec`'s shell runs in the container and holds no
+    // host fd. See the `killGroup` comment.
     const res = await run("/bin/sh", ["-c", "echo up; sleep 30"], undefined, 1_000);
 
     expect(res.stdout).toContain("up"); // the shell reached its first line before the deadline
