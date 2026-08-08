@@ -157,13 +157,17 @@ function filesPanel(
 
   refresh.addEventListener("click", () => reload(refresh));
 
-  add.addEventListener("click", () =>
+  // One flow whether the files came from the picker or a drop: the "Add files…"
+  // button carries the busy state for both, so a drop shows the same "Adding…"
+  // the click does.
+  const addFiles = (run: () => Promise<UploadTarget[]>) =>
     void runOperation({
       button: add,
       busyLabel: "Adding…",
-      run: () => cb.upload(project.slug),
-      // An empty list is a cancelled picker, not a failed copy — and nothing
-      // changed, so there is nothing to read again.
+      run,
+      // An empty list is a cancelled picker — or a drop of nothing that lives on
+      // this computer's disk — not a failed copy. Nothing changed, so there is
+      // nothing to read again.
       done: (copied) => {
         if (!copied.length) return;
         flash(`Added ${copied.length} file(s) to ${project.name}.`);
@@ -173,8 +177,9 @@ function filesPanel(
         reload(add, { selected, known: new Set(paths) });
       },
       failed: "Couldn't add those files",
-    }),
-  );
+    });
+
+  add.addEventListener("click", () => addFiles(() => cb.upload(project.slug)));
 
   saveBtn.addEventListener("click", () =>
     void runOperation({
@@ -212,7 +217,7 @@ function filesPanel(
   drawTree();
   drawFiles();
 
-  return el("div", {}, [
+  const panel = el("div", { className: "drop" }, [
     el("p", { className: "eyebrow", textContent: "Files in this project" }),
     el("div", { className: "two" }, [
       tree,
@@ -255,6 +260,31 @@ function filesPanel(
         ]
       : []),
   ]);
+
+  // The whole tab is the drop target — aiming for a button mid-drag is exactly
+  // the friction a drop exists to remove. The counter is the standard fix for
+  // dragenter/dragleave firing on every child crossed. Dropped files go through
+  // the same `addFiles` as the picker; the preload owns turning them into paths.
+  let dragDepth = 0;
+  panel.addEventListener("dragover", (e) => e.preventDefault());
+  panel.addEventListener("dragenter", (e) => {
+    e.preventDefault();
+    dragDepth += 1;
+    panel.classList.add("drop--over");
+  });
+  panel.addEventListener("dragleave", () => {
+    dragDepth -= 1;
+    if (dragDepth <= 0) panel.classList.remove("drop--over");
+  });
+  panel.addEventListener("drop", (e) => {
+    e.preventDefault();
+    dragDepth = 0;
+    panel.classList.remove("drop--over");
+    const dropped = [...(e.dataTransfer?.files ?? [])];
+    if (dropped.length) addFiles(() => cb.uploadDropped(project.slug, dropped));
+  });
+
+  return panel;
 }
 
 /**

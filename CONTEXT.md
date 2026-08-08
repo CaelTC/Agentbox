@@ -45,7 +45,7 @@ The rule that the Launcher performs one Box-touching operation at a time. Everyt
 _Avoid_: lock (nothing is held across a user's decision), busy state (that is the renderer's, and it is not what makes this safe)
 
 **Upload**:
-A one-way, user-initiated copy of individual files from the Sandbox User's computer into an existing Project's Workspace, performed by the trusted Launcher via a native file picker. Claude never gets direct host filesystem access — it only sees the copies. Preserves threat A — true of picking a handful of files one at a time (a CSV, a script); not a claim this makes about carrying in a whole project, see Project Import for that.
+A one-way, user-initiated copy of individual files from the Sandbox User's computer into an existing Project's Workspace, performed by the trusted Launcher via a native file picker or files dropped onto the Files tab (a drop of a folder is refused — bringing a folder in is Project Import's job, with its consent sheet). Claude never gets direct host filesystem access — it only sees the copies. Preserves threat A — true of picking a handful of files one at a time (a CSV, a script); not a claim this makes about carrying in a whole project, see Project Import for that.
 _Avoid_: mount, shared folder (deliberately not a live bind-mount)
 
 **Export**:

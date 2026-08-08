@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { AgentboxApi } from "./shared/api";
 import { IPC } from "./shared/api";
 
@@ -12,6 +12,17 @@ const api: AgentboxApi = {
   createProject: (name) => ipcRenderer.invoke(IPC.createProject, name),
   openSession: (slug) => ipcRenderer.invoke(IPC.openSession, slug),
   upload: (slug) => ipcRenderer.invoke(IPC.upload, slug),
+  // The File→path step lives HERE, not in the renderer: the main world cannot
+  // mint a `File` backed by a host path it chose (webUtils returns "" for
+  // in-memory files), so the only paths that can reach main are of files a real
+  // drop or picker handed the page. That is what keeps drag-and-drop's
+  // provenance at the picker's level — see the `upload:drop` route.
+  uploadDropped: (slug, files) =>
+    ipcRenderer.invoke(
+      IPC.uploadDropped,
+      slug,
+      files.map((f) => webUtils.getPathForFile(f)).filter(Boolean),
+    ),
   openPreview: () => ipcRenderer.invoke(IPC.openPreview),
   listExportFiles: (slug) => ipcRenderer.invoke(IPC.listExportFiles, slug),
   saveToComputer: (slug, pick) => ipcRenderer.invoke(IPC.saveToComputer, slug, pick),

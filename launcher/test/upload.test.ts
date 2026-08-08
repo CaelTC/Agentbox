@@ -2,7 +2,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
-import { resolveUploadTargets } from "../src/core/upload";
+import { refuseFolders, resolveUploadTargets } from "../src/core/upload";
 
 let project: string;
 let host: string;
@@ -50,5 +50,20 @@ describe("resolveUploadTargets", () => {
       exists: (p) => boxFiles.has(p),
     });
     expect(t!.dest).toBe(join("/workspace/demo", "data-2.csv"));
+  });
+});
+
+describe("refuseFolders", () => {
+  const dirs = new Set(["/Users/alex/Documents"]);
+  const isDir = (p: string) => dirs.has(p);
+
+  it("lets a drop of plain files through", () => {
+    expect(() => refuseFolders(["/Users/alex/notes.txt"], isDir)).not.toThrow();
+  });
+
+  it("refuses the whole drop when any item is a folder, and says where folders go", () => {
+    expect(() => refuseFolders(["/Users/alex/notes.txt", "/Users/alex/Documents"], isDir)).toThrow(
+      /Open a folder from your computer/,
+    );
   });
 });

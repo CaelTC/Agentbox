@@ -21,6 +21,20 @@ function splitName(name: string): { stem: string; ext: string } {
   return { stem: ext ? name.slice(0, -ext.length) : name, ext };
 }
 
+/**
+ * A drop hands over whatever was under the cursor, and `docker cp` of a folder
+ * copies it wholesale — which would quietly become Project Import without its
+ * filter or its consent sheet. So a drop containing any folder is refused whole,
+ * in words that point at the door folders do go through.
+ */
+export function refuseFolders(paths: string[], isDirectory: (path: string) => boolean): void {
+  if (paths.some(isDirectory)) {
+    throw new Error(
+      "Folders can't be dropped here. To bring a whole folder in, use “Open a folder from your computer” on the home screen.",
+    );
+  }
+}
+
 export interface ResolveUploadOptions {
   /**
    * Predicate for whether a destination is already occupied. Defaults to the

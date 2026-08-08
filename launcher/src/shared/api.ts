@@ -22,6 +22,14 @@ export interface AgentboxApi {
   openSession(slug: string): Promise<void>;
   /** Open a native file picker and copy the chosen files into the Project. */
   upload(slug: string): Promise<UploadTarget[]>;
+  /**
+   * Upload's drag-and-drop twin: copy files dropped onto the Files tab into the
+   * Project. Takes DOM `File`s, not paths — the preload derives each host path
+   * itself (`webUtils`), so the renderer's main world never names a path, only
+   * hands over files a real drop (or picker) put in its hands. Files with no
+   * host path (dragged out of another app, not off the disk) are skipped.
+   */
+  uploadDropped(slug: string, files: File[]): Promise<UploadTarget[]>;
   /** Detect the served port and open it in the host's browser. */
   openPreview(): Promise<{ opened: boolean; url?: string }>;
 
@@ -155,6 +163,7 @@ export const IPC = {
   createProject: "projects:create",
   openSession: "session:open",
   upload: "upload:pick",
+  uploadDropped: "upload:drop",
   openPreview: "preview:open",
   listExportFiles: "export:list",
   saveToComputer: "export:save",

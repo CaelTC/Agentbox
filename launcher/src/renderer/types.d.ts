@@ -8,6 +8,7 @@ interface Window {
 // run.
 type Project = import("../core/projects").Project;
 type ExportCandidate = import("../core/export").ExportCandidate;
+type UploadTarget = import("../core/upload").UploadTarget;
 type ExportListing = import("../core/export").ExportListing;
 type ExportResult = import("../core/export").ExportResult;
 type ImportListing = import("../core/import").ImportListing;

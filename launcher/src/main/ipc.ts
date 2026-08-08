@@ -9,6 +9,7 @@ import {
   saveToGithub,
   startGithubLogin,
 } from "./github";
+import { refuseFolders } from "../core/upload";
 import { boxGate } from "./box-gate";
 import { exportRoot, hostBoxDefinitionDir } from "./paths";
 import { detectPreviewUrl } from "./preview";
@@ -208,6 +209,21 @@ export function registerIpc(homeWindow: () => BrowserWindow | undefined): void {
   route(IPC.upload, async (slug: string) => {
     const files = await pickFiles();
     return files.length === 0 ? [] : viaBox(() => boxUpload(files, slug));
+  });
+
+  // Upload's drag-and-drop twin. No picker, so no split to make — but the paths
+  // arrive from the renderer, which `upload:pick` never allowed. The provenance
+  // that stands in for the picker's is the preload's: with context isolation on,
+  // the main world can only reach this channel through `uploadDropped(slug,
+  // File[])`, and it cannot mint a File backed by a path it chose — so what
+  // lands here is the paths of files a real drop put in the page's hands (see
+  // preload.ts). Folders are refused before the Box is touched: `docker cp` of a
+  // folder recurses, and a dropped ~/Documents must not become an unfiltered
+  // Project Import. Each copy still lands basename-only inside the Project
+  // (resolveUploadTargets), same as a picked file.
+  route(IPC.uploadDropped, (slug: string, paths: string[]) => {
+    refuseFolders(paths, (p) => statSync(p, { throwIfNoEntry: false })?.isDirectory() ?? false);
+    return paths.length === 0 ? [] : viaBox(() => boxUpload(paths, slug));
   });
 
   routeViaBox(IPC.listExportFiles, (slug: string) => boxExportListing(slug, exportRoot()));

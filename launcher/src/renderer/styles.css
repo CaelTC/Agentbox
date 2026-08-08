@@ -444,6 +444,11 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   font-weight: var(--weight-bold);
 }
 
+/* The whole tab accepts a drop; the outline appears only mid-drag, because a
+   border that sat there always would say "form", not "you can let go here". */
+.drop { border-radius: var(--radius-sm); }
+.drop--over { outline: 2px dashed var(--color-surface-dark); outline-offset: 4px; }
+
 .tools { display: flex; align-items: center; gap: var(--radius-lg); }
 .tools input {
   flex: 1;
