@@ -87,9 +87,19 @@ describe("the Preview contract's two copies", () => {
   it("box/entrypoint.sh writes exactly what previewDoc() returns", () => {
     const script = repoFile("box", "entrypoint.sh");
     const heredoc = script.match(
-      /cat > \/home\/sandbox\/\.claude\/CLAUDE\.md <<'EOF'\n([\s\S]*?)\nEOF\n/,
+      /cat > \/home\/sandbox\/\.codex\/AGENTS\.md <<'EOF'\n([\s\S]*?)\nEOF\n/,
     );
-    expect(heredoc, "entrypoint.sh no longer writes ~/.claude/CLAUDE.md").not.toBeNull();
+    expect(heredoc, "entrypoint.sh no longer writes ~/.codex/AGENTS.md").not.toBeNull();
     expect(heredoc![1]).toBe(previewDoc().trimEnd());
+  });
+
+  // One doc, both harnesses: Codex reads the AGENTS.md above, Claude Code only
+  // ever reads ~/.claude/CLAUDE.md. Without the symlink Claude silently loses
+  // the contract the moment the heredoc moves.
+  it("points Claude Code's ~/.claude/CLAUDE.md at that same AGENTS.md", () => {
+    const script = repoFile("box", "entrypoint.sh");
+    expect(script).toContain(
+      "ln -sf /home/sandbox/.codex/AGENTS.md /home/sandbox/.claude/CLAUDE.md",
+    );
   });
 });

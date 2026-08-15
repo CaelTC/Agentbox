@@ -13,14 +13,17 @@ if ! sudo /usr/local/bin/apply-egress.sh; then
 fi
 
 # The Preview contract (ticket 09), as USER-LEVEL memory rather than a
-# per-Project CLAUDE.md: an imported Project almost always ships its own
-# CLAUDE.md, which would otherwise bury this. Written on every start so it can
+# per-Project doc: an imported Project almost always ships its own AGENTS.md or
+# CLAUDE.md, which would otherwise bury this. One doc serves both harnesses —
+# Codex reads ~/.codex/AGENTS.md as its global instructions, Claude Code reads
+# ~/.claude/CLAUDE.md — so the Claude path is a symlink to the AGENTS.md rather
+# than a second copy that could drift. Written on every start so it can
 # never drift from the image (same property `core/preview.ts`'s previewDoc()
 # was built for) — /home/sandbox is a named volume, so anything baked into the
 # image at build time would freeze on first run instead. Overwritten, never
 # appended: nothing here is the user's own text.
-mkdir -p /home/sandbox/.claude
-cat > /home/sandbox/.claude/CLAUDE.md <<'EOF'
+mkdir -p /home/sandbox/.codex /home/sandbox/.claude
+cat > /home/sandbox/.codex/AGENTS.md <<'EOF'
 # Preview in Agentbox
 
 The user views web pages by clicking **Preview** in the Launcher, which opens
@@ -56,12 +59,15 @@ Create one database per project (`CREATE DATABASE <project>`) rather than
 sharing `postgres`. It is reachable only from inside this Box, and its data
 survives restarts.
 EOF
+# -f, so a Box whose home volume predates this change — a real CLAUDE.md file
+# sits there — is converted to the symlink instead of keeping stale text.
+ln -sf /home/sandbox/.codex/AGENTS.md /home/sandbox/.claude/CLAUDE.md
 
 # The mattpocock-skills Battery (ticket 03). The Dockerfile bakes it into the
 # image, but /home/sandbox is a named volume: a Box whose home volume was
 # created before the bake — or while the bake was still installing the wrong
 # plugin id — keeps its empty ~/.claude/plugins forever. So top it up here on
-# every start, for the same reason the CLAUDE.md above is rewritten every start.
+# every start, for the same reason the AGENTS.md above is rewritten every start.
 # Backgrounded and best-effort: a slow or unreachable GitHub must never delay
 # the Box, and after the first success the check costs one `plugin list`.
 provision_skills() {
