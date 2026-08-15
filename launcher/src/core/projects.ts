@@ -21,6 +21,15 @@ export interface Project {
    * Box just created.
    */
   readonly lastSaved?: number;
+  /**
+   * Which harness this Project's metadata was last stamped with
+   * (`ProjectMeta.agent`, filled in by `boxListProjects`). Absent means the
+   * default, exactly as it does in the metadata itself — so most Projects carry
+   * nothing here, and only one last opened under something else says which.
+   * This is history, not a promise: the app-level setting decides what the
+   * NEXT open actually uses (main/settings.ts).
+   */
+  readonly agent?: Harness;
 }
 
 /** Persisted per-Project metadata, written into the Box by main/workspace.ts. */

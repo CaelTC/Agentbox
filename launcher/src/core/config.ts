@@ -79,6 +79,20 @@ export function isHarness(value: unknown): value is Harness {
 }
 
 /**
+ * What to call a harness on screen — the one place that decides "Claude" and
+ * "Codex" are the display names, so the renderer's option labels and status
+ * strings can't say something the Box would then contradict.
+ *
+ * The renderer keeps its own copy of this exact function (it is a classic
+ * <script> and cannot import this module — core/format.ts explains why);
+ * `test/renderer.test.ts` pins the two texts equal the same way it already does
+ * for `normalize` and `size`.
+ */
+export function harnessLabel(harness: Harness): string {
+  return harness === "codex" ? "Codex" : "Claude";
+}
+
+/**
  * PATH for everything the Launcher runs in the Box AS ROOT. The image's own
  * PATH puts /usr/local/cargo/bin — a directory the sandbox user can write —
  * FIRST, so resolving a bare `chown`/`rm`/`claude` through it as root would let

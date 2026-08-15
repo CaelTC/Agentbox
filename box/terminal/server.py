@@ -46,7 +46,10 @@ def _ctx(sid: str, tab: str, **extra) -> dict:
 
 async def index(request: Request) -> Response:
     # No auto-select, no auto-create: Projects are opened from the Launcher.
-    return PlainTextResponse("Open a Project from Agentbox to start a Claude session.")
+    # "the agent session", not the harness's name: there is no Project here to
+    # read a `.agentbox/project.json` from, and the Harness setting itself lives
+    # in the Launcher's own settings file, which this container never sees.
+    return PlainTextResponse("Open a Project from Agentbox to start the agent session.")
 
 
 async def session_detail(request: Request) -> Response:
