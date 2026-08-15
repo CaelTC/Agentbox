@@ -9,6 +9,8 @@ contains no secrets (ADR 0002).
 - `Dockerfile` — builds the Box: Claude Code (ticket 01), the Batteries
   (Node/Python/Rust/git + the mattpocock-skills plugin, ticket 03), and the
   egress tooling (ticket 02).
+- `codex-skills/` — the same skills battery in the form Codex reads, since it
+  can't install a Claude Code plugin (see `codex-skills/README.md`).
 - `entrypoint.sh` — applies the egress firewall exactly once at container start,
   then runs the container command. **Refuses to start** if the firewall can't be
   installed — a Box without its egress policy must never accept a Sandbox User.
@@ -74,3 +76,8 @@ The build step deliberately has no `|| true`: a Battery that fails to install
 should break the build, not the Sandbox User's first session. The entrypoint
 top-up *is* best-effort, so an unreachable GitHub cannot stop a Box from
 starting — it prints a `WARN` instead.
+
+The same skills reach Codex by a different road — it has no plugins, and reads
+`SKILL.md` directories out of `~/.agents/skills`. They are ported into
+`codex-skills/`, copied to `/opt/codex-skills` in the image, and laid into the
+home volume by the entrypoint on every start. See `codex-skills/README.md`.

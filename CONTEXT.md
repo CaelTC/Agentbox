@@ -82,7 +82,7 @@ A PostgreSQL server in its own container (`agentbox-postgres`) beside the Box, s
 _Avoid_: "the postgres container is part of the Box" (it is a sibling with its own walls), localhost:5432 on the Mac (deliberately not published — publishing would require a non-internal network, which would give the Database a route out)
 
 **Batteries**:
-The tooling pre-baked into the Box so Claude can act instantly without per-session installs — Node.js, Python, Rust, git, a shell, and the mattpocock-skills Claude Code plugin (pre-installed so its skills are available with no setup).
+The tooling pre-baked into the Box so Claude can act instantly without per-session installs — Node.js, Python, Rust, git, a shell, and the mattpocock-skills Claude Code plugin (pre-installed so its skills are available with no setup). The skills battery is carried for both agents: Codex cannot install a Claude Code plugin, so the same disciplines are ported into `box/codex-skills/` as the `SKILL.md` directories Codex reads.
 
 **Web Preview**:
 A port forwarded by the Launcher from the Box to a browser tab on the Sandbox User's computer, so they can see a page or app they built. The host reaching into the Box — does not weaken threat A or B.
