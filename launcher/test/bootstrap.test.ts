@@ -56,6 +56,7 @@ function fakeSteps(over: Partial<BootstrapSteps> = {}) {
       onStep("Starting the container…");
     },
     updateClaudeCode: async () => (calls.push("updateClaudeCode"), true),
+    checkCodexUpdate: async () => (calls.push("checkCodexUpdate"), "0.10.0"),
     homeListed: Promise.resolve(),
     ...over,
   };
@@ -82,8 +83,43 @@ describe("bootstrap", () => {
       "say:Starting the container…",
       "terminal:true",
       "updateClaudeCode",
+      "checkCodexUpdate",
     ]);
     expect(sent.filter((s) => "ok" in s)).toHaveLength(1);
+  });
+
+  /**
+   * Codex's half of the launch is a QUESTION, not an install: `npm install -g`
+   * costs ~15s whether or not anything changed, so Refresh on Launch reads the
+   * two versions and the home screen offers the update (backlog:
+   * codex-update-notify). Behind the ready status like the Claude update, and
+   * behind that update too — neither is worth a moment of the first paint.
+   */
+  it("only ASKS about Codex, after everything the Sandbox User is waiting for", async () => {
+    const { steps, calls, sent, send } = fakeSteps();
+
+    await bootstrap(send, steps);
+
+    expect(calls.indexOf("terminal:true")).toBeLessThan(calls.indexOf("checkCodexUpdate"));
+    // What the check found changes nothing about the launch: it is not a status,
+    // and it is not the ready message's notice — the home screen asks for it.
+    expect(sent.filter((s) => "ok" in s)).toHaveLength(1);
+    expect((sent.find((s) => "ok" in s) as { notice?: string }).notice).toBeUndefined();
+  });
+
+  // The launch cannot fail on a banner. Every real failure inside the check
+  // already resolves undefined (main/codex.ts); this is the backstop for the one
+  // that doesn't, since it runs inside the try that draws the cold room.
+  it("still launches when the Codex check throws", async () => {
+    const { steps, sent, send } = fakeSteps({
+      checkCodexUpdate: async () => {
+        throw new Error("no such container: agentbox");
+      },
+    });
+
+    await bootstrap(send, steps);
+
+    expect(sent.filter((s) => "ok" in s && s.ok === true)).toHaveLength(1);
   });
 
   it("updates Claude Code AFTER the home screen is drawn, never in front of it", async () => {

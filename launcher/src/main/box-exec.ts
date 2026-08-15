@@ -6,13 +6,16 @@ import { engineEnv, failureMessage, run, spawnPath, type RunResult } from "./exe
  * The Box-exec seam: every invocation of the Engine CLI against the RUNNING Box
  * — exec, exec-as-root, copy in, copy out, stop — goes through this one object.
  * Nothing else builds `docker exec agentbox …` argv or prefixes a path with
- * `agentbox:`, with ONE named exception: `boxUpdateClaudeArgs` (core/box.ts),
- * which `main/session.ts` runs on every launch as root. It stays outside because
- * it is best-effort — every failure is one `false` — and because it carries its
- * own in-Box `timeout 180`, longer than this seam's deadline below. (The Box's
- * LIFECYCLE — build, run, start, rm — is not this module's either:
- * `main/session.ts` owns that, and reaches a Box that may not be up yet, which
- * is why those calls use `mustSucceed` directly.)
+ * `agentbox:`, with TWO named exceptions, both of them agent updaters in
+ * core/box.ts: `boxUpdateClaudeArgs`, which `main/session.ts` runs on every
+ * launch, and `boxUpdateCodexArgs`, which `main/codex.ts` runs when the Sandbox
+ * User presses the banner's button. Both stay outside because they run as root
+ * and carry their own in-Box `timeout` — 180s and 300s, each longer than this
+ * seam's deadline below. Codex's version CHECK is not one of the two: it is a
+ * pair of ordinary `tryExec` reads through here. (The Box's LIFECYCLE — build,
+ * run, start, rm — is not this module's either: `main/session.ts` owns that, and
+ * reaches a Box that may not be up yet, which is why those calls use
+ * `mustSucceed` directly.)
  *
  * Four decisions live here, and only here:
  *

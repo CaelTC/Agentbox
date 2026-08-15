@@ -2,6 +2,7 @@ import { updateMessage, type RefreshResult } from "../core/refresh";
 import type { OnStep } from "../core/startup";
 import type { BootstrapStatus } from "../shared/api";
 import { boxGate } from "./box-gate";
+import { checkCodexUpdate } from "./codex";
 import { homeListedProjects } from "./ipc";
 import { hostBoxDefinitionDir } from "./paths";
 import { refreshOnLaunch } from "./refresh-runner";
@@ -21,6 +22,11 @@ export interface BootstrapSteps {
   removeBoxContainer(): Promise<void>;
   ensureBoxReady(onStep: OnStep): Promise<void>;
   updateClaudeCode(): Promise<boolean>;
+  /**
+   * Codex's opposite number: READ the two versions, install nothing. What it
+   * resolves is what the home screen's banner offers (main/codex.ts).
+   */
+  checkCodexUpdate(): Promise<string | undefined>;
   /** Resolves once the home screen has been handed its Projects (see ipc.ts). */
   homeListed: Promise<void>;
 }
@@ -31,6 +37,7 @@ const launchSteps: BootstrapSteps = {
   removeBoxContainer,
   ensureBoxReady: (onStep) => ensureBoxReady(hostBoxDefinitionDir(), onStep),
   updateClaudeCode,
+  checkCodexUpdate,
   homeListed: homeListedProjects,
 };
 
@@ -104,6 +111,19 @@ export async function bootstrap(
       if (!(await steps.updateClaudeCode())) {
         console.warn("Claude Code update skipped; keeping the version baked into the Box image.");
       }
+      // Codex is NOT updated here (backlog: codex-update-notify): `npm install
+      // -g` has no cheap no-op, so it would tax every launch with ~15s of
+      // reinstalling what is already there. This reads the two versions instead
+      // and the home screen offers the update — non-blocking in the only sense
+      // that matters, since the launch said "ready" several lines above.
+      //
+      // The `catch` is the point of the line. This sits inside the try that
+      // reports "Couldn't start Agentbox", and the ready status has ALREADY been
+      // sent: a rejection here would send a second terminal status and draw the
+      // cold room over the home screen the Sandbox User is looking at, over a
+      // banner. Nothing in main/codex.ts rejects, and this is why it may never
+      // start to (see `updateClaudeCode`, guarded the same way for the same try).
+      await steps.checkCodexUpdate().catch(() => undefined);
     });
   } catch (error) {
     // The message, not the Error: the renderer puts this straight on screen

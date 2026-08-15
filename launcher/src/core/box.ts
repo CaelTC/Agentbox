@@ -153,6 +153,42 @@ export function boxUpdateClaudeArgs(container: string = BOX_CONTAINER): string[]
   ];
 }
 
+/**
+ * `docker exec` argv that installs the latest Codex CLI in the Box. Run ONLY
+ * when the Sandbox User presses the button behind the "Codex update available"
+ * banner — never on launch, which is the whole difference from Claude Code
+ * above: `npm install -g` has no cheap no-op path, so an every-launch install
+ * would tax every single start with the ~15s of reinstalling a version that was
+ * already there. The launch does the cheap half instead — it reads the two
+ * versions and offers the update (main/codex.ts).
+ *
+ * Root, a sanitized PATH and an in-Box `timeout` for the same three reasons
+ * `boxUpdateClaudeArgs` has them; the deadline is longer because this is always
+ * a real download and never a no-op.
+ *
+ * `HOME` is the one thing with no counterpart there: npm keeps its cache under
+ * $HOME, and a root exec can inherit the SANDBOX user's home — leaving a
+ * root-owned ~/.npm that the sandbox user's own `npm install` then cannot write.
+ */
+export function boxUpdateCodexArgs(container: string = BOX_CONTAINER): string[] {
+  return [
+    "exec",
+    "-u",
+    "root",
+    "-e",
+    `PATH=${BOX_ROOT_PATH}`,
+    "-e",
+    "HOME=/root",
+    container,
+    "timeout",
+    "300",
+    "npm",
+    "install",
+    "-g",
+    "@openai/codex@latest",
+  ];
+}
+
 /** A `-v` value is a host bind mount unless its source is a bare named volume. */
 export function isHostMount(volumeSpec: string): boolean {
   const source = volumeSpec.split(":")[0] ?? "";

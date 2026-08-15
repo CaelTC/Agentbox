@@ -11,6 +11,7 @@ import {
   type RefreshResult,
 } from "../core/refresh";
 import type { OnStep } from "../core/startup";
+import { forgetCodexUpdate } from "./codex";
 import { failureMessage, run } from "./exec";
 import { agentboxHome, hostBoxDefinitionDir, hostDefinitionDir } from "./paths";
 import { ensureBoxReady, ensureEngine, removeBoxContainer, updateClaudeCode } from "./session";
@@ -121,6 +122,12 @@ export async function updateAgentbox(steps: UpdateSteps = engineSteps): Promise<
   if (!(await steps.updateClaudeCode())) {
     console.warn("Claude Code update skipped; keeping the version baked into the Box image.");
   }
+  // The recreate drops Codex back to the baked version too, and that one is NOT
+  // reinstalled here (see core/box.ts). So the launch's answer about it is now
+  // about a container that no longer exists: forget it, and let the next ask
+  // read the Box that does. No effect and no cost — the check is only re-run if
+  // something actually asks.
+  forgetCodexUpdate();
   return updateMessage(result);
 }
 

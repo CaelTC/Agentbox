@@ -86,6 +86,25 @@ export interface AgentboxApi {
   updateBox(): Promise<string | undefined>;
 
   /**
+   * The Codex version waiting in the registry, or undefined when the Box already
+   * has the latest — or when the check could not run at all, which says the same
+   * nothing to a screen (backlog: codex-update-notify). Answered from the
+   * launch's own check, so asking twice costs one check, not two.
+   *
+   * Asked for AFTER the home screen is on screen, never before it: the launch
+   * runs this behind `claude update` at the Box Gate, so waiting on it to paint
+   * would put up to `timeout 180` in front of the Projects.
+   */
+  codexUpdate(): Promise<string | undefined>;
+  /**
+   * Install that version in the Box, on the Sandbox User's say-so — the one
+   * thing Refresh on Launch deliberately does not do for them, because
+   * `npm install -g` costs the same ~15s whether or not anything changed.
+   * Resolves with the sentence to show.
+   */
+  updateCodex(): Promise<string>;
+
+  /**
    * Measure what deleting this Project would destroy, for the one confirmation
    * sheet — file count, size, and whether any of it was ever saved out.
    */
@@ -176,6 +195,8 @@ export const IPC = {
   disconnectGithub: "github:disconnect",
   saveToGithub: "github:save",
   updateBox: "box:update",
+  codexUpdate: "codex:available",
+  updateCodex: "codex:update",
   planDelete: "delete:plan",
   deleteProject: "delete:project",
   deleteFiles: "delete:files",
