@@ -57,8 +57,13 @@ function section(kind: string, children: (Node | string)[]): HTMLElement {
  * User dismisses it. `role="status"` because it appears without them doing
  * anything, and the dismiss button is labelled for a screen reader — "×" is not
  * a word.
+ *
+ * `actions` is for the strips that are not only news: "Codex update available"
+ * carries the button that installs it, between the message and the dismiss, so
+ * the thing to do about a notice sits inside the notice rather than somewhere
+ * else on the screen. Most strips pass none and are unchanged.
  */
-function noticeStrip(message: string): HTMLElement {
+function noticeStrip(message: string, actions: Node[] = []): HTMLElement {
   const strip = el("div", { className: "notice", role: "status" });
   const dismiss = el("button", {
     className: "notice__dismiss",
@@ -66,7 +71,7 @@ function noticeStrip(message: string): HTMLElement {
     ariaLabel: "Dismiss this message",
   });
   dismiss.addEventListener("click", () => strip.remove());
-  strip.append(el("p", { textContent: message }), dismiss);
+  strip.append(el("p", { textContent: message }), ...actions, dismiss);
   return strip;
 }
 

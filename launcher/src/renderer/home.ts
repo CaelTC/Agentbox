@@ -41,6 +41,12 @@ async function renderHome(notice?: string): Promise<void> {
 
   if (notice) root.append(noticeStrip(notice));
 
+  // The Codex banner's place, held now and filled in later if the launch's
+  // version check has anything to offer — see `codexNotice`, which is started at
+  // the foot of this function and never waited on.
+  const codexSlot = el("div");
+  root.append(codexSlot);
+
   // The Projects (ticket 05) are the home screen now, first and at full width:
   // resuming yesterday's work is what the Launcher is opened for, and it used to
   // sit two bands down, behind a statement of what Agentbox is.
@@ -66,6 +72,55 @@ async function renderHome(notice?: string): Promise<void> {
   );
 
   root.append(footer([...(await githubAccountLine()), updateLink()]));
+
+  // Started, not awaited: the answer can be minutes behind this paint, and the
+  // Projects are what the Launcher was opened for.
+  void codexNotice(codexSlot);
+}
+
+/**
+ * "Codex update available (0.9.1)", with the button that installs it — the one
+ * agent update Agentbox asks about instead of just doing (backlog:
+ * codex-update-notify). Claude Code is refreshed on every launch because
+ * `claude update` is a ~1s no-op when there is nothing new; `npm install -g
+ * @openai/codex` costs its ~15s every time, so this one is offered rather than
+ * spent, and the launch only pays for the two version reads behind it.
+ *
+ * Awaited by nobody. The check runs behind the launch's own `claude update` at
+ * the Box Gate, so a home screen that waited for this would sit on an empty
+ * page for as long as that took — and by the time the answer lands the Sandbox
+ * User may be inside a Project, which is what `isConnected` asks: the slot is
+ * still in the document only while the home screen it was drawn into is.
+ */
+async function codexNotice(slot: HTMLElement): Promise<void> {
+  // Never a failure on screen: a check that could not run is a Launcher with
+  // nothing to say about Codex, which is exactly what it says by staying empty.
+  const version = await cb.codexUpdate().catch(() => undefined);
+  if (!version || !slot.isConnected) return;
+
+  const update = el("button", {
+    className: "btn--link",
+    textContent: "Update Codex",
+  }) as HTMLButtonElement;
+
+  const strip = noticeStrip(`Codex update available (${version}).`, [update]);
+  slot.append(strip);
+
+  update.addEventListener("click", () =>
+    void runOperation({
+      button: update,
+      busyLabel: "Updating…",
+      run: () => cb.updateCodex(),
+      // The banner goes on success ONLY. A failed update leaves it up, because
+      // the update is still there to be had and the strip is the only way back
+      // to it short of relaunching.
+      done: (message) => {
+        strip.remove();
+        flash(message);
+      },
+      failed: "Couldn't update Codex",
+    }),
+  );
 }
 
 /**

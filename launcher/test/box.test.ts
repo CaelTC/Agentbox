@@ -5,6 +5,7 @@ import {
   boxConnectDbArgs,
   boxRunArgs,
   boxUpdateClaudeArgs,
+  boxUpdateCodexArgs,
   dbNetworkCreateArgs,
   dbRunArgs,
   isHostMount,
@@ -90,6 +91,33 @@ describe("boxUpdateClaudeArgs", () => {
   it("updates Claude Code as root in the running Box (root owns the global install)", () => {
     expect(args.join(" ")).toBe(
       `exec -u root -e PATH=${BOX_ROOT_PATH} agentbox timeout 180 claude update`,
+    );
+  });
+});
+
+describe("boxUpdateCodexArgs", () => {
+  const args = boxUpdateCodexArgs();
+
+  it("installs the latest Codex as root in the running Box", () => {
+    expect(args.join(" ")).toBe(
+      `exec -u root -e PATH=${BOX_ROOT_PATH} -e HOME=/root agentbox ` +
+        `timeout 300 npm install -g @openai/codex@latest`,
+    );
+  });
+
+  // npm caches under $HOME. Without this the root install writes a root-owned
+  // ~/.npm into the SANDBOX user's home, and the next `npm install` a session
+  // runs in a Project fails on a cache it cannot write.
+  it("keeps root's npm cache out of the sandbox user's home", () => {
+    expect(args[args.indexOf("-e", args.indexOf("-e") + 1) + 1]).toBe("HOME=/root");
+  });
+
+  // The Sandbox User is watching this one, and it is always a real download —
+  // so it gets a longer in-Box deadline than the launch's `claude update` no-op.
+  it("bounds the install IN the Box, for longer than Claude's launch update", () => {
+    expect(args[args.indexOf("timeout") + 1]).toBe("300");
+    expect(Number(args[args.indexOf("timeout") + 1])).toBeGreaterThan(
+      Number(boxUpdateClaudeArgs()[boxUpdateClaudeArgs().indexOf("timeout") + 1]),
     );
   });
 });

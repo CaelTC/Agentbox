@@ -11,6 +11,7 @@ import {
 } from "./github";
 import { refuseFolders } from "../core/upload";
 import { boxGate } from "./box-gate";
+import { checkCodexUpdate, updateCodex } from "./codex";
 import { exportRoot, hostBoxDefinitionDir } from "./paths";
 import { detectPreviewUrl } from "./preview";
 import { updateAgentbox } from "./refresh-runner";
@@ -180,6 +181,19 @@ export function registerIpc(homeWindow: () => BrowserWindow | undefined): void {
   route(IPC.updateBox, async (): Promise<string | undefined> =>
     (await confirmUpdate()) ? boxGate(() => updateAgentbox()) : undefined,
   );
+
+  // The Codex banner's two channels, and they take opposite policies on purpose.
+  //
+  // The QUESTION is ungated: the launch has usually answered it already
+  // (main/codex.ts memoizes the promise, so this joins that check rather than
+  // starting a second), and the two reads behind it are best-effort — a banner
+  // is never worth bringing a stopped Box up for, and a Box that is mid-recreate
+  // simply answers "nothing to offer".
+  //
+  // The INSTALL is: it rewrites the Box's global node_modules, so it runs alone
+  // like everything else that changes the container, and it needs the Box up.
+  route(IPC.codexUpdate, () => checkCodexUpdate());
+  routeViaBox(IPC.updateCodex, () => updateCodex());
 
   /* Workspace channels — the Box is up before any of these run. ----------- */
 

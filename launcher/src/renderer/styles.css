@@ -599,6 +599,13 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+/* A strip that carries its own action ("Update Codex"). The link's Heat
+   underline is invisible against the accent it now sits on, so it takes the
+   text colour instead. */
+.notice .btn--link {
+  flex: none;
+  border-bottom-color: currentColor;
+}
 .notice__dismiss {
   flex: none;
   padding: 0 0.35rem;
