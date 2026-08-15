@@ -82,6 +82,23 @@ provision_skills() {
 }
 provision_skills &
 
+# Codex's "Sign in with ChatGPT" runs its OAuth callback server on
+# 127.0.0.1:1455 INSIDE the Box, which the Launcher's published port cannot
+# reach: Docker forwards to the Box's bridge (eth0) address, never container
+# loopback (the same gap the Preview doc above closes by telling servers to
+# bind 0.0.0.0 — Codex's bind is not configurable, so it gets a bridge
+# instead). Forward bridge-ip:1455 → 127.0.0.1:1455 so the Mac's browser can
+# complete the redirect. Bound to the bridge address SPECIFICALLY, never
+# 0.0.0.0: a wildcard bind would collide with Codex's own 127.0.0.1:1455 and,
+# while Codex isn't listening, would accept its own forwards in a loop. The
+# host side stays loopback-only (the Launcher publishes 127.0.0.1:1455).
+# Best-effort like the console below: no bridge must never stop the Box.
+BRIDGE_IP="$(ip -4 route get 1.0.0.1 2>/dev/null \
+  | awk '{for (i = 1; i < NF; i++) if ($i == "src") { print $(i + 1); exit }}' || true)"
+if [[ -n "${BRIDGE_IP}" ]]; then
+  socat "TCP4-LISTEN:1455,bind=${BRIDGE_IP},fork,reuseaddr" TCP4:127.0.0.1:1455 &
+fi
+
 # Serve the web console (Starlette → tmux) in the background, AFTER egress is up.
 # Reachable only via the Launcher's loopback port-forward, never the LAN. Best
 # effort: a terminal failure must not stop the Box from hosting Claude sessions.

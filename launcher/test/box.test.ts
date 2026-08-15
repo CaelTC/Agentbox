@@ -41,6 +41,12 @@ describe("boxRunArgs", () => {
     expect(args.join(" ")).toContain("-p 127.0.0.1:7681:7681");
   });
 
+  it("publishes Codex's OAuth callback on loopback so Sign in with ChatGPT can complete", () => {
+    expect(args.join(" ")).toContain("-p 127.0.0.1:1455:1455");
+    // Loopback-bound like every other forward — never the LAN (ADR 0001).
+    expect(args.join(" ")).not.toContain("0.0.0.0");
+  });
+
   it("keeps the container alive so a Claude session can be exec'd into it", () => {
     // last tokens are the long-lived command
     expect(args.slice(-2).join(" ")).toBe("sleep infinity");

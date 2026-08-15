@@ -12,7 +12,12 @@ import {
   WORKSPACE_DIR,
   WORKSPACE_VOLUME,
 } from "./config";
-import { PREVIEW_PORTS, TERMINAL_PORT, loopbackPublishArgs } from "./preview";
+import {
+  CODEX_OAUTH_PORT,
+  PREVIEW_PORTS,
+  TERMINAL_PORT,
+  loopbackPublishArgs,
+} from "./preview";
 
 export interface BoxRunOptions {
   image?: string;
@@ -61,10 +66,11 @@ export function boxRunArgs(options: BoxRunOptions = {}): string[] {
     "net.ipv6.conf.all.disable_ipv6=1",
     "--sysctl",
     "net.ipv6.conf.default.disable_ipv6=1",
-    // Publish preview ports + the web terminal on loopback so the Mac's browser
-    // can reach a served page or the tmux session, without exposing the Box to
-    // the LAN (ticket 07, ADR 0001).
-    ...loopbackPublishArgs([...previewPorts, TERMINAL_PORT]),
+    // Publish preview ports + the web terminal + Codex's OAuth callback on
+    // loopback so the Mac's browser can reach a served page, the tmux session,
+    // or the Sign-in-with-ChatGPT redirect, without exposing the Box to the
+    // LAN (ticket 07, ADR 0001).
+    ...loopbackPublishArgs([...previewPorts, TERMINAL_PORT, CODEX_OAUTH_PORT]),
     // Workspace (the user's work) and home (the Claude login) both persist as
     // NAMED VOLUMES — never host mounts (ADR 0001, threat A).
     "-v",
