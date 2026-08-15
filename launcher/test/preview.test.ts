@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  CODEX_OAUTH_PORT,
   PREVIEW_PORTS,
   TERMINAL_PORT,
   detectServedPort,
@@ -72,6 +73,13 @@ describe("detectServedPort", () => {
     expect(detectServedPort([TERMINAL_PORT, 9999])).toBe(9999);
   });
 
+  it("never picks the always-on Codex OAuth bridge as the served page", () => {
+    expect(CODEX_OAUTH_PORT).toBe(1455);
+    expect(detectServedPort([CODEX_OAUTH_PORT])).toBeUndefined();
+    expect(detectServedPort([CODEX_OAUTH_PORT, 5173])).toBe(5173);
+    expect(detectServedPort([CODEX_OAUTH_PORT, 9999])).toBe(9999);
+  });
+
   it("only ever returns a port inside the published (forwardable) set or a live port", () => {
     // 5173 is well-known AND published; picking it means Preview will actually resolve.
     expect(PREVIEW_PORTS).toContain(detectServedPort([5173, 3000]));
@@ -91,5 +99,18 @@ describe("the Preview contract's two copies", () => {
     );
     expect(heredoc, "entrypoint.sh no longer writes ~/.claude/CLAUDE.md").not.toBeNull();
     expect(heredoc![1]).toBe(previewDoc().trimEnd());
+  });
+});
+
+describe("the Codex OAuth bridge's two copies", () => {
+  // CODEX_OAUTH_PORT is the source of truth; box/entrypoint.sh's socat line
+  // must carry the same port (bash cannot import TypeScript). Without this,
+  // moving the port republishes one side and silently strands the other.
+  it("box/entrypoint.sh bridges exactly CODEX_OAUTH_PORT to container loopback", () => {
+    const script = repoFile("box", "entrypoint.sh");
+    expect(script).toContain(`TCP4-LISTEN:${CODEX_OAUTH_PORT},`);
+    expect(script).toContain(`TCP4:127.0.0.1:${CODEX_OAUTH_PORT}`);
+    // The in-Box listener binds the bridge address, never the wildcard.
+    expect(script).not.toContain("bind=0.0.0.0");
   });
 });

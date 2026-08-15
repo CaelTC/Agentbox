@@ -22,6 +22,18 @@ export const PREVIEW_PORTS: readonly number[] = [3000, 4321, 5173, 8000, 8080];
 export const TERMINAL_PORT = 7681;
 
 /**
+ * Codex's "Sign in with ChatGPT" OAuth callback server. Codex hard-binds it to
+ * 127.0.0.1 INSIDE the Box, so unlike a dev server it cannot be told to bind
+ * 0.0.0.0 — `box/entrypoint.sh` runs a socat bridge from the Box's bridge
+ * address (where the published port actually lands) to container loopback, and
+ * the Launcher publishes the port on the Mac's loopback like every other
+ * forward. Kept OUT of PREVIEW_PORTS for the same reason as TERMINAL_PORT: the
+ * bridge is always listening, so Preview must never mistake it for the user's
+ * dev server.
+ */
+export const CODEX_OAUTH_PORT = 1455;
+
+/**
  * `docker run` publish args, each bound to loopback on the host. Binding to
  * 127.0.0.1 (not 0.0.0.0) keeps the forward scoped to the Mac's browser and
  * off the LAN.
@@ -100,8 +112,11 @@ export function previewUrl(port: number): string {
  * resolve); otherwise fall back to the first listening port.
  */
 export function detectServedPort(listeningPorts: readonly number[]): number | undefined {
-  // The web terminal is always listening; it is never the page the user wants to preview.
-  const candidates = listeningPorts.filter((p) => p !== TERMINAL_PORT);
+  // The web terminal and the Codex OAuth bridge are always listening; neither
+  // is ever the page the user wants to preview.
+  const candidates = listeningPorts.filter(
+    (p) => p !== TERMINAL_PORT && p !== CODEX_OAUTH_PORT,
+  );
   if (candidates.length === 0) return undefined;
   const known = candidates.find((p) => PREVIEW_PORTS.includes(p));
   return known ?? candidates[0];

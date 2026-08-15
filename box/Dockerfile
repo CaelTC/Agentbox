@@ -12,7 +12,8 @@ FROM node:22-bookworm
 # --- Batteries: system runtimes & tools (ticket 03) --------------------------
 # Installed once at build time so a Sandbox User never waits for a per-session
 # install. Node.js comes from the base image. `iproute2` provides `ss`, used by
-# Web Preview to detect the served port (ticket 07).
+# Web Preview to detect the served port (ticket 07). `socat` bridges Codex's
+# loopback-only OAuth callback to the bridge interface (entrypoint.sh).
 RUN apt-get update \
   && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
        python3 \
@@ -24,6 +25,7 @@ RUN apt-get update \
        iptables \
        ipset \
        iproute2 \
+       socat \
        sudo \
        tmux \
   && rm -rf /var/lib/apt/lists/*
