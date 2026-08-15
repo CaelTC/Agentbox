@@ -2,7 +2,9 @@
 
 ## Status
 
-accepted
+accepted — extended by ADR 0007, which puts a second agent (OpenAI Codex) inside
+this same boundary. Everything below holds for it unchanged; read "Claude Code"
+as "the coding agent".
 
 ## Context
 

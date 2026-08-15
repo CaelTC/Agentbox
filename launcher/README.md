@@ -2,8 +2,9 @@
 
 The double-clickable macOS app that is a Sandbox User's entire interface to
 Agentbox (CONTEXT.md → "Launcher"). It hides Docker/Colima: it refreshes and
-starts the Box, shows the Project home screen, drops the user into a Claude Code
-session, and brokers Uploads and Web Preview.
+starts the Box, shows the Project home screen, drops the user into a session
+with the Harness they chose (Claude Code or Codex), and brokers Uploads and Web
+Preview.
 
 ## Layout
 
@@ -11,7 +12,8 @@ session, and brokers Uploads and Web Preview.
 src/
   core/        Pure, framework-free logic — the tested heart of the Launcher.
                No Electron, no Docker; deterministic and unit-tested.
-    config.ts      Load-bearing constants (Resource Cap, volume, image names).
+    config.ts      Load-bearing constants (Resource Cap, volume, image names,
+                   the Harness list and its default).
     box.ts         docker build/run/exec argument builders + no-host-mount guard.
     egress.ts      The Egress Policy rule-set (mirrors box/egress/apply-egress.sh).
     batteries.ts   Manifest of pre-baked runtimes (cross-checked vs the Dockerfile).
@@ -33,7 +35,7 @@ src/
                <script> per screen (machinery, layout, home, project, files,
                file-delete, app) sharing a single global scope — index.html
                lists them in the order they must run, and a renderer source
-               missing from that list is dead code. The Claude session itself
+               missing from that list is dead code. The agent session itself
                opens in a separate window, not in here — and only when the
                user clicks Open session.
   shared/      The typed IPC contract (AgentboxApi) between main and renderer.
@@ -74,7 +76,7 @@ npm test          # vitest run
 
 The built macOS app depends on **electron** (the app shell), which is **not
 needed for typechecking or tests** and is therefore not a runtime dependency in
-this repo. The Claude session opens in a **BrowserWindow the Launcher owns**, so
+this repo. The agent session opens in a **BrowserWindow the Launcher owns**, so
 no browser is a dependency of it at all — the Install Script installs none, and
 Preview goes to whatever the host already treats as default. That window loads
 the Box's page with no preload, no Node and a sandboxed renderer, and is held to

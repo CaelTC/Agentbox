@@ -1,8 +1,9 @@
 # Agentbox
 
-A local development sandbox for running Claude Code on a colleague's computer. It
-lets people who are not fluent in Git or coding safely practice and play with
-Claude Code without risking their own machine or reaching company systems.
+A local development sandbox for running a coding agent — Claude Code or OpenAI
+Codex — on a colleague's computer. It lets people who are not fluent in Git or
+coding safely practice and play with one without risking their own machine or
+reaching company systems.
 
 See [`CONTEXT.md`](./CONTEXT.md) for the ubiquitous language and the Threat Model.
 
@@ -12,8 +13,10 @@ Two decisions carry the safety of the whole system (see `docs/adr/`):
 
 1. **The container is the permission boundary**
    ([ADR 0001](./docs/adr/0001-container-is-the-permission-boundary.md)) — no
-   host mounts, egress blocked to all private/local ranges, and Claude Code runs
-   with prompts bypassed because the walls are real.
+   host mounts, egress blocked to all private/local ranges, and the agent runs
+   with its own guardrails off because the walls are real. Adding a second agent
+   changed none of that
+   ([ADR 0007](./docs/adr/0007-a-second-agent-same-walls.md)).
 2. **Public repo, no keys, refresh on launch**
    ([ADR 0002](./docs/adr/0002-public-repo-no-keys-refresh-on-launch.md)) — no
    company credential ever lands on the laptop or in the Box.
@@ -22,8 +25,9 @@ Two decisions carry the safety of the whole system (see `docs/adr/`):
 
 Two processes live on the **host** (the Sandbox User's own computer); everything
 else runs **inside the Box**, which is the security boundary (ADR 0001). The host
-reaches the Box only over a loopback-only port forward (`127.0.0.1:7681`) — never
-the LAN.
+reaches the Box only over loopback-only port forwards — the web console on
+`127.0.0.1:7681`, and `127.0.0.1:1455` for Codex's "Sign in with ChatGPT"
+redirect — never the LAN.
 
 ```
   Host: macOS or Windows (trusted)        The Box  (Docker container = the boundary)
@@ -31,9 +35,9 @@ the LAN.
 
   ┌─────────────────────────┐             entrypoint.sh
   │ Launcher (Electron)      │   docker      1. apply-egress.sh   (firewall first)
-  │  · start Engine + Box    │──  exec  ──▶  2. start-terminal.sh (web console)
-  │  · Project home screen   │  agentbox-   3. sleep infinity    (stays alive)
-  │  · per-Project controls  │   session
+  │  · start Engine + Box    │──  exec  ──▶  2. socat 1455 → lo   (ChatGPT login)
+  │  · Project home screen   │  agentbox-   3. start-terminal.sh (web console)
+  │  · per-Project controls  │   session    4. sleep infinity    (stays alive)
   │  · quit ⇒ docker stop    │   <slug>    web console  (server.py / Starlette, :7681)
   └───────────┬─────────────┘               GET  /sessions/<slug>          terminal page
               │                             WS   /sessions/<slug>/terminal  ─┐
@@ -45,16 +49,16 @@ the LAN.
   │  (Launcher-owned: no    │    only        · require .agentbox/project.json
   │   URL bar, one per      │                · tmux new-session -A -s <slug> \
   │   Project — reopening   │                    claude --dangerously-skip-permissions \
-  │   raises it)            │                    [seedPrompt]        ← passed as one argv
-  └─────────────────────────┘
+  │   raises it)            │                 or codex --dangerously-bypass-approvals-and-sandbox \
+  └─────────────────────────┘                    [seedPrompt]        ← passed as one argv
                                                         │
                                              tmux ──────┴───────────────────────
                                                "portfolio"      → claude
-                                               "guessing-game"  → claude   (one per Project)
+                                               "guessing-game"  → codex    (one per Project)
 
                                              Named volumes (persist across restart/rebuild):
                                                /workspace/<slug>/…      Workspace (the Projects)
-                                               /home/sandbox            Login-with-Claude token
+                                               /home/sandbox            the Agent Login token
 ```
 
 The **Engine** in that first box is the host's headless, licence-free container
@@ -66,17 +70,23 @@ Cap is documented rather than bounded there
 
 **`agentbox-session` is the single source of truth for launching a Project.**
 Both the browser (via the web console's WebSocket) and the Launcher (via
-`docker exec`) reach a Project's Claude *only* through this one program, driven
+`docker exec`) reach a Project's agent *only* through this one program, driven
 entirely by data on the Workspace volume — so an unknown or crafted slug can
-never spawn anything. It runs Claude with permissions bypassed because the
-container, not a per-action prompt, is the wall (ADR 0001).
+never spawn anything. *Which* agent is one more piece of that data: the `agent`
+key in the Project's `.agentbox/project.json`, absent meaning Claude Code. Both
+run with their own guardrails off because the container, not a per-action
+prompt, is the wall (ADR 0001, and
+[ADR 0007](./docs/adr/0007-a-second-agent-same-walls.md) for why a second agent
+did not move it).
 
 ### Opening a Project (end to end)
 
 1. In the Launcher, the Sandbox User clicks a Project.
 2. The Launcher ensures the Box is up (whose entrypoint writes the Box-global
    `AGENTS.md` every agent reads — the Web Preview contract: serve on a
-   published port, bind `0.0.0.0`), then runs
+   published port, bind `0.0.0.0` — and points Claude Code's `CLAUDE.md` at that
+   same file), stamps the app-level Harness setting into the Project's
+   metadata, then runs
    `docker exec <box> agentbox-session <slug>` — off a TTY the funnel just
    **ensures** the tmux session exists (creating it detached, seeding the first
    prompt on a fresh session only).
@@ -98,7 +108,8 @@ container, not a per-action prompt, is the wall (ADR 0001).
 A session is a tmux session, and tmux is the source of truth — there is no
 separate session state to keep in sync. Persistence is two named volumes: the
 **Workspace** (`/workspace`, the user's Projects) and the sandbox **home**
-(`/home/sandbox`, the Login-with-Claude token). Both survive Box stop/restart
+(`/home/sandbox`, the Agent Login token — `~/.claude` for Claude Code,
+`~/.codex/auth.json` for Sign in with ChatGPT). Both survive Box stop/restart
 and image rebuilds; neither is a host mount (ADR 0001, threat A).
 
 Three more paths cross the boundary above, none through the loopback port —
@@ -108,15 +119,15 @@ into an existing Project. **Export** copies a Project's documents Box→host
 under an allowlist (ADR 0003). **Import** copies a whole folder host→Box,
 becoming a new Project outright, unfiltered but for `.gitignore` — its
 contents land at the Project root because `agentbox-session` above always
-starts Claude there ([ADR 0005](./docs/adr/0005-import-is-a-whole-project-not-a-filtered-copy.md)).
+starts the agent there ([ADR 0005](./docs/adr/0005-import-is-a-whole-project-not-a-filtered-copy.md)).
 
 ## Layout
 
 ```
 box/         The Box — the public Docker image.
-  Dockerfile        Batteries (Node/Python/Rust/git) + Claude Code + the console.
-  entrypoint.sh     Egress firewall → web console → stay alive.
-  bin/agentbox-session   The funnel: slug → tmux → Claude (single source of truth).
+  Dockerfile        Batteries (Node/Python/Rust/git) + Claude Code + Codex + the console.
+  entrypoint.sh     Egress firewall → agent memory, skills → OAuth bridge → console → alive.
+  bin/agentbox-session   The funnel: slug → tmux → the agent (single source of truth).
   egress/           The Egress Policy (iptables rules).
   terminal/         The web console — Starlette app (server.py) + templates + paths.
 scripts/     agentbox.sh — the walking-skeleton launcher (ticket 01).

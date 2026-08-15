@@ -6,14 +6,21 @@ contains no secrets (ADR 0002).
 
 ## Contents
 
-- `Dockerfile` — builds the Box: Claude Code (ticket 01), the Batteries
-  (Node/Python/Rust/git + the mattpocock-skills plugin, ticket 03), and the
-  egress tooling (ticket 02).
+- `Dockerfile` — builds the Box: Claude Code (ticket 01) and Codex (the second
+  Harness, ADR 0007), the Batteries (Node/Python/Rust/git + the
+  mattpocock-skills plugin, ticket 03), and the egress tooling (ticket 02).
 - `codex-skills/` — the same skills battery in the form Codex reads, since it
   can't install a Claude Code plugin (see `codex-skills/README.md`).
 - `entrypoint.sh` — applies the egress firewall exactly once at container start,
-  then runs the container command. **Refuses to start** if the firewall can't be
-  installed — a Box without its egress policy must never accept a Sandbox User.
+  then writes the Box-global agent memory (`~/.codex/AGENTS.md`, with Claude
+  Code's `~/.claude/CLAUDE.md` symlinked at it), lays down the skills and
+  bridges Codex's OAuth callback port, then runs the container command. **Refuses to start** if the
+  firewall can't be installed — a Box without its egress policy must never
+  accept a Sandbox User; the bridge, by contrast, is best-effort.
+- `bin/agentbox-session` — the funnel. Picks the agent named by the Project's
+  `.agentbox/project.json` (absent means Claude Code) and starts it in tmux with
+  its own guardrails off, because the container is the wall (ADR 0001, 0007).
+  `python3 bin/test_seed.py` is its self-check.
 - `egress/apply-egress.sh` — installs the Egress Policy with `iptables`. Mirrors
   the tested rule-set in `launcher/src/core/egress.ts`; keep the two in sync.
 - `egress/verify-egress.sh` — the live proof, run from inside the Box: curls the
@@ -43,7 +50,7 @@ breach, and the installer must stop.
 
 ## Run model
 
-The Box runs long-lived (`sleep infinity`) so the Launcher exec's Claude
+The Box runs long-lived (`sleep infinity`) so the Launcher exec's agent
 sessions into it; individual sessions come and go while the Workspace (a named
 volume) and the Box persist. It needs `--cap-add NET_ADMIN` so the entrypoint
 can install the firewall.
