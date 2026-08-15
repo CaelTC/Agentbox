@@ -74,9 +74,10 @@ container, not a per-action prompt, is the wall (ADR 0001).
 ### Opening a Project (end to end)
 
 1. In the Launcher, the Sandbox User clicks a Project.
-2. The Launcher ensures the Box is up, writes the Project's `CLAUDE.md` if it is
-   missing (the Web Preview contract: serve on a published port, bind `0.0.0.0`),
-   then runs `docker exec <box> agentbox-session <slug>` — off a TTY the funnel just
+2. The Launcher ensures the Box is up (whose entrypoint writes the Box-global
+   `AGENTS.md` every agent reads — the Web Preview contract: serve on a
+   published port, bind `0.0.0.0`), then runs
+   `docker exec <box> agentbox-session <slug>` — off a TTY the funnel just
    **ensures** the tmux session exists (creating it detached, seeding the first
    prompt on a fresh session only).
 3. Its own window becomes a per-Project control panel. Nothing else happens

@@ -60,7 +60,7 @@ kept thin so little logic escapes the tests.
   as an executable spec of the naming/collision/metadata rules.
 - Web Preview publishes a fixed set of common dev-server ports
   (`PREVIEW_PORTS`). A server on some other port won't be auto-detected — the
-  Project's `CLAUDE.md` steers Claude to a published port (e.g. 5173).
+  Box-global `AGENTS.md` steers the agent to a published port (e.g. 5173).
 
 ## Develop
 

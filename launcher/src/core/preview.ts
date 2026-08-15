@@ -35,9 +35,10 @@ export function loopbackPublishArgs(ports: readonly number[] = PREVIEW_PORTS): s
 }
 
 /**
- * The Box-global `~/.claude/CLAUDE.md` Claude Code reads at session start
+ * The Box-global `~/.codex/AGENTS.md` both harnesses read at session start —
+ * Codex directly, Claude Code through the `~/.claude/CLAUDE.md` symlink
  * (written by `box/entrypoint.sh` on every start, ticket 09 — a per-Project
- * doc would otherwise get buried by an imported Project's own CLAUDE.md). It
+ * doc would otherwise get buried by an imported Project's own AGENTS.md). It
  * exists because the published ports forward to the container's BRIDGE ip,
  * not its loopback: a dev server bound to 127.0.0.1 *inside* the Box is
  * unreachable from the Mac, and Preview opens a silent dead page. Ports come
