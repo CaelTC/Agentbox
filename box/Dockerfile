@@ -61,6 +61,11 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
 # --- Claude Code (ticket 01) -------------------------------------------------
 RUN npm install -g @anthropic-ai/claude-code
 
+# --- Codex CLI: the second selectable agent ----------------------------------
+# A Project opts in via the "agent" key in .agentbox/project.json, read by
+# agentbox-session; absent means Claude Code, so existing Projects are untouched.
+RUN npm install -g @openai/codex
+
 COPY egress/apply-egress.sh /usr/local/bin/apply-egress.sh
 # The live proof that the rules above actually hold (issue #11). Run once by the
 # Install Script, as the container command — the entrypoint applies the firewall

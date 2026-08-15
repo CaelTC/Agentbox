@@ -17,6 +17,8 @@ export const BATTERIES: readonly Battery[] = [
   { name: "python", dockerfileMarkers: ["python3"] },
   { name: "rust", dockerfileMarkers: ["rustup", "cargo"] },
   { name: "git", dockerfileMarkers: ["git"] },
+  // The scoped package name, not "codex": the bare word could match a comment.
+  { name: "codex", dockerfileMarkers: ["@openai/codex"] },
   {
     name: "mattpocock-skills",
     // The full plugin id, not just the plugin name: a Dockerfile that merely

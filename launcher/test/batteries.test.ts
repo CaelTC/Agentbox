@@ -8,7 +8,7 @@ describe("BATTERIES manifest", () => {
   it("lists the runtimes the ticket requires", () => {
     const names = BATTERIES.map((b) => b.name).sort();
     expect(names).toEqual(
-      ["git", "mattpocock-skills", "node", "python", "rust"].sort(),
+      ["codex", "git", "mattpocock-skills", "node", "python", "rust"].sort(),
     );
   });
 });

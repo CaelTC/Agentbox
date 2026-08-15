@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """agentbox-session <slug> — the single Box-side entry point that turns a
-Project slug into its running Claude Code session (ticket 02).
+Project slug into its running coding-agent session (ticket 02; Claude Code by
+default, Codex when the Project's metadata says so).
 
 Both the web console (server.py) and the Launcher reach a Project's Claude ONLY
 through this program, so launching is driven entirely by data on the volume: an
@@ -13,14 +14,16 @@ unknown or crafted slug can never spawn anything.
     creating it detached if absent. Never touches a session that's already live.
 
 A template's seed prompt is CONSUMED on the open that creates the session: it is
-popped from project.json before `claude` starts. Attaching isn't the only way a
+popped from project.json before the agent starts. Attaching isn't the only way a
 reopen skips reseeding — once the Box (or tmux) restarts, the session is gone,
 and without consuming it every reopen would re-send the prompt and the agent
 would redo the work it already did.
 
-The seed prompt is handed to `claude` as a SINGLE argv, never interpolated into a
-shell string, so a prompt full of shell metacharacters cannot execute a command.
-Claude keeps `--dangerously-skip-permissions`: the container is the boundary
+The seed prompt is handed to the agent as a SINGLE argv, never interpolated into
+a shell string, so a prompt full of shell metacharacters cannot execute a command.
+Both agents take an initial prompt positionally, and both run with their own
+guardrails off (`--dangerously-skip-permissions`,
+`--dangerously-bypass-approvals-and-sandbox`): the container is the boundary
 (ADR 0001), not the per-action prompts.
 """
 from __future__ import annotations
@@ -38,6 +41,15 @@ WORKSPACE = os.environ.get("AGENTBOX_WORKSPACE", "/workspace")
 # trailing newline, so `re.match` would accept "demo\n" where the Launcher's
 # identical JavaScript pattern rejects it.
 SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+
+# The agents a Project can select with the optional "agent" key in
+# .agentbox/project.json. No key means Claude Code, so existing Projects need no
+# migration. Codex's own Landlock sandbox is unreliable inside Docker, and the
+# container is the wall anyway (ADR 0001) — hence the bypass flag.
+AGENT_COMMANDS = {
+    "claude": ["claude", "--dangerously-skip-permissions"],
+    "codex": ["codex", "--dangerously-bypass-approvals-and-sandbox"],
+}
 
 
 def fail(msg: str) -> None:
@@ -58,6 +70,15 @@ def consume_seed(meta_path: str) -> str | None:
     return seed
 
 
+def agent_command(meta_path: str) -> list[str]:
+    """The argv for the Project's selected agent — a copy, safe to append to."""
+    with open(meta_path, encoding="utf-8") as f:
+        agent = json.load(f).get("agent", "claude")
+    if agent not in AGENT_COMMANDS:
+        fail(f"unknown agent {agent!r} (expected one of: {', '.join(AGENT_COMMANDS)})")
+    return list(AGENT_COMMANDS[agent])
+
+
 def session_is_live(slug: str) -> bool:
     return subprocess.run(["tmux", "has-session", "-t", f"={slug}"], capture_output=True).returncode == 0
 
@@ -76,16 +97,16 @@ def main(argv: list[str]) -> None:
 
     live = session_is_live(slug)
 
-    claude = ["claude", "--dangerously-skip-permissions"]
+    agent = agent_command(meta_path)
     if not live:
         seed = consume_seed(meta_path)
         if seed:
-            claude.append(seed)  # single argv — metacharacters can't execute
+            agent.append(seed)  # single argv — metacharacters can't execute
 
     if sys.stdout.isatty():
-        os.execvp("tmux", ["tmux", "new-session", "-A", "-s", slug, "-c", cwd, *claude])
+        os.execvp("tmux", ["tmux", "new-session", "-A", "-s", slug, "-c", cwd, *agent])
     elif not live:
-        subprocess.run(["tmux", "new-session", "-d", "-s", slug, "-c", cwd, *claude], check=True)
+        subprocess.run(["tmux", "new-session", "-d", "-s", slug, "-c", cwd, *agent], check=True)
 
 
 if __name__ == "__main__":
