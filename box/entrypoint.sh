@@ -99,6 +99,15 @@ if [[ -n "${BRIDGE_IP}" ]]; then
   socat "TCP4-LISTEN:1455,bind=${BRIDGE_IP},fork,reuseaddr" TCP4:127.0.0.1:1455 &
 fi
 
+# The same Battery for the other agent. Codex has no plugins to install: it
+# reads user-scope skills as SKILL.md directories under ~/.agents/skills, so the
+# image carries them at /opt/codex-skills and they are laid down here — on every
+# start, for the same reason the AGENTS.md above is rewritten every start, since
+# a copy baked into /home/sandbox would freeze with the volume. Ours are
+# overwritten; any skill the Sandbox User added themselves is left alone.
+mkdir -p /home/sandbox/.agents/skills
+cp -R /opt/codex-skills/. /home/sandbox/.agents/skills/
+
 # Serve the web console (Starlette → tmux) in the background, AFTER egress is up.
 # Reachable only via the Launcher's loopback port-forward, never the LAN. Best
 # effort: a terminal failure must not stop the Box from hosting Claude sessions.

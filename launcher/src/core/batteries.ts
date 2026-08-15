@@ -26,4 +26,8 @@ export const BATTERIES: readonly Battery[] = [
     // from a repo that does not exist, and this test still passed.
     dockerfileMarkers: ["mattpocock-skills@mattpocock"],
   },
+  // The same skills, ported for Codex (box/codex-skills/README.md). The image
+  // path, not the source directory: `box/codex-skills` appears in the build
+  // context whether or not the Dockerfile ever copies it in.
+  { name: "codex-skills", dockerfileMarkers: ["/opt/codex-skills/"] },
 ];

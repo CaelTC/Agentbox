@@ -80,6 +80,11 @@ COPY start-terminal.sh /usr/local/bin/start-terminal.sh
 # Both the console and the Launcher launch a Project only through this program.
 COPY bin/agentbox-session /usr/local/bin/agentbox-session
 COPY terminal/ /opt/terminal/
+# The Codex-side equivalent of the mattpocock-skills plugin below: skills Codex
+# reads from ~/.agents/skills. They land in /opt because /home/sandbox is a
+# named volume — entrypoint.sh lays them into the home directory on every start
+# (box/codex-skills/README.md).
+COPY codex-skills/ /opt/codex-skills/
 RUN chmod +x /usr/local/bin/apply-egress.sh /usr/local/bin/verify-egress.sh \
       /usr/local/bin/entrypoint.sh /usr/local/bin/start-terminal.sh \
       /usr/local/bin/agentbox-session
