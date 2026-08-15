@@ -1,3 +1,4 @@
+import type { Harness } from "../core/config";
 import type { DeleteListing, DeleteResult, FileDeleteResult } from "../core/delete";
 import type { ExportListing, ExportResult } from "../core/export";
 import type { PublishResult } from "../core/github";
@@ -32,6 +33,15 @@ export interface AgentboxApi {
   uploadDropped(slug: string, files: File[]): Promise<UploadTarget[]>;
   /** Detect the served port and open it in the host's browser. */
   openPreview(): Promise<{ opened: boolean; url?: string }>;
+
+  /**
+   * The Harness: which coding agent a session opens with. One app-level choice,
+   * not a property of a Project — it is delivered to the Box at `openSession`,
+   * so changing it decides what the NEXT Project opened runs, and disturbs no
+   * session that is already live.
+   */
+  harness(): Promise<Harness>;
+  setHarness(harness: Harness): Promise<void>;
 
   /**
    * The Project's files, classified, so the Launcher can render the checkbox
@@ -184,6 +194,8 @@ export const IPC = {
   upload: "upload:pick",
   uploadDropped: "upload:drop",
   openPreview: "preview:open",
+  harness: "settings:harness",
+  setHarness: "settings:harness-set",
   listExportFiles: "export:list",
   saveToComputer: "export:save",
   showSavedFiles: "export:show",

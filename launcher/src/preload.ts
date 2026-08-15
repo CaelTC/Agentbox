@@ -24,6 +24,8 @@ const api: AgentboxApi = {
       files.map((f) => webUtils.getPathForFile(f)).filter(Boolean),
     ),
   openPreview: () => ipcRenderer.invoke(IPC.openPreview),
+  harness: () => ipcRenderer.invoke(IPC.harness),
+  setHarness: (harness) => ipcRenderer.invoke(IPC.setHarness, harness),
   listExportFiles: (slug) => ipcRenderer.invoke(IPC.listExportFiles, slug),
   saveToComputer: (slug, pick) => ipcRenderer.invoke(IPC.saveToComputer, slug, pick),
   showSavedFiles: (slug) => ipcRenderer.invoke(IPC.showSavedFiles, slug),
