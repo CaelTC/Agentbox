@@ -20,7 +20,7 @@
  * concerns below keep one import surface between them. Named rather than `export
  * *`, so what the rest of the Launcher may reach is a list someone wrote.
  */
-export { boxCreateProject, boxListProjects } from "./workspace-projects";
+export { boxCreateProject, boxListProjects, boxSetProjectAgent } from "./workspace-projects";
 export {
   boxExport,
   boxExportDir,

@@ -55,6 +55,30 @@ export const BOX_CONTAINER = "agentbox";
 export const BOX_USER = "sandbox";
 
 /**
+ * The coding agents a session can open with — the Harness setting. It is
+ * app-level, not per-Project: one choice for the whole Launcher, applied to
+ * whichever Project is opened next (main/settings.ts, main/ipc.ts).
+ *
+ * The Box-side funnel carries its own copy of this list in Python, where none of
+ * this can be imported (`AGENT_COMMANDS` in `box/bin/agentbox-session`, which
+ * maps each name to an argv); `test/config.test.ts` compares the two as text. A
+ * Project whose metadata names no agent gets the default on both sides, so the
+ * untouched setting writes nothing and no existing Project needs migrating.
+ */
+export const HARNESSES = ["claude", "codex"] as const;
+export type Harness = (typeof HARNESSES)[number];
+export const DEFAULT_HARNESS: Harness = "claude";
+
+/**
+ * Is this one of the harnesses? Guards the two places a name arrives from
+ * outside the type system — a hand-edited settings file and the IPC bridge —
+ * before it can be written into a Project the Box will read.
+ */
+export function isHarness(value: unknown): value is Harness {
+  return typeof value === "string" && (HARNESSES as readonly string[]).includes(value);
+}
+
+/**
  * PATH for everything the Launcher runs in the Box AS ROOT. The image's own
  * PATH puts /usr/local/cargo/bin — a directory the sandbox user can write —
  * FIRST, so resolving a bare `chown`/`rm`/`claude` through it as root would let

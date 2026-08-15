@@ -65,7 +65,45 @@ async function renderHome(notice?: string): Promise<void> {
     ]),
   );
 
-  root.append(footer([...(await githubAccountLine()), updateLink()]));
+  root.append(footer([...(await harnessPicker()), ...(await githubAccountLine()), updateLink()]));
+}
+
+/**
+ * Which coding agent a Project opens with. One setting for the whole app, not a
+ * property of a Project: it is stamped into whichever Project is opened next
+ * (main/ipc.ts), so there is nothing to choose per tile and nothing to migrate.
+ *
+ * In the footer with the other housekeeping — it is picked once and then left
+ * alone, and it is nobody's reason for opening the Launcher. Absent entirely if
+ * the setting can't be read, exactly as the GitHub line is: a home screen that
+ * won't render over a picker is the worse trade.
+ */
+async function harnessPicker(): Promise<Node[]> {
+  let current: Harness;
+  try {
+    current = await cb.harness();
+  } catch {
+    return [];
+  }
+
+  const select = el("select", {}, [
+    el("option", { value: "claude", textContent: "Claude" }),
+    el("option", { value: "codex", textContent: "Codex" }),
+  ]) as HTMLSelectElement;
+  select.value = current; // the stored choice, and Claude on a Launcher nobody has set
+
+  // Not a `runOperation`: this touches no Box and has no busy state to show —
+  // the choice is a file in the Launcher's own home, and it applies to the next
+  // Project opened rather than to anything on screen.
+  select.addEventListener("change", () => {
+    void cb
+      .setHarness(select.value as Harness)
+      .catch((err: unknown) => flash(fail("Couldn't change the coding agent", err)));
+  });
+
+  return [
+    el("label", { className: "picker" }, [el("span", { textContent: "Coding agent" }), select]),
+  ];
 }
 
 /**

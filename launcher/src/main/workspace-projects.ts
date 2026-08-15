@@ -1,4 +1,4 @@
-import { WORKSPACE_DIR } from "../core/config";
+import { DEFAULT_HARNESS, WORKSPACE_DIR, type Harness } from "../core/config";
 import { parseBoxFileListing, type BoxFile } from "../core/export";
 import type { Project, ProjectMeta } from "../core/projects";
 import {
@@ -80,6 +80,35 @@ export async function boxCreateProject(
   await box.writeFile(metaPath(slug), serializeProjectMeta({ name, slug, seedPrompt }));
 
   return { name, slug, dir: projectPath(slug) };
+}
+
+/**
+ * Stamp the Harness the Launcher is set to into a Project's metadata, where the
+ * Box-side funnel reads it (the `agent` key, `box/bin/agentbox-session`). Run on
+ * every open (main/ipc.ts), which is what makes an app-level setting apply to
+ * whichever Project is opened next instead of the one it was created under.
+ *
+ * Writes nothing when the metadata already says what the funnel would do anyway:
+ * the default harness IS the funnel's default, so a Launcher whose setting was
+ * never touched leaves every existing project.json exactly as it found it, and
+ * switching back drops the key rather than pinning it.
+ *
+ * Metadata that is missing or unparseable is left alone rather than replaced —
+ * rewriting it would throw away the Project's name, and a Project with no
+ * metadata is one the funnel refuses to open in the first place.
+ */
+export async function boxSetProjectAgent(
+  slug: string,
+  agent: Harness,
+  box: BoxExec = boxExec,
+): Promise<void> {
+  const meta = await readBoxMeta(box, slug);
+  if (!meta || (meta.agent ?? DEFAULT_HARNESS) === agent) return;
+
+  const next: ProjectMeta = { ...meta };
+  if (agent === DEFAULT_HARNESS) delete next.agent;
+  else next.agent = agent;
+  await box.writeFile(metaPath(slug), serializeProjectMeta(next));
 }
 
 /**

@@ -7,8 +7,10 @@ import {
 } from "../src/core/box";
 import {
   BOX_IMAGE,
+  DEFAULT_HARNESS,
   DEFINITION_REPO,
   ENGINE_PROFILE,
+  HARNESSES,
   RESOURCE_CAP,
 } from "../src/core/config";
 import { TERMINAL_PORT } from "../src/core/preview";
@@ -60,6 +62,31 @@ function command(script: string, pattern: RegExp, what: string): string {
   expect(found, `${what} is gone — this drift test cannot see it any more`).not.toBeNull();
   return found![0];
 }
+
+/**
+ * The fourth copy: the Box-side funnel maps each harness to an argv in Python
+ * (`AGENT_COMMANDS`), where core/config.ts cannot be imported. Drift means a
+ * Launcher offering an agent the Box refuses — or, worse, quietly not offering
+ * one the Box grew. What each name RUNS is the Box's business (box/bin/test_seed.py);
+ * that the two sides know the same names is nobody's but this test's.
+ */
+describe("box/bin/agentbox-session's copy of the harness list", () => {
+  it("knows exactly the agents core/config.ts offers", () => {
+    const source = repoFile("box", "bin", "agentbox-session");
+    const block = source.match(/^AGENT_COMMANDS = \{$([\s\S]*?)^\}$/m);
+    expect(block, "agentbox-session no longer declares AGENT_COMMANDS").not.toBeNull();
+
+    const agents = [...block![1].matchAll(/^\s*"([^"]+)":/gm)].map(([, name]) => name);
+    expect(agents.slice().sort()).toEqual([...HARNESSES].sort());
+  });
+
+  it("defaults to the same harness the Launcher does, so an unstamped Project matches", () => {
+    const source = repoFile("box", "bin", "agentbox-session");
+    const fallback = source.match(/\.get\("agent", "([^"]+)"\)/);
+    expect(fallback, "agentbox-session no longer defaults the agent key").not.toBeNull();
+    expect(fallback![1]).toBe(DEFAULT_HARNESS);
+  });
+});
 
 describe("scripts/agentbox.sh (the walking skeleton) against the core", () => {
   const vars = assignments(SKELETON);

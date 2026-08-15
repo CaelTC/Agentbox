@@ -1,3 +1,5 @@
+import type { Harness } from "./config";
+
 /**
  * Projects (ticket 05): each Project is its own folder in the Workspace and
  * persists. This module owns Project naming and metadata; the Workspace itself
@@ -26,6 +28,14 @@ export interface ProjectMeta {
   name: string;
   slug: string;
   seedPrompt?: string;
+  /**
+   * Which coding agent the Box-side funnel launches for this Project
+   * (`box/bin/agentbox-session`). Absent means the default harness, which is
+   * also the funnel's own default — so the Launcher stamps this key only when
+   * the setting says something else, and a Project nobody has opened under a
+   * different harness keeps the metadata it was created with.
+   */
+  agent?: Harness;
 }
 
 export const META_DIR = ".agentbox";
@@ -35,9 +45,12 @@ export const META_FILE = "project.json";
 export const metaRelPath = `${META_DIR}/${META_FILE}`;
 
 export function serializeProjectMeta(meta: ProjectMeta): string {
-  const trimmed: ProjectMeta = meta.seedPrompt
-    ? { name: meta.name, slug: meta.slug, seedPrompt: meta.seedPrompt }
-    : { name: meta.name, slug: meta.slug };
+  // Rebuilt rather than serialized as given: an absent optional key is what both
+  // sides read as "the default", so writing `"agent": undefined`-shaped noise —
+  // or carrying a stray key some other build wrote — is not the same file.
+  const trimmed: ProjectMeta = { name: meta.name, slug: meta.slug };
+  if (meta.seedPrompt) trimmed.seedPrompt = meta.seedPrompt;
+  if (meta.agent) trimmed.agent = meta.agent;
   return JSON.stringify(trimmed, null, 2);
 }
 

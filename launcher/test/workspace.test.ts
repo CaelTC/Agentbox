@@ -13,10 +13,11 @@ import {
   boxExport,
   boxImportFolder,
   boxListProjects,
+  boxSetProjectAgent,
   boxUpload,
   lastSavedAt,
 } from "../src/main/workspace";
-import { fakeBox, type Op } from "./fake-box";
+import { fakeBox, type FakeBox, type Op } from "./fake-box";
 
 /**
  * The Workspace operations (main/workspace.ts), against a fake Box.
@@ -116,6 +117,64 @@ describe("boxCreateProject — a Project that isn't there is not a Project", () 
     });
 
     await expect(boxCreateProject("My Site", undefined, box)).rejects.toThrow(/permission denied/);
+  });
+});
+
+/**
+ * The Harness setting's delivery (main/ipc.ts runs this at every open). The Box
+ * funnel takes the agent from the Project's metadata, so this write IS the
+ * feature — and what it does NOT write is half of it: a Launcher on the default
+ * must leave every project.json that exists today byte-for-byte alone.
+ */
+describe("boxSetProjectAgent — the Harness reaching the funnel", () => {
+  const holding = (meta: object) =>
+    fakeBox((_op, argv) => (isMeta(argv) ? JSON.stringify(meta) : ""));
+
+  /** The metadata this Box was handed, parsed — undefined if nothing was written. */
+  function writtenMeta(box: FakeBox): unknown {
+    const call = box.calls.find((c) => c.startsWith("writeFile /workspace/demo/.agentbox"));
+    return call === undefined ? undefined : JSON.parse(call.slice(call.indexOf("{")));
+  }
+
+  it("stamps the chosen agent in, keeping everything the Project already had", async () => {
+    const box = holding({ name: "Demo", slug: "demo", seedPrompt: "build me a site" });
+
+    await boxSetProjectAgent("demo", "codex", box);
+
+    expect(writtenMeta(box)).toEqual({
+      name: "Demo",
+      slug: "demo",
+      seedPrompt: "build me a site", // still unconsumed — the funnel pops it, not this
+      agent: "codex",
+    });
+  });
+
+  // Zero churn, which is the whole reason the key is optional on both sides.
+  it("writes nothing when the Project already opens the agent the setting names", async () => {
+    const box = holding({ name: "Demo", slug: "demo" });
+
+    await boxSetProjectAgent("demo", "claude", box);
+
+    expect(writtenMeta(box)).toBeUndefined();
+  });
+
+  it("drops the key rather than pinning it when the setting goes back to the default", async () => {
+    const box = holding({ name: "Demo", slug: "demo", agent: "codex" });
+
+    await boxSetProjectAgent("demo", "claude", box);
+
+    expect(writtenMeta(box)).toEqual({ name: "Demo", slug: "demo" });
+  });
+
+  it("leaves metadata it could not read alone — rewriting it would lose the name", async () => {
+    const missing = fakeBox((_op, argv) => (isMeta(argv) ? new Error("no such file") : ""));
+    const corrupt = fakeBox((_op, argv) => (isMeta(argv) ? "{ half a fi" : ""));
+
+    await boxSetProjectAgent("demo", "codex", missing);
+    await boxSetProjectAgent("demo", "codex", corrupt);
+
+    expect(writtenMeta(missing)).toBeUndefined();
+    expect(writtenMeta(corrupt)).toBeUndefined();
   });
 });
 

@@ -7,8 +7,14 @@ import { boxGate } from "../src/main/box-gate";
 import { awaitGithubLogin } from "../src/main/github";
 import { homeListedProjects, registerIpc } from "../src/main/ipc";
 import { updateAgentbox } from "../src/main/refresh-runner";
-import { ensureBoxReady } from "../src/main/session";
-import { boxCreateProject, boxListProjects, boxUpload } from "../src/main/workspace";
+import { ensureBoxReady, openProjectSession } from "../src/main/session";
+import { harness } from "../src/main/settings";
+import {
+  boxCreateProject,
+  boxListProjects,
+  boxSetProjectAgent,
+  boxUpload,
+} from "../src/main/workspace";
 import type { BrowserWindow } from "electron";
 
 /**
@@ -48,6 +54,8 @@ vi.mock("../src/main/github", () => ({
   saveToGithub: vi.fn(),
 }));
 
+vi.mock("../src/main/settings", () => ({ harness: vi.fn(() => "claude"), setHarness: vi.fn() }));
+
 vi.mock("../src/main/workspace", () => ({
   boxCreateProject: vi.fn(),
   boxDeleteListing: vi.fn(),
@@ -58,6 +66,7 @@ vi.mock("../src/main/workspace", () => ({
   boxImportFolder: vi.fn(),
   boxListProjects: vi.fn(),
   boxPlanImport: vi.fn(),
+  boxSetProjectAgent: vi.fn(),
   boxUpload: vi.fn(),
   // Host-side decoration on the listing, not a Box call — the identity keeps
   // this test's subject (what the gate serialises) exactly what it was.
@@ -323,5 +332,24 @@ describe("the router's gate", () => {
     await listed;
     await settle();
     expect(signalled).toBe(true);
+  });
+
+  /**
+   * Delivery of the app-level Harness setting. The Box funnel reads the agent
+   * from the Project's metadata, so "opening a Project applies the setting"
+   * means exactly this: the current choice is stamped in, in the same gated
+   * turn, before the session is ensured. Stamping it AFTER would open the
+   * session the setting was flipped away from.
+   */
+  it("stamps the selected harness into the Project before opening its session", async () => {
+    vi.mocked(harness).mockReturnValue("codex");
+
+    await invoke(IPC.openSession, "demo");
+
+    expect(boxSetProjectAgent).toHaveBeenCalledWith("demo", "codex");
+    expect(openProjectSession).toHaveBeenCalledWith("demo");
+    expect(vi.mocked(boxSetProjectAgent).mock.invocationCallOrder[0]!).toBeLessThan(
+      vi.mocked(openProjectSession).mock.invocationCallOrder[0]!,
+    );
   });
 });

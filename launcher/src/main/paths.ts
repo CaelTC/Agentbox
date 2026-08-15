@@ -35,3 +35,13 @@ export function exportRoot(): string {
 export function githubTokenPath(): string {
   return join(agentboxHome(), "github.json");
 }
+
+/**
+ * The Launcher's own settings (main/settings.ts) — beside the Account, because
+ * both are Launcher state rather than the Sandbox User's work. Plain JSON, not
+ * keystore-encrypted like `github.json`: what it holds is a choice, never a
+ * credential.
+ */
+export function settingsPath(): string {
+  return join(agentboxHome(), "settings.json");
+}
