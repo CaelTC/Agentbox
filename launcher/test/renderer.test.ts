@@ -619,4 +619,13 @@ describe("the renderer's two copies of a core rule", () => {
     expect(declaration(MACHINERY, "size")).toBe(declaration(src("core", "format.ts"), "size"));
     expect(declaration(MACHINERY, "size")).toContain("GB");
   });
+
+  it("machinery.ts names a harness exactly as core/config.ts does", () => {
+    // Drift here has the picker offering "Claude" while the consent line it sits
+    // above says something else about the same choice.
+    expect(declaration(MACHINERY, "harnessLabel")).toBe(
+      declaration(src("core", "config.ts"), "harnessLabel"),
+    );
+    expect(declaration(MACHINERY, "harnessLabel")).toContain("Codex");
+  });
 });

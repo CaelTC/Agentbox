@@ -144,8 +144,8 @@ async function harnessPicker(): Promise<Node[]> {
   }
 
   const select = el("select", {}, [
-    el("option", { value: "claude", textContent: "Claude" }),
-    el("option", { value: "codex", textContent: "Codex" }),
+    el("option", { value: "claude", textContent: harnessLabel("claude") }),
+    el("option", { value: "codex", textContent: harnessLabel("codex") }),
   ]) as HTMLSelectElement;
   select.value = current; // the stored choice, and Claude on a Launcher nobody has set
 
@@ -169,11 +169,18 @@ async function harnessPicker(): Promise<Node[]> {
  * one worth saying: whether any of it is on the Sandbox User's own computer.
  * That is the sentence the Delete sheet leans on too, and the answer to "which
  * of these have I actually carried out yet".
+ *
+ * `project.agent` rides along for free: silent for the default harness (an
+ * unstamped Project already means Claude, so saying so on every tile would be
+ * noise for the common case), and named only for a Project last opened with
+ * something else — the Harness picker in the footer decides what the NEXT open
+ * uses, so this is history, not a promise.
  */
 function savedMeta(project: Project): string {
-  return project.lastSaved
+  const saved = project.lastSaved
     ? `Saved to your computer ${when(project.lastSaved)}`
     : "Not saved to your computer yet";
+  return project.agent ? `${saved} · Last opened with ${harnessLabel(project.agent)}` : saved;
 }
 
 /** The one tile that isn't a Project: both ways of starting one. */
@@ -263,7 +270,7 @@ function renderNewProjectSheet(): void {
       done: (listing) => {
         if (!listing) return;
         close();
-        renderImportSheet(listing);
+        void renderImportSheet(listing);
       },
       failed: "Couldn't read that folder",
     }),
@@ -344,8 +351,15 @@ async function githubAccountLine(): Promise<Node[]> {
  * whether `.gitignore` filtered anything, and the consent sentence, on the one
  * `openSheet` every modal here uses. Cancel copies nothing;
  * "Bring it in" is disabled outright when the folder doesn't fit the Box.
+ *
+ * Async only for the one read the consent sentence needs: which harness is
+ * about to get access. Falls back to the default exactly as `harness()` itself
+ * does (main/settings.ts) — a picker nobody has touched is worth more than a
+ * sheet that failed to open over an unreadable settings file.
  */
-function renderImportSheet(listing: ImportListing): void {
+async function renderImportSheet(listing: ImportListing): Promise<void> {
+  const current = await cb.harness().catch((): Harness => "claude");
+
   const bring = el("button", { className: "btn", textContent: "Bring it in" }) as HTMLButtonElement;
   bring.disabled = !listing.fitsFreeSpace; // refused before anything crosses, not after
   const cancel = el("button", { className: "btn--link", textContent: "Cancel" });
@@ -389,7 +403,7 @@ function renderImportSheet(listing: ImportListing): void {
   contents.push(
     el("p", {
       className: "sub",
-      textContent: "Once you click below, Claude will be able to read and change everything in this folder.",
+      textContent: `Once you click below, ${harnessLabel(current)} will be able to read and change everything in this folder.`,
     }),
   );
 

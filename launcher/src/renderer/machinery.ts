@@ -302,6 +302,16 @@ function size(bytes: number): string {
 }
 
 /**
+ * `core/config.ts`'s `harnessLabel`, character for character, because the
+ * renderer cannot import it (see `size` above). Every screen that names the
+ * coding agent — the picker's own options included — goes through this copy, so
+ * `test/renderer.test.ts` pins it against the original.
+ */
+function harnessLabel(harness: Harness): string {
+  return harness === "codex" ? "Codex" : "Claude";
+}
+
+/**
  * "just now" / a local date — the Sandbox User only needs the gist. The date
  * alone, not the second: this now sits on every Project row on the home screen,
  * where "7/24/2026, 6:49:47 PM" is precision nobody asked for in a subtitle.

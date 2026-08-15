@@ -44,7 +44,7 @@ export async function boxListProjects(box: BoxExec = boxExec): Promise<Project[]
   const projects: Project[] = [];
   for (const slug of slugs) {
     const meta = await readBoxMeta(box, slug);
-    projects.push({ name: meta?.name ?? slug, slug, dir: projectPath(slug) });
+    projects.push({ name: meta?.name ?? slug, slug, dir: projectPath(slug), agent: meta?.agent });
   }
   return projects.sort((a, b) => a.slug.localeCompare(b.slug));
 }
