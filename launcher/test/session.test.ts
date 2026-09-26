@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ENGINE_CLI } from "../src/core/config";
 import { mustSucceed, run } from "../src/main/exec";
 import { openProjectSession, updateClaudeCode } from "../src/main/session";
+import { boxSetProjectAgent } from "../src/main/workspace";
 
 /**
  * One window per Project, and only one. The session window is the Launcher's own
@@ -22,6 +23,10 @@ vi.mock("../src/main/exec", async (importOriginal) => ({
 }));
 
 vi.mock("node:child_process", () => ({ spawn: vi.fn() }));
+
+// The stamp is a Workspace write; what this file pins is that it happens, and
+// that it happens BEFORE the funnel runs.
+vi.mock("../src/main/workspace", () => ({ boxSetProjectAgent: vi.fn(async () => undefined) }));
 
 /** A stand-in for Electron's BrowserWindow, recording what was done to it. */
 const { FakeWindow } = vi.hoisted(() => {
@@ -93,22 +98,32 @@ beforeEach(() => {
 
 describe("openProjectSession", () => {
   it("ensures the session through the funnel before showing anything", async () => {
-    await openProjectSession("demo");
+    await openProjectSession("demo", "claude");
     expect(calls).toEqual([`${ENGINE_CLI} exec agentbox agentbox-session demo`]);
   });
 
+  it("stamps the harness into the Project before the funnel runs (ADR 0007)", async () => {
+    // Stamping AFTER would open the session the setting was just flipped away
+    // from: the funnel reads the agent from the metadata as it ensures the session.
+    vi.mocked(boxSetProjectAgent).mockImplementationOnce(async (slug, agent) => {
+      calls.push(`stamp ${slug} ${agent}`);
+    });
+    await openProjectSession("demo", "codex");
+    expect(calls).toEqual(["stamp demo codex", `${ENGINE_CLI} exec agentbox agentbox-session demo`]);
+  });
+
   it("opens one window on the Project's console URL", async () => {
-    await openProjectSession("demo");
+    await openProjectSession("demo", "claude");
     expect(only().loadURL).toHaveBeenCalledWith(URL);
   });
 });
 
 describe("openProjectSession, called again for a Project already open", () => {
   it("raises the window that exists and opens no second one", async () => {
-    await openProjectSession("demo");
+    await openProjectSession("demo", "claude");
     const first = only();
 
-    await openProjectSession("demo");
+    await openProjectSession("demo", "claude");
 
     expect(windows()).toHaveLength(1); // NOT a second view of the same session
     expect(first.focus).toHaveBeenCalled();
@@ -117,11 +132,11 @@ describe("openProjectSession, called again for a Project already open", () => {
   });
 
   it("restores it first when it is minimized", async () => {
-    await openProjectSession("demo");
+    await openProjectSession("demo", "claude");
     const window = only();
     window.minimized = true;
 
-    await openProjectSession("demo");
+    await openProjectSession("demo", "claude");
 
     // focus() does nothing to a minimized window on Windows — without this,
     // clicking Open session for a minimized session appears to do nothing at all.
@@ -129,8 +144,8 @@ describe("openProjectSession, called again for a Project already open", () => {
   });
 
   it("still runs the funnel, so a session whose tmux side died is rebuilt", async () => {
-    await openProjectSession("demo");
-    await openProjectSession("demo");
+    await openProjectSession("demo", "claude");
+    await openProjectSession("demo", "claude");
     expect(calls).toEqual([
       `${ENGINE_CLI} exec agentbox agentbox-session demo`,
       `${ENGINE_CLI} exec agentbox agentbox-session demo`,
@@ -140,18 +155,18 @@ describe("openProjectSession, called again for a Project already open", () => {
 
 describe("openProjectSession across Projects and closes", () => {
   it("gives each Project its own window", async () => {
-    await openProjectSession("demo");
-    await openProjectSession("other");
+    await openProjectSession("demo", "claude");
+    await openProjectSession("other", "claude");
 
     expect(windows()).toHaveLength(2);
     expect(windows()[1]!.loadURL).toHaveBeenCalledWith("http://localhost:7681/sessions/other");
   });
 
   it("opens a fresh window after the user closed the old one", async () => {
-    await openProjectSession("demo");
+    await openProjectSession("demo", "claude");
     only().close(); // the registry must forget a window that no longer exists
 
-    await openProjectSession("demo");
+    await openProjectSession("demo", "claude");
 
     expect(windows()).toHaveLength(2);
     expect(windows()[1]!.loadURL).toHaveBeenCalledWith(URL);
@@ -161,7 +176,7 @@ describe("openProjectSession across Projects and closes", () => {
 describe("the session window is held to the Box's console", () => {
   /** The `will-navigate` guard session.ts installed, as a predicate. */
   async function navigationAllowed(target: string): Promise<boolean> {
-    await openProjectSession("demo");
+    await openProjectSession("demo", "claude");
     const [event, listener] = only().webContents.on.mock.calls[0]!;
     expect(event).toBe("will-navigate");
 
@@ -183,7 +198,7 @@ describe("the session window is held to the Box's console", () => {
   });
 
   it("denies popups outright", async () => {
-    await openProjectSession("demo");
+    await openProjectSession("demo", "claude");
     const [handler] = only().webContents.setWindowOpenHandler.mock.calls[0]!;
     expect((handler as (d: { url: string }) => unknown)({ url: "http://example.com/" })).toEqual({
       action: "deny",
@@ -200,7 +215,7 @@ describe("openProjectSession when the funnel fails", () => {
   it("names the operation rather than the docker argv, and opens no window", async () => {
     vi.mocked(run).mockResolvedValue({ code: 1, stdout: "", stderr: "no such container" });
 
-    await expect(openProjectSession("demo")).rejects.toThrow(
+    await expect(openProjectSession("demo", "claude")).rejects.toThrow(
       /Opening the 'demo' session failed.*no such container/s,
     );
     expect(windows()).toHaveLength(0);

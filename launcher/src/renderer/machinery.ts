@@ -262,6 +262,15 @@ function carriedSelection(
   return new Set(files.filter((f) => f.exportable && keeps(f.path)).map((f) => f.path));
 }
 
+/**
+ * What a sentence calls the agent the NEXT open uses: the current option's label,
+ * as main worded it (`harnessChoice`). If the setting couldn't be read, words
+ * that fit every Harness instead — a screen never fails, or guesses, over a name.
+ */
+function currentLabel(choice: HarnessChoice | undefined): string {
+  return choice?.options.find((o) => o.value === choice.current)?.label ?? "the coding agent";
+}
+
 // --- end of the renderer's machinery -----------------------------------------
 
 /**
@@ -299,16 +308,6 @@ function size(bytes: number): string {
   const mb = bytes / 1024 ** 2;
   if (mb >= 1) return `${Math.round(mb)} MB`;
   return `${Math.round(bytes / 1024)} KB`;
-}
-
-/**
- * `core/config.ts`'s `harnessLabel`, character for character, because the
- * renderer cannot import it (see `size` above). Every screen that names the
- * coding agent — the picker's own options included — goes through this copy, so
- * `test/renderer.test.ts` pins it against the original.
- */
-function harnessLabel(harness: Harness): string {
-  return harness === "codex" ? "Codex" : "Claude";
 }
 
 /**

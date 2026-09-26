@@ -88,7 +88,7 @@ app.on("before-quit", (event) => {
     defaultId: 0,
     cancelId: 1,
     message: "Quit Agentbox?",
-    detail: "This closes your Agentbox and any open Claude session. Your projects are saved.",
+    detail: "This closes your Agentbox and any open coding-agent session. Your projects are saved.",
   });
   if (choice !== 0) return; // cancelled — the quit is already prevented
   quitConfirmed = true;

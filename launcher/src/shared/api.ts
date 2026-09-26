@@ -1,4 +1,4 @@
-import type { Harness } from "../core/config";
+import type { Harness, HarnessChoice } from "../core/config";
 import type { DeleteListing, DeleteResult, FileDeleteResult } from "../core/delete";
 import type { ExportListing, ExportResult } from "../core/export";
 import type { PublishResult } from "../core/github";
@@ -38,9 +38,10 @@ export interface AgentboxApi {
    * The Harness: which coding agent a session opens with. One app-level choice,
    * not a property of a Project — it is delivered to the Box at `openSession`,
    * so changing it decides what the NEXT Project opened runs, and disturbs no
-   * session that is already live.
+   * session that is already live. Read as a `HarnessChoice`: the current name
+   * with its label and the picker's options, so no screen names an agent.
    */
-  harness(): Promise<Harness>;
+  harness(): Promise<HarnessChoice>;
   setHarness(harness: Harness): Promise<void>;
 
   /**

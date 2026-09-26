@@ -1,6 +1,7 @@
 import { transformSync } from "esbuild";
 import { describe, expect, it } from "vitest";
 import { repoDir, repoFile } from "./repo-file";
+import type { HarnessChoice } from "../src/core/config";
 
 /**
  * The renderer is classic <script>s: none of `src/renderer/*.ts` has an import or
@@ -68,7 +69,7 @@ function renderer() {
   const build = new Function(
     "document",
     "setTimeout",
-    `${js}\nreturn { el, fail, flash, openSheet, runOperation, fileFolders, inFolder, matchesFilter, selectionTotal, folderTotal, carriedSelection };`,
+    `${js}\nreturn { el, fail, flash, openSheet, runOperation, fileFolders, inFolder, matchesFilter, selectionTotal, folderTotal, carriedSelection, currentLabel };`,
   );
   return { document, ...build(document, () => undefined) } as {
     document: ReturnType<typeof fakeDocument>;
@@ -93,6 +94,7 @@ function renderer() {
       files: readonly { path: string; exportable: boolean }[],
       prior?: { selected: ReadonlySet<string>; known: ReadonlySet<string> },
     ) => Set<string>;
+    currentLabel: (choice: HarnessChoice | undefined) => string;
   };
 }
 
@@ -620,12 +622,37 @@ describe("the renderer's two copies of a core rule", () => {
     expect(declaration(MACHINERY, "size")).toContain("GB");
   });
 
-  it("machinery.ts names a harness exactly as core/config.ts does", () => {
-    // Drift here has the picker offering "Claude" while the consent line it sits
-    // above says something else about the same choice.
-    expect(declaration(MACHINERY, "harnessLabel")).toBe(
-      declaration(src("core", "config.ts"), "harnessLabel"),
-    );
-    expect(declaration(MACHINERY, "harnessLabel")).toContain("Codex");
+});
+
+describe("the Harness's names stay on main's side of the bridge", () => {
+  it("no renderer script spells an agent's name — main hands it the words", () => {
+    // The picker's options, the consent sentence and a tile's "Last opened
+    // with" all take their labels from `harnessChoice` (core/config.ts). A
+    // quoted "claude" or "codex", or a "Claude" / "Codex" on screen, is a third
+    // copy of the harness list, one that nothing would keep in step.
+    //
+    // Comments may name them. So may `codexNotice`: it offers an update to the
+    // Codex CLI itself, whichever Harness is picked — a product, not a choice.
+    for (const file of SCRIPTS) {
+      const code = src("renderer", file)
+        .replace(/async function codexNotice\([\s\S]*?\n\}/, "")
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/\/\/.*$/gm, "");
+      expect(code, file).not.toMatch(/["'`](claude|codex)["'`]/);
+      expect(code, file).not.toMatch(/\b(Claude|Codex)\b/);
+    }
+  });
+
+  it("currentLabel names the current option, or fits every Harness when there is no choice", () => {
+    const { currentLabel } = renderer();
+    const choice: HarnessChoice = {
+      current: "codex",
+      options: [
+        { value: "claude", label: "Claude" },
+        { value: "codex", label: "Codex" },
+      ],
+    };
+    expect(currentLabel(choice)).toBe("Codex");
+    expect(currentLabel(undefined)).toBe("the coding agent");
   });
 });

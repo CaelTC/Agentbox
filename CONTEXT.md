@@ -25,7 +25,7 @@ The Box's network rule — the whole public internet is reachable, but all priva
 The rule that the Box holds no company credentials — only credentials that grant access to the coding agent itself. Defends threat B against cloud-hosted company systems, which the Egress Policy cannot block.
 
 **Harness**:
-Which coding agent a session runs — Claude Code or OpenAI Codex. One app-level setting the Sandbox User picks in the Launcher (`~/.agentbox/settings.json`, default Claude), stamped into a Project's metadata as it opens, because `agentbox-session` takes the agent from there. What a Project's tile then reports is the agent it was last opened with — history, not a promise: the picker decides the next open. Both run with their own guardrails off, because the Box is the boundary for either of them (ADR 0001, ADR 0007).
+Which coding agent a session runs — Claude Code or OpenAI Codex. One app-level setting the Sandbox User picks in the Launcher (`~/.agentbox/settings.json`, default Claude), stamped into a Project's metadata as it opens, because `agentbox-session` takes the agent from there. What a Project's tile then reports is the agent it was last opened with — history, not a promise: the picker decides the next open. The Launcher's screens are handed the choice with its words and the picker's options (`harnessChoice`); no screen spells an agent's name itself. Both run with their own guardrails off, because the Box is the boundary for either of them (ADR 0001, ADR 0007).
 _Avoid_: model, per-project agent (it is one choice for the whole app, and the metadata is only how it is delivered)
 
 **Agent Login**:

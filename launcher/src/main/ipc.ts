@@ -1,7 +1,7 @@
 import { BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { statSync } from "node:fs";
 import { resolve } from "node:path";
-import type { Harness } from "../core/config";
+import { harnessChoice, type Harness } from "../core/config";
 import { IPC, type SavedFolder } from "../shared/api";
 import {
   awaitGithubLogin,
@@ -29,7 +29,6 @@ import {
   boxImportFolder,
   boxListProjects,
   boxPlanImport,
-  boxSetProjectAgent,
   boxUpload,
   withLastSaved,
 } from "./workspace";
@@ -137,7 +136,7 @@ export function registerIpc(homeWindow: () => BrowserWindow | undefined): void {
       cancelId: 1,
       message: "Update Agentbox?",
       detail:
-        "If there's a new version, the sandbox restarts and any open Claude session closes. " +
+        "If there's a new version, the sandbox restarts and any open coding-agent session closes. " +
         "Your projects are saved.",
     };
     const parent = homeWindow();
@@ -152,7 +151,7 @@ export function registerIpc(homeWindow: () => BrowserWindow | undefined): void {
   // The Harness setting: a small file in the Launcher's own home
   // (main/settings.ts), so neither direction touches the Box. Nothing is
   // delivered from here — the choice reaches a session at `openSession`, below.
-  route(IPC.harness, () => harness());
+  route(IPC.harness, () => harnessChoice(harness()));
   route(IPC.setHarness, (choice: Harness) => setHarness(choice));
 
   // Save to GitHub (ADR 0006): the sign-in half is pure host work — no Box
@@ -219,15 +218,11 @@ export function registerIpc(homeWindow: () => BrowserWindow | undefined): void {
     return withLastSaved(projects, exportRoot());
   });
   routeViaBox(IPC.createProject, (name: string) => boxCreateProject(name));
-  // Where the app-level Harness setting becomes a real agent. The funnel takes
-  // the agent from the Project's metadata (box/bin/agentbox-session), so the
-  // delivery is a stamp into that file — in the same gated turn as the open, and
-  // immediately before it, so what starts is what the setting says right now. A
-  // Project opened while the setting is the default is not written to at all.
-  routeViaBox(IPC.openSession, async (slug: string) => {
-    await boxSetProjectAgent(slug, harness());
-    await openProjectSession(slug);
-  });
+  // Where the app-level Harness setting becomes a real agent: read here, in the
+  // gated turn, and delivered by `openProjectSession`, which stamps it into the
+  // Project's metadata immediately before the funnel runs — so what starts is
+  // what the setting says right now.
+  routeViaBox(IPC.openSession, (slug: string) => openProjectSession(slug, harness()));
 
   // The picker FIRST, then the gate — the same split `updateBox` makes around
   // its confirmation, and for the same two reasons. A file picker is a human

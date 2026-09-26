@@ -222,7 +222,7 @@ export async function saveToGithub(slug: string): Promise<PublishResult> {
   if (bundled.code === DETACHED_HEAD_EXIT) {
     throw new Error(
       "This Project isn't on a branch (git calls it a detached HEAD), so there's nothing to push. " +
-        "Ask Claude to check out a branch first.",
+        "Ask your coding agent to check out a branch first.",
     );
   }
   if (bundled.code !== 0) {

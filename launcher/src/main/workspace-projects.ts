@@ -1,4 +1,4 @@
-import { DEFAULT_HARNESS, WORKSPACE_DIR, type Harness } from "../core/config";
+import { DEFAULT_HARNESS, WORKSPACE_DIR, isHarness, type Harness } from "../core/config";
 import { parseBoxFileListing, type BoxFile } from "../core/export";
 import type { Project, ProjectMeta } from "../core/projects";
 import {
@@ -44,7 +44,9 @@ export async function boxListProjects(box: BoxExec = boxExec): Promise<Project[]
   const projects: Project[] = [];
   for (const slug of slugs) {
     const meta = await readBoxMeta(box, slug);
-    projects.push({ name: meta?.name ?? slug, slug, dir: projectPath(slug), agent: meta?.agent });
+    // The Box wrote `agent`: an unknown name is dropped here, not shown on a tile.
+    const agent = meta?.agent;
+    projects.push({ name: meta?.name ?? slug, slug, dir: projectPath(slug), agent: isHarness(agent) ? agent : undefined });
   }
   return projects.sort((a, b) => a.slug.localeCompare(b.slug));
 }
@@ -91,7 +93,8 @@ export async function boxCreateProject(
  * Writes nothing when the metadata already says what the funnel would do anyway:
  * the default harness IS the funnel's default, so a Launcher whose setting was
  * never touched leaves every existing project.json exactly as it found it, and
- * switching back drops the key rather than pinning it.
+ * switching back drops the key rather than pinning it. A name the funnel would
+ * refuse (the Box can write this file) matches no setting, so it is overwritten.
  *
  * Metadata that is missing or unparseable is left alone rather than replaced —
  * rewriting it would throw away the Project's name, and a Project with no
