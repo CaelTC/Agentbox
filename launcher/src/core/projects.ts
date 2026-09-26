@@ -1,4 +1,4 @@
-import type { Harness } from "./config";
+import { isHarness, type Harness } from "./config";
 
 /**
  * Projects (ticket 05): each Project is its own folder in the Workspace and
@@ -65,7 +65,12 @@ export function serializeProjectMeta(meta: ProjectMeta): string {
 
 export function parseProjectMeta(json: string): ProjectMeta | undefined {
   try {
-    return JSON.parse(json) as ProjectMeta;
+    const meta = JSON.parse(json) as ProjectMeta;
+    // The Box can write this file (ADR 0007), so `agent` is the one field here
+    // that crosses from the untrusted side into a type. An unknown name is
+    // dropped — treated as the default — rather than shown on a tile.
+    if (meta.agent !== undefined && !isHarness(meta.agent)) delete meta.agent;
+    return meta;
   } catch {
     return undefined;
   }

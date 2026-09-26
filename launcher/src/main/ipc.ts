@@ -137,7 +137,7 @@ export function registerIpc(homeWindow: () => BrowserWindow | undefined): void {
       cancelId: 1,
       message: "Update Agentbox?",
       detail:
-        "If there's a new version, the sandbox restarts and any open Claude session closes. " +
+        "If there's a new version, the sandbox restarts and any open coding-agent session closes. " +
         "Your projects are saved.",
     };
     const parent = homeWindow();

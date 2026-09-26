@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SLUG_RE, assertValidSlug, sanitizeProjectName } from "../src/core/projects";
+import { SLUG_RE, assertValidSlug, parseProjectMeta, sanitizeProjectName } from "../src/core/projects";
 import { repoFile } from "./repo-file";
 
 describe("sanitizeProjectName", () => {
@@ -82,5 +82,19 @@ describe("the slug shape's three copies", () => {
     // box/terminal/test_paths.py; the `fullmatch` checks above are what carry it
     // across to the two copies this file can only read as text.
     expect(SLUG_RE.test("demo\n")).toBe(false);
+  });
+});
+
+describe("parseProjectMeta (metadata the Box may have written)", () => {
+  it("keeps a known agent and drops one the Launcher has never heard of", () => {
+    expect(parseProjectMeta('{"name":"Demo","slug":"demo","agent":"codex"}')?.agent).toBe("codex");
+    expect(parseProjectMeta('{"name":"Demo","slug":"demo","agent":"gpt-9"}')).toEqual({
+      name: "Demo",
+      slug: "demo",
+    });
+  });
+
+  it("returns undefined for metadata that is not JSON", () => {
+    expect(parseProjectMeta("{nope")).toBeUndefined();
   });
 });
