@@ -12,7 +12,6 @@ import { harness } from "../src/main/settings";
 import {
   boxCreateProject,
   boxListProjects,
-  boxSetProjectAgent,
   boxUpload,
 } from "../src/main/workspace";
 import type { BrowserWindow } from "electron";
@@ -335,21 +334,15 @@ describe("the router's gate", () => {
   });
 
   /**
-   * Delivery of the app-level Harness setting. The Box funnel reads the agent
-   * from the Project's metadata, so "opening a Project applies the setting"
-   * means exactly this: the current choice is stamped in, in the same gated
-   * turn, before the session is ensured. Stamping it AFTER would open the
-   * session the setting was flipped away from.
+   * Delivery of the app-level Harness setting: read in the gated turn and handed
+   * to the open, which stamps it in before the session is ensured
+   * (test/session.test.ts holds that ordering).
    */
-  it("stamps the selected harness into the Project before opening its session", async () => {
+  it("opens the session under the harness the setting says right now", async () => {
     vi.mocked(harness).mockReturnValue("codex");
 
     await invoke(IPC.openSession, "demo");
 
-    expect(boxSetProjectAgent).toHaveBeenCalledWith("demo", "codex");
-    expect(openProjectSession).toHaveBeenCalledWith("demo");
-    expect(vi.mocked(boxSetProjectAgent).mock.invocationCallOrder[0]!).toBeLessThan(
-      vi.mocked(openProjectSession).mock.invocationCallOrder[0]!,
-    );
+    expect(openProjectSession).toHaveBeenCalledWith("demo", "codex");
   });
 });

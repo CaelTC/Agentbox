@@ -11,6 +11,7 @@ import {
   DEFINITION_REPO,
   ENGINE_PROFILE,
   HARNESSES,
+  harnessChoice,
   RESOURCE_CAP,
 } from "../src/core/config";
 import { TERMINAL_PORT } from "../src/core/preview";
@@ -220,5 +221,19 @@ describe("install/install.ps1 (the Windows Install Script) against the core", ()
       memoryGiB: Number(psVar("CapMemoryGiB")),
       diskGiB: Number(psVar("CapDiskGiB")),
     }).toEqual(RESOURCE_CAP);
+  });
+});
+
+describe("harnessChoice (what the renderer is handed instead of the names)", () => {
+  it("carries the current choice with its label and every option, labelled", () => {
+    expect(harnessChoice("codex")).toEqual({
+      current: "codex",
+      label: "Codex",
+      options: [
+        { value: "claude", label: "Claude" },
+        { value: "codex", label: "Codex" },
+      ],
+    });
+    expect(harnessChoice(DEFAULT_HARNESS).options.map((o) => o.value)).toEqual([...HARNESSES]);
   });
 });

@@ -14,5 +14,6 @@ type ExportResult = import("../core/export").ExportResult;
 type ImportListing = import("../core/import").ImportListing;
 type GithubStatus = import("../shared/api").GithubStatus;
 type Harness = import("../core/config").Harness;
+type HarnessChoice = import("../core/config").HarnessChoice;
 type DeleteListing = import("../core/delete").DeleteListing;
 type FileDeleteResult = import("../core/delete").FileDeleteResult;

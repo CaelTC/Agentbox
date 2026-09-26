@@ -620,12 +620,16 @@ describe("the renderer's two copies of a core rule", () => {
     expect(declaration(MACHINERY, "size")).toContain("GB");
   });
 
-  it("machinery.ts names a harness exactly as core/config.ts does", () => {
-    // Drift here has the picker offering "Claude" while the consent line it sits
-    // above says something else about the same choice.
-    expect(declaration(MACHINERY, "harnessLabel")).toBe(
-      declaration(src("core", "config.ts"), "harnessLabel"),
-    );
-    expect(declaration(MACHINERY, "harnessLabel")).toContain("Codex");
+});
+
+describe("the Harness's names stay on main's side of the bridge", () => {
+  it("no renderer script spells an agent's name — main hands it the words", () => {
+    // The picker's options, the consent sentence and a tile's "Last opened
+    // with" all take their labels from `harnessChoice` (core/config.ts). A
+    // quoted "claude" or "codex" in a screen is a third copy of the harness
+    // list, one that nothing would keep in step.
+    for (const file of repoDir("launcher", "src", "renderer").filter((f) => f.endsWith(".ts"))) {
+      expect(src("renderer", file), file).not.toMatch(/"(claude|codex)"/);
+    }
   });
 });

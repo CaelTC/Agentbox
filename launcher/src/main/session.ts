@@ -1,5 +1,5 @@
 import { BrowserWindow } from "electron";
-import { BOX_CONTAINER, BOX_IMAGE, DB_CONTAINER, ENGINE_CLI } from "../core/config";
+import { BOX_CONTAINER, BOX_IMAGE, DB_CONTAINER, ENGINE_CLI, type Harness } from "../core/config";
 import {
   boxConnectDbArgs,
   boxRunArgs,
@@ -17,6 +17,7 @@ import { boxExec, type BoxExec } from "./box-exec";
 import { engine } from "./engine";
 import { inspectBoxState } from "./environment";
 import { mustSucceed, run } from "./exec";
+import { boxSetProjectAgent } from "./workspace";
 import { startupPlan, stepMessage, type OnStep, type StartupStep } from "../core/startup";
 
 /**
@@ -132,18 +133,29 @@ export async function updateClaudeCode(): Promise<boolean> {
 const sessionWindows = new Map<string, BrowserWindow>();
 
 /**
- * Open a Project's Claude session (ticket 04). Ensures the session exists through
- * the single Box-side funnel (which reads the Project's cwd + seed prompt from
- * the volume, ticket 02), then shows it in a window the Launcher owns.
+ * Open a Project's session under the given Harness (ticket 04, ADR 0007). The
+ * funnel takes the agent from the Project's metadata (box/bin/agentbox-session),
+ * so the choice is stamped into that file first — immediately before the funnel
+ * runs, in the caller's same gated turn, so what starts is what the setting said
+ * at the click; stamping AFTER would open the session the setting was just
+ * flipped away from. A Project opened under the default is not written to at
+ * all. Then the session is ensured through the single Box-side funnel (which
+ * reads the Project's cwd + seed prompt from the volume, ticket 02) and shown in
+ * a window the Launcher owns.
  *
  * Called again for a Project that is already open, this raises that window and
  * opens nothing — the funnel is still run first, so a session whose tmux side
  * died is rebuilt before the existing window is brought back to it.
  */
-export async function openProjectSession(slug: string, box: BoxExec = boxExec): Promise<void> {
+export async function openProjectSession(
+  slug: string,
+  agent: Harness,
+  box: BoxExec = boxExec,
+): Promise<void> {
   // Through the Box-exec seam like every other command against a running Box:
   // the router brings the Box up before this channel's target runs, so there is
   // nothing here that has to reach past it.
+  await boxSetProjectAgent(slug, agent, box);
   await box.exec(ensureSessionArgs(slug), `Opening the '${slug}' session`);
 
   const open = sessionWindows.get(slug);

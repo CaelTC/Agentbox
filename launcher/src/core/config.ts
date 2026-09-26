@@ -83,13 +83,32 @@ export function isHarness(value: unknown): value is Harness {
  * "Codex" are the display names, so the renderer's option labels and status
  * strings can't say something the Box would then contradict.
  *
- * The renderer keeps its own copy of this exact function (it is a classic
- * <script> and cannot import this module — core/format.ts explains why);
- * `test/renderer.test.ts` pins the two texts equal the same way it already does
- * for `normalize` and `size`.
+ * The renderer never calls this: it is handed the words through `harnessChoice`.
  */
 export function harnessLabel(harness: Harness): string {
   return harness === "codex" ? "Codex" : "Claude";
+}
+
+/**
+ * Everything the renderer needs to draw and name the Harness — the picker's
+ * options and the words for the current choice — decided here and sent over
+ * the bridge, so the renderer (a classic <script> that cannot import this
+ * module) never spells an agent's name itself. `test/renderer.test.ts` pins
+ * that: a quoted "claude" or "codex" in a screen would be a copy of this list
+ * that nothing keeps in step.
+ */
+export interface HarnessChoice {
+  readonly current: Harness;
+  readonly label: string;
+  readonly options: readonly { readonly value: Harness; readonly label: string }[];
+}
+
+export function harnessChoice(current: Harness): HarnessChoice {
+  return {
+    current,
+    label: harnessLabel(current),
+    options: HARNESSES.map((value) => ({ value, label: harnessLabel(value) })),
+  };
 }
 
 /**

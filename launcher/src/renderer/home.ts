@@ -25,6 +25,13 @@ async function renderHome(notice?: string): Promise<void> {
     renderBootstrapError(fail("Couldn't read your projects", err));
     return;
   }
+  // Read once for the screen: the footer's picker draws its options from it,
+  // and a tile that says which agent it was last opened with takes the words
+  // from the same place. Absent if it can't be read, and so is the picker,
+  // exactly as the GitHub line is: a home screen that won't render over a
+  // picker is the worse trade.
+  const choice = await cb.harness().catch(() => undefined);
+
   const root = app();
   root.replaceChildren();
 
@@ -57,7 +64,9 @@ async function renderHome(notice?: string): Promise<void> {
   const grid = el("div", { className: "grid" }, [newProjectCard()]);
   for (const project of projects) {
     grid.append(
-      actionCard(project.name, savedMeta(project), () => void openProject(project)),
+      actionCard(project.name, savedMeta(project, choice), () =>
+        void openProject(project).catch((err: unknown) => flash(fail("Couldn't open that project", err))),
+      ),
     );
   }
 
@@ -72,7 +81,7 @@ async function renderHome(notice?: string): Promise<void> {
   );
 
   root.append(
-    footer([...(await harnessPicker()), ...(await githubAccountLine()), updateLink()]),
+    footer([...harnessPicker(choice), ...(await githubAccountLine()), updateLink()]),
   );
 
   // Started, not awaited: the answer can be minutes behind this paint, and the
@@ -132,22 +141,18 @@ async function codexNotice(slot: HTMLElement): Promise<void> {
  *
  * In the footer with the other housekeeping — it is picked once and then left
  * alone, and it is nobody's reason for opening the Launcher. Absent entirely if
- * the setting can't be read, exactly as the GitHub line is: a home screen that
- * won't render over a picker is the worse trade.
+ * the setting couldn't be read (see `renderHome`). The options and their words
+ * are main's (`harnessChoice`): nothing here knows what the agents are called.
  */
-async function harnessPicker(): Promise<Node[]> {
-  let current: Harness;
-  try {
-    current = await cb.harness();
-  } catch {
-    return [];
-  }
+function harnessPicker(choice: HarnessChoice | undefined): Node[] {
+  if (!choice) return [];
 
-  const select = el("select", {}, [
-    el("option", { value: "claude", textContent: harnessLabel("claude") }),
-    el("option", { value: "codex", textContent: harnessLabel("codex") }),
-  ]) as HTMLSelectElement;
-  select.value = current; // the stored choice, and Claude on a Launcher nobody has set
+  const select = el(
+    "select",
+    {},
+    choice.options.map((o) => el("option", { value: o.value, textContent: o.label })),
+  ) as HTMLSelectElement;
+  select.value = choice.current; // the stored choice, and the default on a Launcher nobody has set
 
   // Not a `runOperation`: this touches no Box and has no busy state to show —
   // the choice is a file in the Launcher's own home, and it applies to the next
@@ -176,11 +181,12 @@ async function harnessPicker(): Promise<Node[]> {
  * something else — the Harness picker in the footer decides what the NEXT open
  * uses, so this is history, not a promise.
  */
-function savedMeta(project: Project): string {
+function savedMeta(project: Project, choice: HarnessChoice | undefined): string {
   const saved = project.lastSaved
     ? `Saved to your computer ${when(project.lastSaved)}`
     : "Not saved to your computer yet";
-  return project.agent ? `${saved} · Last opened with ${harnessLabel(project.agent)}` : saved;
+  const label = choice?.options.find((o) => o.value === project.agent)?.label;
+  return label ? `${saved} · Last opened with ${label}` : saved;
 }
 
 /** The one tile that isn't a Project: both ways of starting one. */
@@ -270,7 +276,9 @@ function renderNewProjectSheet(): void {
       done: (listing) => {
         if (!listing) return;
         close();
-        void renderImportSheet(listing);
+        void renderImportSheet(listing).catch((err: unknown) =>
+          flash(fail("Couldn't bring that folder in", err)),
+        );
       },
       failed: "Couldn't read that folder",
     }),
@@ -352,13 +360,12 @@ async function githubAccountLine(): Promise<Node[]> {
  * `openSheet` every modal here uses. Cancel copies nothing;
  * "Bring it in" is disabled outright when the folder doesn't fit the Box.
  *
- * Async only for the one read the consent sentence needs: which harness is
- * about to get access. Falls back to the default exactly as `harness()` itself
- * does (main/settings.ts) — a picker nobody has touched is worth more than a
- * sheet that failed to open over an unreadable settings file.
+ * Async only for the one read the consent sentence needs: what to call the
+ * agent that is about to get access. The read never fails in main
+ * (main/settings.ts); if the bridge itself does, the caller's flash says so.
  */
 async function renderImportSheet(listing: ImportListing): Promise<void> {
-  const current = await cb.harness().catch((): Harness => "claude");
+  const { label: agentLabel } = await cb.harness();
 
   const bring = el("button", { className: "btn", textContent: "Bring it in" }) as HTMLButtonElement;
   bring.disabled = !listing.fitsFreeSpace; // refused before anything crosses, not after
@@ -403,7 +410,7 @@ async function renderImportSheet(listing: ImportListing): Promise<void> {
   contents.push(
     el("p", {
       className: "sub",
-      textContent: `Once you click below, ${harnessLabel(current)} will be able to read and change everything in this folder.`,
+      textContent: `Once you click below, ${agentLabel} will be able to read and change everything in this folder.`,
     }),
   );
 

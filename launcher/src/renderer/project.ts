@@ -17,12 +17,12 @@
  * grid: what you DO with this Project, and what is IN it.
  */
 async function openProject(project: Project): Promise<void> {
-  // Which harness "Open session" is about to stamp this Project with and open —
-  // the app-level setting, not `project.agent`: that field is history (what the
-  // LAST open used), and this panel's strings are about what happens next.
-  // Falls back to the default exactly as `harness()` itself does when the
-  // setting can't be read (main/settings.ts).
-  const harness = await cb.harness().catch((): Harness => "claude");
+  // What to call the agent "Open session" is about to stamp this Project with
+  // and open — the app-level setting, not `project.agent`: that field is history
+  // (what the LAST open used), and this panel's strings are about what happens
+  // next. The read never fails in main (main/settings.ts); if the bridge itself
+  // does, the caller's flash says so.
+  const { label: agentLabel } = await cb.harness();
 
   const root = app();
   root.replaceChildren();
@@ -56,7 +56,7 @@ async function openProject(project: Project): Promise<void> {
         busyLabel: "Opening…",
         run: () => cb.openSession(project.slug),
         done: () => undefined,
-        failed: `Couldn't open the ${harnessLabel(harness)} session`,
+        failed: `Couldn't open the ${agentLabel} session`,
       }),
   );
 
@@ -129,7 +129,7 @@ async function openProject(project: Project): Promise<void> {
   const loadDelete = (button: HTMLButtonElement): void =>
     readFiles(button, (listing) => deletePanel(project, listing, loadDelete, loadFiles));
 
-  sessionTab.addEventListener("click", () => select(sessionTab, sessionPanel(project, harness)));
+  sessionTab.addEventListener("click", () => select(sessionTab, sessionPanel(project, agentLabel)));
   filesTab.addEventListener("click", () => loadFiles(filesTab));
 
   root.append(
@@ -144,7 +144,7 @@ async function openProject(project: Project): Promise<void> {
     ]),
   );
 
-  select(sessionTab, sessionPanel(project, harness));
+  select(sessionTab, sessionPanel(project, agentLabel));
   root.append(section("light", [body]));
   root.append(footer());
 }
@@ -161,7 +161,7 @@ async function openProject(project: Project): Promise<void> {
  * rebuild, and — the thing an unhandled rejection could never do — says so when
  * it fails instead of looking simply dead.
  */
-function sessionPanel(project: Project, harness: Harness): HTMLElement {
+function sessionPanel(project: Project, agentLabel: string): HTMLElement {
   const preview = actionCard("Preview", "Look at whatever this project is serving.", (card) =>
     void runOperation({
       button: card,
@@ -170,7 +170,7 @@ function sessionPanel(project: Project, harness: Harness): HTMLElement {
         flash(
           res.opened
             ? `Opened ${res.url}`
-            : `Nothing is being served yet — ask ${harnessLabel(harness)} to start a server.`,
+            : `Nothing is being served yet — ask ${agentLabel} to start a server.`,
         ),
       failed: "Couldn't open the preview",
     }),
@@ -181,7 +181,7 @@ function sessionPanel(project: Project, harness: Harness): HTMLElement {
   // The token lives in the Launcher; this button only asks for the publish, and
   // the two-container split happens on the host side.
   const github = actionCard("Save to GitHub", "Keep this project in a private repo on your account.", (card) =>
-    void startPublish(project, card, harness),
+    void startPublish(project, card, agentLabel),
   );
 
   // Delete sits OUTSIDE the action grid, not as another card in it. The two
@@ -197,7 +197,7 @@ function sessionPanel(project: Project, harness: Harness): HTMLElement {
       button: destroy,
       busyLabel: "Checking…",
       run: () => cb.planDelete(project.slug),
-      done: (listing) => renderDeleteSheet(project, listing, harness),
+      done: (listing) => renderDeleteSheet(project, listing, agentLabel),
       failed: `Couldn't open ${project.name} to delete it`,
     }),
   );
@@ -220,7 +220,7 @@ function sessionPanel(project: Project, harness: Harness): HTMLElement {
  * publish follows from the same click — a Sandbox User asked to save, not to
  * sign in, so the sign-in is a step inside that, never a separate errand.
  */
-async function startPublish(project: Project, card: HTMLButtonElement, harness: Harness): Promise<void> {
+async function startPublish(project: Project, card: HTMLButtonElement, agentLabel: string): Promise<void> {
   let status: GithubStatus;
   try {
     // Host-only, and the one step here that isn't the operation: reading the
@@ -239,7 +239,7 @@ async function startPublish(project: Project, card: HTMLButtonElement, harness: 
   if (!status.connected) {
     // Signing in is minutes of polling GitHub and touches nothing — it stays
     // outside the busy state, exactly as it stays outside the Box Gate.
-    renderGithubConnect(project, card, harness);
+    renderGithubConnect(project, card, agentLabel);
     return;
   }
   await publish(project, card);
@@ -270,7 +270,7 @@ function publish(project: Project, card: HTMLButtonElement): Promise<void> {
  * and — plainly, because it is the whole cost of this feature — what the sign-in
  * lets Agentbox reach.
  */
-function renderGithubConnect(project: Project, card: HTMLButtonElement, harness: Harness): void {
+function renderGithubConnect(project: Project, card: HTMLButtonElement, agentLabel: string): void {
   const step = el("p", { className: "sub", textContent: "Asking GitHub for a code…" });
   const code = el("p", { className: "total" });
   const cancel = el("button", { className: "btn--link", textContent: "Cancel" });
@@ -284,7 +284,7 @@ function renderGithubConnect(project: Project, card: HTMLButtonElement, harness:
         className: "sub",
         textContent:
           "Agentbox asks for access to your repositories so it can create a private one and save this project into it. " +
-          `The sign-in is kept by this launcher and is never given to ${harnessLabel(harness)}.`,
+          `The sign-in is kept by this launcher and is never given to ${agentLabel}.`,
       }),
       // The switching trap: the code is approved by whoever is signed in at
       // github.com, so a second account needs a signed-out (or private) browser.
@@ -323,7 +323,7 @@ function renderGithubConnect(project: Project, card: HTMLButtonElement, harness:
  * the thing that tells someone they should hit Cancel and save first — and it
  * makes them type the Project's name, so this can never be a slipped click.
  */
-function renderDeleteSheet(project: Project, listing: DeleteListing, harness: Harness): void {
+function renderDeleteSheet(project: Project, listing: DeleteListing, agentLabel: string): void {
   const confirmName = el("input", {
     type: "text",
     placeholder: listing.name,
@@ -390,7 +390,7 @@ function renderDeleteSheet(project: Project, listing: DeleteListing, harness: Ha
         // looking at a dead terminal for a Project the Launcher says is deleted.
         flash(
           res.sessionKilled
-            ? `Deleted ${res.name}. Its ${harnessLabel(harness)} window is finished — you can close it.`
+            ? `Deleted ${res.name}. Its ${agentLabel} window is finished — you can close it.`
             : `Deleted ${res.name}.`,
         );
       },
