@@ -225,10 +225,9 @@ describe("install/install.ps1 (the Windows Install Script) against the core", ()
 });
 
 describe("harnessChoice (what the renderer is handed instead of the names)", () => {
-  it("carries the current choice with its label and every option, labelled", () => {
+  it("carries the current choice and every option, labelled", () => {
     expect(harnessChoice("codex")).toEqual({
       current: "codex",
-      label: "Codex",
       options: [
         { value: "claude", label: "Claude" },
         { value: "codex", label: "Codex" },

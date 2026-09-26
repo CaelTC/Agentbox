@@ -86,15 +86,15 @@ describe("the slug shape's three copies", () => {
 });
 
 describe("parseProjectMeta (metadata the Box may have written)", () => {
-  it("keeps a known agent and drops one the Launcher has never heard of", () => {
+  it("keeps the agent as written, unknown or not — boxSetProjectAgent must see a bad one to overwrite it", () => {
     expect(parseProjectMeta('{"name":"Demo","slug":"demo","agent":"codex"}')?.agent).toBe("codex");
-    expect(parseProjectMeta('{"name":"Demo","slug":"demo","agent":"gpt-9"}')).toEqual({
-      name: "Demo",
-      slug: "demo",
-    });
+    expect(parseProjectMeta('{"name":"Demo","slug":"demo","agent":"gpt-9"}')?.agent).toBe("gpt-9");
   });
 
-  it("returns undefined for metadata that is not JSON", () => {
+  it("returns undefined for metadata that is not JSON, or JSON that is not an object", () => {
     expect(parseProjectMeta("{nope")).toBeUndefined();
+    for (const json of ["[]", '"demo"', "42", "null", "true"]) {
+      expect(parseProjectMeta(json), json).toBeUndefined();
+    }
   });
 });

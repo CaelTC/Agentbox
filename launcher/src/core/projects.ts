@@ -1,4 +1,4 @@
-import { isHarness, type Harness } from "./config";
+import type { Harness } from "./config";
 
 /**
  * Projects (ticket 05): each Project is its own folder in the Workspace and
@@ -23,7 +23,7 @@ export interface Project {
   readonly lastSaved?: number;
   /**
    * Which harness this Project's metadata was last stamped with
-   * (`ProjectMeta.agent`, filled in by `boxListProjects`). Absent means the
+   * (`ProjectMeta.agent`, filled in — and checked — by `boxListProjects`). Absent means the
    * default, exactly as it does in the metadata itself — so most Projects carry
    * nothing here, and only one last opened under something else says which.
    * This is history, not a promise: the app-level setting decides what the
@@ -43,8 +43,14 @@ export interface ProjectMeta {
    * also the funnel's own default — so the Launcher stamps this key only when
    * the setting says something else, and a Project nobody has opened under a
    * different harness keeps the metadata it was created with.
+   *
+   * As the file says it, NOT validated: the Box can write this file (ADR 0007),
+   * so a parsed `agent` may be a name no Harness has. Kept rather than dropped
+   * so `boxSetProjectAgent` sees it differs and overwrites it on the next open —
+   * dropped, it read as the default and a bad name the funnel refuses stayed on
+   * disk. It becomes a `Harness` only in `boxListProjects`, where it is checked.
    */
-  agent?: Harness;
+  agent?: string;
 }
 
 export const META_DIR = ".agentbox";
@@ -65,12 +71,11 @@ export function serializeProjectMeta(meta: ProjectMeta): string {
 
 export function parseProjectMeta(json: string): ProjectMeta | undefined {
   try {
-    const meta = JSON.parse(json) as ProjectMeta;
-    // The Box can write this file (ADR 0007), so `agent` is the one field here
-    // that crosses from the untrusted side into a type. An unknown name is
-    // dropped — treated as the default — rather than shown on a tile.
-    if (meta.agent !== undefined && !isHarness(meta.agent)) delete meta.agent;
-    return meta;
+    const meta: unknown = JSON.parse(json);
+    // The Box can write this file (ADR 0007): valid JSON that is not an object
+    // (`[]`, `"x"`, `null`) is as unreadable as a half-written file.
+    if (typeof meta !== "object" || meta === null || Array.isArray(meta)) return undefined;
+    return meta as ProjectMeta;
   } catch {
     return undefined;
   }

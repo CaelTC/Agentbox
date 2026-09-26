@@ -166,6 +166,19 @@ describe("boxSetProjectAgent — the Harness reaching the funnel", () => {
     expect(writtenMeta(box)).toEqual({ name: "Demo", slug: "demo" });
   });
 
+  // The Box can write this file. A name the funnel refuses ("unknown agent")
+  // must not read as the default and survive every open.
+  it("overwrites an agent name nobody knows, even when the setting is the default", async () => {
+    const toDefault = holding({ name: "Demo", slug: "demo", agent: "gpt-9" });
+    const toCodex = holding({ name: "Demo", slug: "demo", agent: "gpt-9" });
+
+    await boxSetProjectAgent("demo", "claude", toDefault);
+    await boxSetProjectAgent("demo", "codex", toCodex);
+
+    expect(writtenMeta(toDefault)).toEqual({ name: "Demo", slug: "demo" });
+    expect(writtenMeta(toCodex)).toEqual({ name: "Demo", slug: "demo", agent: "codex" });
+  });
+
   it("leaves metadata it could not read alone — rewriting it would lose the name", async () => {
     const missing = fakeBox((_op, argv) => (isMeta(argv) ? new Error("no such file") : ""));
     const corrupt = fakeBox((_op, argv) => (isMeta(argv) ? "{ half a fi" : ""));
@@ -183,6 +196,21 @@ describe("boxListProjects — an unreadable Workspace is not an empty one", () =
     const box = fakeBox((op, argv) => (isSlugListing(argv) ? "my-site\ndemo\n" : ""));
     const projects = await boxListProjects(box);
     expect(projects.map((p) => p.slug)).toEqual(["demo", "my-site"]);
+  });
+
+  it("passes on a known agent and drops one the Launcher has never heard of", async () => {
+    const box = fakeBox((_op, argv) =>
+      isSlugListing(argv)
+        ? "known\nbogus\n"
+        : isMeta(argv)
+          ? JSON.stringify({ name: "X", slug: "x", agent: argv[1].includes("/known/") ? "codex" : "gpt-9" })
+          : "",
+    );
+    const projects = await boxListProjects(box);
+    expect(projects.map((p) => [p.slug, p.agent])).toEqual([
+      ["bogus", undefined],
+      ["known", "codex"],
+    ]);
   });
 
   it("throws rather than telling a Sandbox User they have no Projects", async () => {

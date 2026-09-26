@@ -4,8 +4,8 @@
  * Delete Project confirmation.
  */
 /**
- * The per-Project control panel (ticket 04). The Claude session opens in its own
- * window (via openSession); this window becomes the controls for the active
+ * The per-Project control panel (ticket 04). The coding agent's session opens in
+ * its own window (via openSession); this window becomes the controls for the active
  * Project — no terminal is embedded here.
  *
  * Opening a Project does NOT open the session: landing here is how a user gets
@@ -21,8 +21,9 @@ async function openProject(project: Project): Promise<void> {
   // and open — the app-level setting, not `project.agent`: that field is history
   // (what the LAST open used), and this panel's strings are about what happens
   // next. The read never fails in main (main/settings.ts); if the bridge itself
-  // does, the caller's flash says so.
-  const { label: agentLabel } = await cb.harness();
+  // does, the panel still opens and says "the coding agent" (`currentLabel`) —
+  // the same choice the home screen makes by dropping its picker.
+  const agentLabel = currentLabel(await cb.harness().catch(() => undefined));
 
   const root = app();
   root.replaceChildren();
@@ -56,7 +57,7 @@ async function openProject(project: Project): Promise<void> {
         busyLabel: "Opening…",
         run: () => cb.openSession(project.slug),
         done: () => undefined,
-        failed: `Couldn't open the ${agentLabel} session`,
+        failed: `Couldn't open the session with ${agentLabel}`,
       }),
   );
 
@@ -390,7 +391,7 @@ function renderDeleteSheet(project: Project, listing: DeleteListing, agentLabel:
         // looking at a dead terminal for a Project the Launcher says is deleted.
         flash(
           res.sessionKilled
-            ? `Deleted ${res.name}. Its ${agentLabel} window is finished — you can close it.`
+            ? `Deleted ${res.name}. Its session with ${agentLabel} is over — you can close that window.`
             : `Deleted ${res.name}.`,
         );
       },

@@ -262,6 +262,15 @@ function carriedSelection(
   return new Set(files.filter((f) => f.exportable && keeps(f.path)).map((f) => f.path));
 }
 
+/**
+ * What a sentence calls the agent the NEXT open uses: the current option's label,
+ * as main worded it (`harnessChoice`). If the setting couldn't be read, words
+ * that fit every Harness instead — a screen never fails, or guesses, over a name.
+ */
+function currentLabel(choice: HarnessChoice | undefined): string {
+  return choice?.options.find((o) => o.value === choice.current)?.label ?? "the coding agent";
+}
+
 // --- end of the renderer's machinery -----------------------------------------
 
 /**

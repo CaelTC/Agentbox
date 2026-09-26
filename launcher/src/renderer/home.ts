@@ -18,19 +18,22 @@
  * looking is a `console.warn` with extra steps.
  */
 async function renderHome(notice?: string): Promise<void> {
+  // The Harness choice is read once for the screen, alongside the Projects: the
+  // footer's picker draws its options from it, and a tile that says which agent
+  // it was last opened with takes the words from the same place. Absent if it
+  // can't be read, and so is the picker, exactly as the GitHub line is: a home
+  // screen that won't render over a picker is the worse trade.
   let projects: Project[];
+  let choice: HarnessChoice | undefined;
   try {
-    projects = await cb.listProjects();
+    [projects, choice] = await Promise.all([
+      cb.listProjects(),
+      cb.harness().catch(() => undefined),
+    ]);
   } catch (err) {
     renderBootstrapError(fail("Couldn't read your projects", err));
     return;
   }
-  // Read once for the screen: the footer's picker draws its options from it,
-  // and a tile that says which agent it was last opened with takes the words
-  // from the same place. Absent if it can't be read, and so is the picker,
-  // exactly as the GitHub line is: a home screen that won't render over a
-  // picker is the worse trade.
-  const choice = await cb.harness().catch(() => undefined);
 
   const root = app();
   root.replaceChildren();
@@ -362,10 +365,11 @@ async function githubAccountLine(): Promise<Node[]> {
  *
  * Async only for the one read the consent sentence needs: what to call the
  * agent that is about to get access. The read never fails in main
- * (main/settings.ts); if the bridge itself does, the caller's flash says so.
+ * (main/settings.ts); if the bridge itself does, the sentence says "the coding
+ * agent" (`currentLabel`) rather than refuse the sheet.
  */
 async function renderImportSheet(listing: ImportListing): Promise<void> {
-  const { label: agentLabel } = await cb.harness();
+  const agentLabel = currentLabel(await cb.harness().catch(() => undefined));
 
   const bring = el("button", { className: "btn", textContent: "Bring it in" }) as HTMLButtonElement;
   bring.disabled = !listing.fitsFreeSpace; // refused before anything crosses, not after

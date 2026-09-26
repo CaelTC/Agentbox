@@ -91,7 +91,7 @@ export function harnessLabel(harness: Harness): string {
 
 /**
  * Everything the renderer needs to draw and name the Harness — the picker's
- * options and the words for the current choice — decided here and sent over
+ * options, each with its words, and which one is current — decided here and sent over
  * the bridge, so the renderer (a classic <script> that cannot import this
  * module) never spells an agent's name itself. `test/renderer.test.ts` pins
  * that: a quoted "claude" or "codex" in a screen would be a copy of this list
@@ -99,14 +99,12 @@ export function harnessLabel(harness: Harness): string {
  */
 export interface HarnessChoice {
   readonly current: Harness;
-  readonly label: string;
   readonly options: readonly { readonly value: Harness; readonly label: string }[];
 }
 
 export function harnessChoice(current: Harness): HarnessChoice {
   return {
     current,
-    label: harnessLabel(current),
     options: HARNESSES.map((value) => ({ value, label: harnessLabel(value) })),
   };
 }
