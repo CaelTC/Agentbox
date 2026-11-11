@@ -1,0 +1,7 @@
+---
+tags: [concept]
+---
+
+# Box-exec
+
+The [[Launcher]]'s one door into the running Box. [[Upload]], [[Export]], [[Project Import]], [[Delete Project]], opening a [[Project]]'s session, and every read and write of a [[Project]] in the [[Workspace]] cross the boundary through it — with two named exceptions, which run as root and carry their own in-Box timeout longer than the door's: the `claude update` of [[Refresh on Launch]], which is best-effort, and the Codex update behind the home screen's notice, which is not — the [[Sandbox User]] asked for that one and is told when it fails. Failure is an error there rather than a value a caller may quietly drop, which is why the [[Sandbox User]] is never told "Uploaded 3 file(s)" about a copy that failed — and a caller that wants that failure phrased about the Box rather than about `docker` says what it was doing, rather than tolerating the failure in order to reword it. Every command through the door is bounded by a deadline, because the [[Box Gate]] is single-file and a command that never returns would take every Box channel with it for the life of the [[Launcher]]; the copies are exempt, since a multi-gigabyte Import is legitimately slow and is exactly the thing nothing else may race. The door is to the *running* Box only: bringing it up, rebuilding it and stopping it do not go through it, and [[Save to GitHub]] deliberately never reaches inside a running Box at all (ADR 0006).

@@ -1,0 +1,46 @@
+{
+  "colorGroups": [
+    {
+      "query": "tag:#concept",
+      "color": {
+        "a": 1,
+        "rgb": 5431378
+      }
+    },
+    {
+      "query": "tag:#adr",
+      "color": {
+        "a": 1,
+        "rgb": 14701138
+      }
+    },
+    {
+      "query": "tag:#box",
+      "color": {
+        "a": 1,
+        "rgb": 14431557
+      }
+    },
+    {
+      "query": "tag:#module",
+      "color": {
+        "a": 1,
+        "rgb": 5419488
+      }
+    },
+    {
+      "query": "tag:#layer",
+      "color": {
+        "a": 1,
+        "rgb": 11621088
+      }
+    }
+  ],
+  "showTags": true,
+  "showAttachments": false,
+  "hideUnresolved": true,
+  "scale": 0.6,
+  "repelStrength": 11,
+  "linkStrength": 0.7,
+  "linkDistance": 90
+}
